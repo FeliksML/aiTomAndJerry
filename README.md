@@ -157,6 +157,10 @@ frame. If a take stalls or a run goes wrong, replay it exactly:
 .venv/bin/python trainer/scripts/serve.py --replay runs/journals/2026-08-27T16-27-49.jsonl
 ```
 
+The app follows the stream, so a replay drives itself — it walks into the right screen and
+plays the recorded episodes at the recorded pace with no trainer running. The same
+mechanism means Python can drive the app during a live take.
+
 ## About the hardware
 
 You asked for the M2 Max to be leveraged. It is — just not where you would expect, and

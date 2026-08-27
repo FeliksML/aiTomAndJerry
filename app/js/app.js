@@ -1018,7 +1018,22 @@
         App.bannerAt = performance.now();
         render();
       })
-      .on('state', function (m) { App.runState = m; App.playing = m.playing !== false; render(); })
+      .on('state', function (m) {
+        App.runState = m;
+        App.playing = m.playing !== false;
+        // Follow the stream. A replay only re-sends messages, so without this the app
+        // sits on the menu while the recorded episodes play into a screen nobody is
+        // looking at. It also means the trainer can drive the app from Python.
+        var to = { play: 'school', final: 'final', race: 'race', train: 'school' }[m.mode];
+        if (to && App.screen !== to) {
+          App.screen = to;
+          if (m.school) App.school = m.school;
+          if (m.checkpoint) App.checkpoint = m.checkpoint;
+          App.mode = m.mode === 'train' ? 'train' : 'play';
+          if (m.mode !== 'race') App.results = [];
+        }
+        render();
+      })
       .on('runEnd', function (m) {
         App.runState = m;
         // A school that has finished its twelve arenas goes to its verdict; the final

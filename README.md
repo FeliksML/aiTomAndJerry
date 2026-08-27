@@ -33,7 +33,7 @@ python3 -m http.server 8778 --directory app
 
 Then open <http://localhost:8778>.
 
-**Keys.** `1 2 3` schools · `g` level generator · `f` grand final · `b` leaderboard ·
+**Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
 `h` highlight reel · `t` train live on camera · **`r` reveal the next school**, `shift+R` re-seal one.
 
@@ -47,6 +47,15 @@ deliberately sealed rather than broken, and nothing needs blurring in the edit.
 The level survives a reload (it is in `localStorage`), so a crash mid-shoot does not
 unseal the rest of the video. Every screen reads a school's identity through
 `Reveal.view()`, so a new screen cannot leak one by forgetting to check.
+
+## Side by side
+
+`x` runs all three schools on the **same room at the same time**: same map, same spawns,
+the same hearing-noise stream, and the same action-sampling draws shared across all three
+panes. Every difference on screen is therefore the policy and nothing else — which is what
+the spec means by "the comparison is the whole point". Underneath, a grid of the same
+twelve rooms: read down a column and you can see whether a room is hard or whether one
+school simply solved it.
 
 ## Fairness — the part that makes this an experiment
 

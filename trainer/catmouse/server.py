@@ -8,6 +8,9 @@ One WebSocket, three modes:
          and a live episode sampled out of the batch it is learning from.
   FINAL  the cross-play champion cat against the cross-play champion mouse, five
          rounds on an arena neither has seen.
+  RACE   all three schools on the SAME room at the same time, sharing the same spawns,
+         the same hearing noise and the same sampling draws — so any difference on
+         screen is the policy and nothing else.
 
 **Everything sent is journalled** to `runs/journals/<stamp>.jsonl`. A live stream is
 the riskiest thing to record against — a stall or a crash kills the take — so every
@@ -99,6 +102,8 @@ class Session:
         self._train_events: asyncio.Queue = asyncio.Queue(maxsize=512)
         self.train_school = None
         self._shadow_at = 0
+        self.race: list[str] = []
+        self._race_done: list = []
 
     def _load_json(self, name: str):
         p = self.run_dir / name
@@ -170,6 +175,70 @@ class Session:
         self._begin_episode()
         return {"type": "state", **self.state()}
 
+    # ---------- RACE ----------
+
+    def start_race(self, checkpoint: str = "trained", levels: list[int] | None = None) -> dict:
+        """Three schools, one room, three panes.
+
+        The three environments share a map, a spawn, a hearing-noise stream
+        (`noise_tile = 1` tiles one draw across all three) and one set of sampling
+        uniforms. That is the whole claim of the screen: every difference you can see is
+        the policy, because nothing else was allowed to differ.
+        """
+        have = [s for s in SCHOOLS if s in self.policies[checkpoint]]
+        if len(have) < 2:
+            return {"type": "error", "message": f"need at least two schools at {checkpoint}"}
+        self.mode = "race"
+        self.race = have
+        self.ctx = {"schools": have, "checkpoint": checkpoint,
+                    "wins": {s: {"catch": 0, "escape": 0, "draw": 0} for s in have}}
+        self.level_order = levels if levels is not None else list(range(len(self.maps)))
+        self.level = 0
+        self.results = []
+        n = len(have)
+        self.env = VecEnv(self.maps, n, seed=0x2ACE)
+        self.env.noise_tile = 1
+        self.bot = None
+        self.actors = {
+            "cat": FlatActor(np.stack([self.policies[checkpoint][s]["cat"] for s in have]),
+                             self.device, assign=np.arange(n)),
+            "mouse": FlatActor(np.stack([self.policies[checkpoint][s]["mouse"] for s in have]),
+                               self.device, assign=np.arange(n)),
+        }
+        self._race_done = [None] * n
+        self._begin_episode()
+        return {"type": "state", **self.state()}
+
+    def race_tick(self) -> list[dict]:
+        e = self.env
+        n = len(self.race)
+        msgs = []
+        if not e.done.all():
+            oc, om = e.observe("cat"), e.observe("mouse")
+            u = np.repeat(self.rng.random(1), n)      # one draw, shared by all three
+            e.step(self.actors["cat"].act(oc, self.rng, u=u),
+                   self.actors["mouse"].act(om, self.rng, u=u))
+        lanes = []
+        for i, school in enumerate(self.race):
+            lanes.append({"school": school, **e.render(i)})
+        payload = {"type": "race", "mode": "race", "lanes": lanes,
+                   "level": self.level, "wins": self.ctx["wins"],
+                   "schools": self.race, "checkpoint": self.ctx["checkpoint"]}
+        idx = int(e.map_idx[0])
+        if self._map_sent != idx:
+            self._map_sent = idx
+            payload["map"] = e.map_payload(0)
+        msgs.append(payload)
+        for i, school in enumerate(self.race):
+            if e.done[i] and self._race_done[i] is None:
+                r = ["", "catch", "escape", "timeout"][int(e.result[i])]
+                self._race_done[i] = r
+                # The tally is keyed by outcome, and a timeout IS the draw column.
+                self.ctx["wins"][school]["draw" if r == "timeout" else r] += 1
+                msgs.append({"type": "laneEnd", "school": school, "result": r,
+                             "steps": int(e.step_n[i]), "level": self.level})
+        return msgs
+
     def _begin_episode(self) -> None:
         assert self.env is not None
         idx = self.level_order[self.level % len(self.level_order)]
@@ -177,6 +246,8 @@ class Session:
         if self.bot:
             self.bot.reset()
         self._map_sent = None
+        if self.mode == "race":
+            self._race_done = [None] * self.env.n
         self._refresh_shadow()
 
     def _refresh_shadow(self) -> None:
@@ -237,6 +308,13 @@ class Session:
 
     def advance(self) -> dict | None:
         """Move to the next arena, or finish the run."""
+        if self.mode == "race":
+            if self.level + 1 >= len(self.level_order):
+                self.mode = "done"
+                return {"type": "runEnd", **self.state()}
+            self.level += 1
+            self._begin_episode()
+            return None
         if self.mode == "train":
             # Training has no end of run — the shadow keeps cycling the arenas with
             # whatever the optimiser has produced by now.

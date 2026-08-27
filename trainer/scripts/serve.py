@@ -10,6 +10,7 @@ Commands the app sends:
     {"cmd":"play","school":"ppo","checkpoint":"trained",
      "opponent":"self|examiner-mouse|examiner-cat"}     run the shared level set
     {"cmd":"final"}                                     champion vs champion, 5 rounds
+    {"cmd":"race","checkpoint":"trained"}               all three schools, same room, side by side
     {"cmd":"train","school":"ga","minutes":10}          train live, on camera
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
@@ -23,9 +24,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import sys
 import time
+import traceback
 from pathlib import Path
 
 import websockets
@@ -38,7 +41,24 @@ BASE_STEPS_PER_SEC = 9.0     # matches the Academy's default pace
 
 async def pump(session, send, stop: asyncio.Event) -> None:
     """The simulation clock. Steps at `speed x 9` per second and holds on a result
-    long enough for the banner to read on camera."""
+    long enough for the banner to read on camera.
+
+    Wrapped so a failure is loud. An exception inside a bare `create_task` is swallowed
+    until the task is awaited, which during a shoot looks like the arena quietly
+    freezing with no explanation anywhere.
+    """
+    try:
+        await _pump(session, send, stop)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        traceback.print_exc()
+        with contextlib.suppress(Exception):
+            await send({"type": "error", "message": "the simulation clock stopped — see the server log"})
+        raise
+
+
+async def _pump(session, send, stop: asyncio.Event) -> None:
     acc = 0.0
     last = time.perf_counter()
     hold_until = 0.0
@@ -50,15 +70,15 @@ async def pump(session, send, stop: asyncio.Event) -> None:
         while not session._train_events.empty():
             await send(session._train_events.get_nowait())
 
-        if session.mode not in ("play", "final", "train") or not session.playing:
+        if session.mode not in ("play", "final", "train", "race") or not session.playing:
             continue
         env = session.env
         if env is None:
             continue
-        if env.done[0]:
+        if env.done.all():
             if hold_until == 0.0:
                 hold_until = now + 0.9 / max(1.0, session.speed * 0.55)
-                for m in session.tick():
+                for m in (session.race_tick() if session.mode == "race" else session.tick()):
                     await send(m)
             elif now >= hold_until:
                 hold_until = 0.0
@@ -69,12 +89,12 @@ async def pump(session, send, stop: asyncio.Event) -> None:
 
         acc += dt * BASE_STEPS_PER_SEC * session.speed
         guard = 0
-        while acc >= 1 and guard < 240 and not env.done[0]:
+        while acc >= 1 and guard < 240 and not env.done.all():
             acc -= 1
             guard += 1
-            for m in session.tick():
+            for m in (session.race_tick() if session.mode == "race" else session.tick()):
                 await send(m)
-        if env.done[0]:
+        if env.done.all():
             acc = 0.0
 
 
@@ -102,6 +122,8 @@ async def handler(ws, session, journal):
                                               m.get("checkpoint", "trained"),
                                               m.get("opponent", "self"),
                                               m.get("levels")))
+            elif cmd == "race":
+                await send(session.start_race(m.get("checkpoint", "trained"), m.get("levels")))
             elif cmd == "final":
                 await send(session.start_final(int(m.get("rounds", 5))))
             elif cmd == "train":

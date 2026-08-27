@@ -161,6 +161,7 @@
       + '<div style="position:relative;display:flex;gap:12px;align-items:center;margin-top:16px">'
       + '<div class="btn" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
       + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
+      + '<div class="btn ghost" data-act="race">SIDE BY SIDE · X</div>'
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
       + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
           ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
@@ -372,6 +373,119 @@
               'Sigma shrinking means it has stopped exploring and started converging.']
     }
   };
+
+  /* Three schools, one room. The spec calls this the whole point: identical map,
+     identical spawns, identical noise, so the only thing that can differ is the brain.
+     Three panes at cell size 22 fit the 1920 canvas with room for the scoreboard. */
+  var RCS = 22;
+
+  function renderRace() {
+    var schools = App.raceSchools || ORDER;
+    var wins = App.raceWins || {};
+    var lanes = schools.map(function (k) {
+      var v = view(k);
+      var w = wins[k] || { catch: 0, escape: 0, draw: 0 };
+      var done = App.raceDone && App.raceDone[k];
+      return '<div class="card" style="flex:1;padding:12px;border-color:' + P.rgba(v.color, .3) + '">'
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        + '<div style="width:26px;height:26px;flex:0 0 auto">' + P.emblem(v.emblem, v.color) + '</div>'
+        + '<div class="title" style="font-size:22px;color:' + (v.sealed ? '#8494ad' : v.color) + '">' + esc(v.short) + '</div>'
+        + '<div style="margin-left:auto;display:flex;gap:8px">'
+        + '<span class="mono" style="font-size:15px;color:var(--cat)">' + w.catch + '</span>'
+        + '<span class="faint">/</span>'
+        + '<span class="mono" style="font-size:15px;color:var(--mouse)">' + w.escape + '</span>'
+        + '<span class="faint mono" style="font-size:12px">' + w.draw + '</span></div></div>'
+        + '<div style="position:relative;width:' + (E.W * RCS) + 'px;height:' + (E.H * RCS) + 'px;border-radius:9px;overflow:hidden;border:1px solid var(--line)">'
+        + '<div id="rmap-' + k + '" style="position:absolute;inset:0"></div>'
+        + '<div id="rfx-' + k + '" style="position:absolute;inset:0"></div>'
+        + (done ? '<div style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,7,12,.55)">'
+            + '<div class="title" style="font-size:22px;letter-spacing:2px;color:'
+            + (done === 'catch' ? 'var(--cat)' : done === 'escape' ? 'var(--gold)' : '#8fa4c4') + '">'
+            + (done === 'catch' ? 'TOM' : done === 'escape' ? 'JERRY' : 'TIME') + '</div></div>' : '')
+        + '</div></div>';
+    }).join('');
+
+    return '<div class="screen">' + backdrop('bg-final', .3)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div><div class="kicker">Same room · same spawns · same noise · three different brains</div>'
+      + '<div class="title" style="font-size:44px;margin-top:4px">SIDE BY SIDE</div></div>'
+      + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:14px;margin-top:14px">' + lanes + '</div>'
+      + raceMatrix(schools)
+      + '<div style="position:relative;display:flex;gap:10px;margin-top:auto;align-items:center">'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
+      + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
+      + '<div class="btn ghost" data-act="race">RESTART · X</div>'
+      + '<div class="dim" style="margin-left:auto;font-size:12.5px">'
+      + 'Arena ' + (((App.runState || {}).level || 0) + 1) + ' of ' + (App.cat ? App.cat.levels.length : 12)
+      + ' &nbsp;·&nbsp; nothing differs between the three panes except the policy.</div></div></div>';
+  }
+
+  /* The same twelve rooms, three schools, one grid. Reading down a column tells you
+     whether a room is hard or whether one school simply solved it — which is the
+     comparison the side-by-side view exists to make. */
+  function raceMatrix(schools) {
+    var n = App.cat ? App.cat.levels.length : 12;
+    var grid = App.raceGrid || {};
+    var head = '<div style="display:flex;gap:4px;margin-left:104px">';
+    for (var i = 0; i < n; i++) {
+      head += '<div class="mono faint" style="flex:1;text-align:center;font-size:9px">'
+        + String(i + 1).padStart(2, '0') + '</div>';
+    }
+    head += '</div>';
+
+    var rows = schools.map(function (k) {
+      var v = view(k);
+      var r = grid[k] || [];
+      var c = r.filter(function (x) { return x === 'catch'; }).length;
+      var m = r.filter(function (x) { return x === 'escape'; }).length;
+      var cells = '';
+      for (var i = 0; i < n; i++) {
+        var x = r[i];
+        cells += '<div style="flex:1;text-align:center;padding:7px 0;border-radius:5px;border:1px solid '
+          + (x === 'catch' ? 'rgba(255,138,92,.36)' : x === 'escape' ? 'rgba(126,224,255,.32)'
+             : x ? 'var(--line)' : 'rgba(130,160,200,.09)')
+          + ';background:' + (x === 'catch' ? 'rgba(255,122,84,.14)' : x === 'escape' ? 'rgba(110,226,255,.12)'
+             : x ? 'rgba(255,255,255,.03)' : 'transparent')
+          + '"><span class="mono" style="font-size:12px;color:'
+          + (x === 'catch' ? '#ff9a72' : x === 'escape' ? '#7ee0ff' : x ? '#8fa4c4' : '#31405a')
+          + '">' + (x === 'catch' ? 'T' : x === 'escape' ? 'J' : x ? '–' : '·') + '</span></div>';
+      }
+      return '<div style="display:flex;align-items:center;gap:4px;margin-top:6px">'
+        + '<div class="mono" style="width:100px;font-size:12px;color:' + (v.sealed ? '#8494ad' : v.color) + '">'
+        + esc(v.short) + '</div>' + cells
+        + '<div class="mono" style="width:78px;text-align:right;font-size:12px">'
+        + '<span style="color:var(--cat)">' + c + '</span><span class="faint">/</span>'
+        + '<span style="color:var(--mouse)">' + m + '</span></div></div>';
+    }).join('');
+
+    return '<div class="card" style="position:relative;margin-top:16px;padding:16px 20px">'
+      + '<div class="mono" style="font-size:10.5px;letter-spacing:1.6px;color:#c9d8ee;margin-bottom:10px">'
+      + 'THE SAME TWELVE ROOMS &nbsp;·&nbsp; T = TOM CAUGHT HER &nbsp; J = JERRY GOT HOME &nbsp; – = TIME</div>'
+      + head + rows + '</div>';
+  }
+
+  function paintRace(now) {
+    if (!App.raceFrames || !App.map) return;
+    var schools = App.raceSchools || ORDER;
+    var local = localMap(App.map);
+    for (var i = 0; i < schools.length; i++) {
+      var k = schools[i];
+      var mh = el('rmap-' + k), fh = el('rfx-' + k);
+      if (!mh || !fh) continue;
+      if (mh.getAttribute('data-k') !== String(App.map.seed)) {
+        mh.setAttribute('data-k', String(App.map.seed));
+        mh.innerHTML = P.mapSvg(local, RCS);
+      }
+      var v = view(k);
+      var fr = App.raceFrames[k], pv = (App.racePrev && App.racePrev[k]) || fr;
+      if (!fr) continue;
+      fh.innerHTML = P.fxSvg({
+        frame: fr, prev: pv, alpha: App.alpha, cs: RCS, map: local,
+        key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color
+      });
+    }
+  }
 
   function renderLesson() {
     var v = view(App.school);
@@ -623,7 +737,8 @@
 
   function render() {
     var html = { menu: renderMenu, gen: renderGen, school: renderSchool, lesson: renderLesson,
-                 verdict: renderVerdict, final: renderFinal, board: renderBoard }[App.screen]();
+                 race: renderRace, verdict: renderVerdict, final: renderFinal,
+                 board: renderBoard }[App.screen]();
     el('root').innerHTML = html;
     App.mapKey = null;                 // force a repaint into the new DOM
     fitStage();
@@ -680,7 +795,8 @@
     if (App.screen === 'gen') genTick(now);
     // Interpolate between the last two frames so movement is smooth at any speed.
     App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
-    if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
+    if (App.screen === 'race') paintRace(now);
+    else if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
     else if (App.screen === 'lesson') paintPanel();
   }
 
@@ -747,6 +863,13 @@
                    levels: H.highlights.map(function (h) { return h.arena; }) });
   }
 
+  function startRace() {
+    App.raceFrames = {}; App.racePrev = {}; App.raceDone = {}; App.raceWins = {}; App.raceGrid = {};
+    App.screen = 'race';
+    render();
+    App.net.send({ cmd: 'race', checkpoint: 'trained' });
+  }
+
   function trainLive() {
     App.mode = 'train';
     App.trainInfo = 'Training live — the panel is this run\'s own telemetry.';
@@ -769,6 +892,7 @@
       else if (a === 'skip') App.net.send({ cmd: 'skip' });
       else if (a === 'train') trainLive();
       else if (a === 'highlights') playHighlights();
+      else if (a === 'race') startRace();
       else if (a === 'school') { App.screen = 'school'; render(); }
     });
 
@@ -779,6 +903,7 @@
       else if (k === 'g') go('gen');
       else if (k === 'b') go('board');
       else if (k === 'h') playHighlights();
+      else if (k === 'x') startRace();
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();
@@ -828,6 +953,28 @@
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
         if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
+      })
+      .on('race', function (m) {
+        App.raceSchools = m.schools;
+        App.raceWins = m.wins;
+        App.racePrev = App.raceFrames || {};
+        var next = {};
+        m.lanes.forEach(function (l) { next[l.school] = l; });
+        App.raceFrames = next;
+        App.alpha = 0;
+        if (m.map) { App.map = m.map; }
+        if ((App.runState || {}).level !== m.level) {
+          App.runState = Object.assign({}, App.runState, { level: m.level });
+          App.raceDone = {};
+          render();
+        }
+      })
+      .on('laneEnd', function (m) {
+        App.raceDone = App.raceDone || {};
+        App.raceDone[m.school] = m.result;
+        App.raceGrid = App.raceGrid || {};
+        (App.raceGrid[m.school] = App.raceGrid[m.school] || [])[m.level] = m.result;
+        render();
       })
       .on('episodeEnd', function (m) {
         App.results[m.level] = m.result;

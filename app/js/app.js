@@ -162,6 +162,8 @@
       + '<div class="btn" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
       + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
+      + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
+          ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
       + '<div class="dim" style="margin-left:auto;font-size:13px">'
       + (ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
                : 'Generate the shared level set first') + '</div></div></div>';

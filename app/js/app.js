@@ -74,6 +74,8 @@
   window.App = App;
 
   ORDER.forEach(function (k) { App.panels[k] = window.Panels.create(k); });
+  App.livePanel = window.Panels.live();
+  App.mode = 'play';           // 'play' shows the live decision, 'train' the explainer
 
   /* ---------------- helpers ---------------- */
 
@@ -327,6 +329,120 @@
       + '<div class="faint" style="text-align:center;font-size:10px;letter-spacing:2px">ROUNDS WON</div></div>';
   }
 
+  function renderVerdict() {
+    var v = view(App.school);
+    var n = App.cat ? App.cat.levels.length : 12;
+    var done = App.results.filter(Boolean);
+    var c = done.filter(function (r) { return r === 'catch'; }).length;
+    var m = done.filter(function (r) { return r === 'escape'; }).length;
+    var d = done.length - c - m;
+    var winner = c > m ? 'TOM' : (m > c ? 'JERRY' : 'SPLIT');
+    var wcol = c > m ? 'var(--cat)' : (m > c ? 'var(--mouse)' : '#c9d8ee');
+
+    // The three checkpoints, scored against the same fixed opponent. This is the curve
+    // that actually shows a student improving — the head-to-head above does not,
+    // because both sides moved at once.
+    var prog = App.cat && App.cat.progression;
+    var bars = '';
+    if (prog) {
+      bars = ['untrained', 'half', 'trained'].map(function (cp) {
+        var row = prog[cp] && prog[cp][App.school];
+        if (!row) return '';
+        return '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">'
+          + '<div class="mono faint" style="width:120px;font-size:10.5px;letter-spacing:1.4px">' + CP_NAME[cp] + '</div>'
+          + '<div style="flex:1"><div style="display:flex;gap:8px;align-items:center">'
+          + '<div style="flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden">'
+          + '<div style="height:100%;width:' + Math.round(row.cat * 100) + '%;background:var(--cat);opacity:.85"></div></div>'
+          + '<div class="mono" style="width:46px;font-size:12px;color:var(--cat)">' + pct(row.cat) + '</div></div>'
+          + '<div style="display:flex;gap:8px;align-items:center;margin-top:5px">'
+          + '<div style="flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden">'
+          + '<div style="height:100%;width:' + Math.round(row.mouse * 100) + '%;background:var(--mouse);opacity:.85"></div></div>'
+          + '<div class="mono" style="width:46px;font-size:12px;color:var(--mouse)">' + pct(row.mouse) + '</div></div></div></div>';
+      }).join('');
+    }
+
+    var strip = App.results.map(function (r, i) {
+      return '<div style="flex:1;text-align:center;padding:8px 0;border-radius:7px;border:1px solid '
+        + (r === 'catch' ? 'rgba(255,138,92,.36)' : r === 'escape' ? 'rgba(126,224,255,.32)' : 'var(--line)')
+        + ';background:' + (r === 'catch' ? 'rgba(255,122,84,.14)' : r === 'escape' ? 'rgba(110,226,255,.12)' : 'rgba(255,255,255,.03)') + '">'
+        + '<div class="mono faint" style="font-size:9px">LV' + String(i + 1).padStart(2, '0') + '</div>'
+        + '<div class="mono" style="font-size:16px;color:' + (r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : '#8fa4c4') + '">'
+        + (r === 'catch' ? 'T' : r === 'escape' ? 'J' : '–') + '</div></div>';
+    }).join('');
+
+    return '<div class="screen">' + backdrop('bg-' + (v.sealed ? 'academy' : App.school), .4)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div style="display:flex;align-items:center;gap:16px">'
+      + '<div style="width:44px;height:44px">' + P.emblem(v.emblem, v.color) + '</div>'
+      + '<div><div class="kicker">School verdict</div>'
+      + '<div class="title" style="font-size:46px;margin-top:4px;color:' + (v.sealed ? '#8494ad' : '#f2f7ff') + '">'
+      + esc(v.short) + ' · ' + winner + '</div></div></div>'
+      + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:18px;margin-top:20px;flex:1">'
+      + '<div class="card" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:18px">'
+      + '<div style="display:flex;gap:14px">'
+      + scoreBox('TOM · CAUGHT HER', c + ' / ' + n, 'var(--cat)')
+      + scoreBox('JERRY · GOT HOME', m + ' / ' + n, 'var(--mouse)')
+      + scoreBox('RAN OUT OF TIME', String(d), '#8fa4c4') + '</div>'
+      + '<div style="display:flex;gap:6px">' + strip + '</div>'
+      + '<div class="dim" style="font-size:13.5px;line-height:1.6">'
+      + 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
+      + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
+      + 'both sides here were raised together, so it says as much about the sparring partner as the student. '
+      + 'The leaderboard settles that.</div>'
+      + trapStory(prog)
+      + '<div style="margin-top:auto;display:flex;gap:10px">'
+      + '<div class="btn" data-act="board">SEE THE LEADERBOARD · B</div>'
+      + '<div class="btn ghost" data-act="menu">BACK TO THE ACADEMY</div></div></div>'
+      + '<div class="card" style="width:520px;padding:24px">'
+      + '<div class="mono" style="font-size:11px;letter-spacing:1.6px;color:#c9d8ee">AGAINST A FIXED OPPONENT, AT EACH CHECKPOINT</div>'
+      + '<div class="faint" style="font-size:11.5px;line-height:1.5;margin:8px 0 18px">'
+      + 'The same Examiner, at a difficulty this school never trained on. Only one side of the room moves, '
+      + 'so this curve measures the student rather than the matchup.</div>'
+      + (bars || '<div class="faint" style="font-size:12px">Run the tournament to fill this in.</div>')
+      + '<div style="display:flex;gap:16px;margin-top:20px">'
+      + '<span class="chip" style="border-color:rgba(255,138,92,.32);color:#ff9a72">TOM · CATCH RATE</span>'
+      + '<span class="chip" style="border-color:rgba(126,224,255,.32);color:#7ee0ff">JERRY · ESCAPE RATE</span></div>'
+      + '</div></div></div>';
+  }
+
+  /* Trap hits per episode, checkpoint by checkpoint. Caution is not a rule in this
+     environment — it is learned, weighted by competence — so this curve falling is the
+     most legible evidence on screen that something was actually learned. */
+  function trapStory(prog) {
+    if (!prog) return '';
+    var rows = ['untrained', 'half', 'trained'].map(function (cp) {
+      return { cp: cp, row: prog[cp] && prog[cp][App.school] };
+    }).filter(function (r) { return r.row; });
+    if (rows.length < 2) return '';
+    var max = 0;
+    rows.forEach(function (r) { max = Math.max(max, r.row.catTraps, r.row.mouseTraps); });
+    max = Math.max(max, 0.2);
+    var first = rows[0].row, last = rows[rows.length - 1].row;
+    var drop = (first.catTraps + first.mouseTraps) - (last.catTraps + last.mouseTraps);
+    return '<div style="border-top:1px solid var(--line);padding-top:16px">'
+      + '<div class="mono" style="font-size:11px;letter-spacing:1.6px;color:#c9d8ee">TRAPS SPRUNG PER EPISODE</div>'
+      + '<div class="faint" style="font-size:11.5px;margin:6px 0 14px;line-height:1.5">'
+      + 'Nothing tells either of them a trap is dangerous. Stepping on one costs five frozen steps, and that is the '
+      + 'only lesson available. ' + (drop > 0.05
+        ? 'Over this school\'s three checkpoints the pair went from ' + (first.catTraps + first.mouseTraps).toFixed(2)
+          + ' snaps an episode down to ' + (last.catTraps + last.mouseTraps).toFixed(2) + '.'
+        : 'On this run the count has not fallen yet — the policies are still clumsy enough to walk into them.')
+      + '</div>'
+      + '<div style="display:flex;gap:22px">' + rows.map(function (r) {
+          return '<div style="flex:1"><div class="mono faint" style="font-size:9.5px;letter-spacing:1.2px;margin-bottom:6px">'
+            + CP_NAME[r.cp] + '</div>'
+            + bar(r.row.catTraps, max, 'var(--cat)') + bar(r.row.mouseTraps, max, 'var(--mouse)') + '</div>';
+        }).join('') + '</div></div>';
+  }
+
+  function bar(v, max, color) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+      + '<div style="flex:1;height:9px;border-radius:5px;background:rgba(255,255,255,.04);overflow:hidden">'
+      + '<div style="height:100%;width:' + Math.round(Math.min(1, v / max) * 100) + '%;background:' + color + ';opacity:.8"></div></div>'
+      + '<div class="mono" style="width:34px;font-size:11px;color:' + color + '">' + v.toFixed(2) + '</div></div>';
+  }
+
   function renderBoard() {
     var t = App.cat && App.cat.tournament;
     if (!t) {
@@ -427,7 +543,7 @@
 
   function render() {
     var html = { menu: renderMenu, gen: renderGen, school: renderSchool,
-                 final: renderFinal, board: renderBoard }[App.screen]();
+                 verdict: renderVerdict, final: renderFinal, board: renderBoard }[App.screen]();
     el('root').innerHTML = html;
     App.mapKey = null;                 // force a repaint into the new DOM
     fitStage();
@@ -468,9 +584,9 @@
   function paintPanel() {
     var host = el('panel');
     if (!host) return;
-    var p = App.panels[App.school];
+    var p = App.mode === 'train' ? App.panels[App.school] : App.livePanel;
     if (!p || !p.draw) return;
-    host.innerHTML = p.draw(760, 420, view(App.school).color);
+    host.innerHTML = p.draw(700, 420, view(App.school).color);
   }
 
   var last = 0;
@@ -519,12 +635,14 @@
     App.results = [];
     App.frame = App.prev = null;
     App.trainInfo = null;
+    App.mode = 'play';
     App.screen = 'school';
     render();
     App.net.send({ cmd: 'play', school: key, checkpoint: App.checkpoint });
   }
 
   function trainLive() {
+    App.mode = 'train';
     App.trainInfo = 'Training live — the panel is this run\'s own telemetry.';
     App.net.send({ cmd: 'train', school: App.school, minutes: 10 });
     render();
@@ -552,6 +670,7 @@
       else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
       else if (k === 'g') go('gen');
       else if (k === 'b') go('board');
+      else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();
       else if (k === 's') App.net.send({ cmd: 'skip' });
@@ -594,6 +713,7 @@
         App.prev = App.frame || m;
         App.frame = m;
         App.alpha = 0;
+        App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
@@ -608,7 +728,13 @@
         render();
       })
       .on('state', function (m) { App.runState = m; App.playing = m.playing !== false; render(); })
-      .on('runEnd', function (m) { App.runState = m; render(); })
+      .on('runEnd', function (m) {
+        App.runState = m;
+        // A school that has finished its twelve arenas goes to its verdict; the final
+        // stays where it is, because its own scoreboard is already on screen.
+        if (App.screen === 'school') App.screen = 'verdict';
+        render();
+      })
       .on('train', function (m) {
         if (m.kind === 'algo') {
           var p = App.panels[m.school];

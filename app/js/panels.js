@@ -333,7 +333,73 @@
     return p.join('');
   };
 
+  /* ---------------- live decision (playback) ---------------- */
+
+  /* While a saved policy is PLAYING there is no optimiser running, so there is no
+     algorithm telemetry to draw. What there is — and what is arguably more interesting
+     on camera — is the network's actual output this step: the five action
+     probabilities for each animal, and which one it drew. This is the closest thing
+     to showing what the brain is thinking, and unlike a "mode" label it is not an
+     interpretation, it is the tensor. */
+  function LivePanel() {
+    this.cat = null; this.mouse = null; this.frame = null;
+  }
+
+  LivePanel.prototype.update = function (frame) {
+    if (!frame) return;
+    this.frame = frame;
+    if (frame.cat && frame.cat.probs) this.catT = frame.cat.probs;
+    if (frame.mouse && frame.mouse.probs) this.mouseT = frame.mouse.probs;
+  };
+
+  LivePanel.prototype.row = function (label, probs, color, y, w, sense) {
+    var p = [], f = function (v) { return (+v).toFixed(1); };
+    var bx = 16, bw = w - 32, bh = 74;
+    p.push('<text x="' + bx + '" y="' + (y - 8) + '" fill="' + color + '" font-size="12" letter-spacing="2" font-weight="700">' + label + '</text>');
+    p.push('<text x="' + (bx + 70) + '" y="' + (y - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">' + sense + '</text>');
+    if (!probs) {
+      p.push('<text x="' + bx + '" y="' + (y + 30) + '" fill="#3d4a60" font-size="12">waiting for the policy…</text>');
+      return p.join('');
+    }
+    var top = 0;
+    for (var i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
+    var slot = bw / probs.length;
+    for (var k = 0; k < probs.length; k++) {
+      var v = Math.max(0, Math.min(1, probs[k]));
+      var hgt = Math.max(2, v * bh);
+      var x = bx + k * slot + slot * 0.12, ww = slot * 0.76;
+      p.push('<rect x="' + f(x) + '" y="' + f(y) + '" width="' + f(ww) + '" height="' + f(bh) + '" rx="3" fill="rgba(255,255,255,.035)"/>');
+      p.push('<rect x="' + f(x) + '" y="' + f(y + bh - hgt) + '" width="' + f(ww) + '" height="' + f(hgt) + '" rx="3" fill="' + color
+        + '" opacity="' + (k === top ? 0.95 : 0.35 + 0.4 * v).toFixed(2) + '"/>');
+      p.push('<text x="' + f(x + ww / 2) + '" y="' + f(y + bh + 14) + '" fill="' + (k === top ? '#e8eef9' : '#61708a')
+        + '" font-size="10" text-anchor="middle" font-family="JetBrains Mono,monospace">' + ACTIONS[k] + '</text>');
+      p.push('<text x="' + f(x + ww / 2) + '" y="' + f(y + bh - hgt - 5) + '" fill="#8fa4c4" font-size="9.5" text-anchor="middle" font-family="JetBrains Mono,monospace">'
+        + Math.round(v * 100) + '</text>');
+    }
+    return p.join('');
+  };
+
+  LivePanel.prototype.draw = function (w, h, accent) {
+    this.cat = easeArr(this.cat, this.catT || [0.2, 0.2, 0.2, 0.2, 0.2], 0.25);
+    this.mouse = easeArr(this.mouse, this.mouseT || [0.2, 0.2, 0.2, 0.2, 0.2], 0.25);
+    var fr = this.frame || { cat: {}, mouse: {} };
+    var p = ['<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'];
+    p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT EACH BRAIN IS ABOUT TO DO</text>');
+    p.push(this.row('TOM', this.catT ? this.cat : null, '#ff8a5c', 62, w,
+      (fr.cat.mode || '—') + (fr.cat.frozen ? '  · frozen ' + fr.cat.frozen : '')));
+    p.push(this.row('JERRY', this.mouseT ? this.mouse : null, '#7ee0ff', 210, w,
+      (fr.mouse.mode || '—') + (fr.mouse.heard ? '  · hears him, confidence ' + fr.mouse.heard.conf.toFixed(2) : '')
+      + (fr.mouse.frozen ? '  · frozen ' + fr.mouse.frozen : '')));
+    p.push('<text x="16" y="' + (h - 26) + '" fill="#7d90ad" font-size="11">'
+      + 'Five bars, five moves. The tall one is what the network wants; the others are how much doubt is left in it.</text>');
+    p.push('<text x="16" y="' + (h - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">'
+      + 'step ' + (fr.step || 0) + '   ' + (fr.nestDist !== undefined ? fr.nestDist + ' cells from home' : '') + '</text>');
+    p.push('</svg>');
+    return p.join('');
+  };
+
   global.Panels = {
+    live: function () { return new LivePanel(); },
     create: function (key) {
       if (key === 'ppo') return new PpoPanel();
       if (key === 'ga') return new GaPanel();

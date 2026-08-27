@@ -68,7 +68,7 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
-    trainInfo: null,
+    trainInfo: null, showKeys: false,
     net: null
   };
   window.App = App;
@@ -735,11 +735,44 @@
 
   /* ---------------- render + hot loop ---------------- */
 
+  /* A cheat sheet, because during a take you will not want to remember which key
+     reveals the next school. Deliberately not a screen — it overlays whatever is
+     running, so nothing has to be interrupted to check it. */
+  var KEYS = [
+    ['1 2 3', 'enter a school'], ['x', 'side by side — all three, same room'],
+    ['g', 'the level generator'], ['l', 'full-screen lesson'],
+    ['h', 'the highlight reel'], ['f', 'the grand final'],
+    ['b', 'the leaderboard'], ['v', 'this school\'s verdict'],
+    ['space', 'pause / resume'], ['s', 'skip this episode'],
+    ['[  ]', 'slower / faster'], ['t', 'train live, on camera'],
+    ['esc', 'back to the academy'], ['?', 'this card'],
+    ['R', 'REVEAL the next school'], ['shift+R', 're-seal one (for a re-shoot)'],
+  ];
+
+  function keyCard() {
+    if (!App.showKeys) return '';
+    return '<div style="position:absolute;inset:0;z-index:50;background:rgba(3,5,10,.82);display:grid;place-items:center">'
+      + '<div class="card" style="padding:34px 44px;min-width:760px">'
+      + '<div class="title" style="font-size:30px;margin-bottom:22px">KEYS</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 44px">'
+      + KEYS.map(function (k) {
+          var hot = k[0] === 'R' || k[0] === 'shift+R';
+          return '<div style="display:flex;gap:16px;align-items:baseline">'
+            + '<span class="mono" style="width:82px;color:' + (hot ? 'var(--gold)' : '#c9d8ee')
+            + ';font-size:14px">' + esc(k[0]) + '</span>'
+            + '<span class="' + (hot ? '' : 'dim') + '" style="font-size:13.5px;color:'
+            + (hot ? 'var(--gold)' : '') + '">' + esc(k[1]) + '</span></div>';
+        }).join('')
+      + '</div><div class="faint" style="font-size:12px;margin-top:26px">'
+      + 'Reveal state survives a reload, so a crash mid-shoot will not unseal the rest of the video.'
+      + '</div></div></div>';
+  }
+
   function render() {
     var html = { menu: renderMenu, gen: renderGen, school: renderSchool, lesson: renderLesson,
                  race: renderRace, verdict: renderVerdict, final: renderFinal,
                  board: renderBoard }[App.screen]();
-    el('root').innerHTML = html;
+    el('root').innerHTML = html + keyCard();
     App.mapKey = null;                 // force a repaint into the new DOM
     fitStage();
   }
@@ -904,6 +937,7 @@
       else if (k === 'b') go('board');
       else if (k === 'h') playHighlights();
       else if (k === 'x') startRace();
+      else if (k === '?' || k === '/') { App.showKeys = !App.showKeys; render(); e.preventDefault(); }
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();

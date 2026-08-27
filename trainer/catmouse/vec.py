@@ -216,9 +216,26 @@ class VecEnv:
     burns one freeze step instead of moving.
     """
 
+    #: Reward shaping. The defaults reproduce env.py exactly, which is what the parity
+    #: test checks. `training_shaping()` swaps in the stronger terms used to LEARN.
+    #:
+    #: Why they need to be stronger: with the spec's coefficients the mouse's best
+    #: available strategy from a cold start is to hide until the step limit. A timeout
+    #: scores 0; being caught scores -1; and running the whole way home only earns
+    #: +0.25 of shaping, which does not cover the risk. Measured over 400 CMA-ES
+    #: generations, the mouse duly learned to hide and never escaped once.
+    #:
+    #: The fix is potential-based shaping (Ng, Harada & Russell): the extra reward is a
+    #: difference of a potential over states, so it cannot create a strategy that was
+    #: not already optimal — it only makes the existing one findable. Scoring is
+    #: untouched: catch, escape and timeout rates are counted exactly as the spec says.
+    SHAPING_DEFAULT = {"mouseApproach": 0.010, "catApproachVisible": 0.012, "catApproachAlways": 0.0}
+    SHAPING_TRAINING = {"mouseApproach": 0.050, "catApproachVisible": 0.012, "catApproachAlways": 0.020}
+
     def __init__(self, maps: MapSet, n: int, seed: int = 0):
         self.M = maps
         self.n = n
+        self.shaping = dict(self.SHAPING_DEFAULT)
         self.rng = np.random.default_rng(seed)
         self.map_idx = np.zeros(n, np.int32)
         self.cat = np.zeros(n, np.int32)
@@ -239,8 +256,21 @@ class VecEnv:
         self.saw_mouse = np.zeros(n, bool)
         self.saw_cat = np.zeros(n, bool)
         self._ar = np.arange(n)
+        # Common random numbers. Population methods lay a batch out as
+        # env = genome * episodes + slot; setting noise_tile = episodes makes every
+        # genome meet the SAME hearing noise in the same slot, so a fitness gap is a
+        # difference in policy rather than a difference in luck.
+        self.noise_tile: int | None = None
+        # Environment steps actually simulated. A finished episode costs nothing, so
+        # only live environments count — this is the budget the three schools share.
+        self.env_steps = 0
 
     # ---------- lifecycle ----------
+
+    def training_shaping(self) -> "VecEnv":
+        """Use the learning-strength shaping. Never used when scoring."""
+        self.shaping = dict(self.SHAPING_TRAINING)
+        return self
 
     def reset(self, map_idx=None) -> None:
         if map_idx is None:
@@ -333,6 +363,92 @@ class VecEnv:
         o[:, IX_CUE:IX_CUE + 4] = self._cue_cat() if role == "cat" else self._cue_mouse()
         return o
 
+    def _draw(self) -> np.ndarray:
+        k = self.noise_tile
+        if not k:
+            return self.rng.random(self.n)
+        return np.tile(self.rng.random(k), self.n // k)
+
+    # ---------- rendering ----------
+
+    def map_payload(self, i: int = 0) -> dict:
+        """The arena, in the shape the visualiser draws. Sent only when it changes."""
+        t = self.M.tables[int(self.map_idx[i])]
+        g = t.grid
+        return {
+            "seed": int(t.seed), "w": W, "h": H,
+            "grid": [int(v) for v in g],
+            "nest": [int(t.nest_cell % W), int(t.nest_cell // W)],
+            "traps": [[int(c % W), int(c // W)] for c in np.flatnonzero(g == S.TRAP)],
+            "optimal": int(t.optimal), "trapsOnRoute": int(t.n_traps_on_route),
+        }
+
+    def render(self, i: int = 0, probs: dict | None = None) -> dict:
+        """One environment as a frame. Cones are cast here rather than stored: the
+        policy only ever needed the 21 ray lengths, but the screen needs the polygon."""
+        t = self.M.tables[int(self.map_idx[i])]
+        g = t.grid
+        cx, cy = int(self.cat[i] % W), int(self.cat[i] // W)
+        mx, my = int(self.mouse[i] % W), int(self.mouse[i] // W)
+        cc, _ = S.cast_cone(g, cx, cy, int(self.cat_face[i]))
+        cm, _ = S.cast_cone(g, mx, my, int(self.mouse_face[i]))
+        sc = self.scent[i]
+        hot = np.flatnonzero(sc > 0.08)
+        out = {
+            "step": int(self.step_n[i]),
+            "result": [None, "catch", "escape", "timeout"][int(self.result[i])],
+            "cat": {
+                "x": cx, "y": cy, "facing": int(self.cat_face[i]),
+                "frozen": int(self.cat_frozen[i]),
+                "cone": [[round(float(a), 3), round(float(b), 3)] for a, b in cc],
+                "sees": bool(self.saw_mouse[i]), "mode": self.cat_mode(i),
+            },
+            "mouse": {
+                "x": mx, "y": my, "facing": int(self.mouse_face[i]),
+                "frozen": int(self.mouse_frozen[i]),
+                "cone": [[round(float(a), 3), round(float(b), 3)] for a, b in cm],
+                "sees": bool(self.saw_cat[i]), "mode": self.mouse_mode(i),
+                "heard": ({"x": round(float(self.heard[i, 0]), 2),
+                           "y": round(float(self.heard[i, 1]), 2),
+                           "conf": round(float(self.heard[i, 2]), 3),
+                           "radius": 1 + (S.HEARING_BASE_NOISE + S.HEARING_DIST_NOISE *
+                                          float(np.hypot(cx - mx, cy - my))) * 7}
+                          if self.heard_on[i] else None),
+            },
+            "scent": [[int(c % W), int(c // W), round(float(sc[c]), 3)] for c in hot],
+            "nestDist": int(t.nest_field[int(self.mouse[i])]),
+        }
+        if probs:
+            for role in ("cat", "mouse"):
+                if role in probs:
+                    out[role]["probs"] = [round(float(v), 4) for v in probs[role]]
+        return out
+
+    def cat_mode(self, i: int) -> str:
+        """What the cat can currently sense, in the UI's vocabulary. Derived from the
+        environment, not from the policy — a network has no mode, so claiming to read
+        its intent would be a lie. The action probabilities carry the real intent."""
+        if self.cat_frozen[i] > 0:
+            return "trapped"
+        if self.saw_mouse[i]:
+            return "chase"
+        d = self.M.dist[self.map_idx[i], self.cat[i]]
+        ok = (d >= 0) & (d <= S.SCENT_RANGE) & (self.scent[i] >= 0.08)
+        if ok.any():
+            return "scent"
+        if self.M.nest_field[self.map_idx[i], self.cat[i]] <= 3:
+            return "camp"
+        return "patrol"
+
+    def mouse_mode(self, i: int) -> str:
+        if self.mouse_frozen[i] > 0:
+            return "trapped"
+        if self.saw_cat[i]:
+            return "evade"
+        if self.heard_on[i]:
+            return "listen"
+        return "dash"
+
     # ---------- dynamics ----------
 
     def step(self, cat_a: np.ndarray, mouse_a: np.ndarray):
@@ -344,6 +460,7 @@ class VecEnv:
         """
         M, mi = self.M, self.map_idx
         live = ~self.done
+        self.env_steps += int(live.sum())
         pcat, pmouse = self.cat.copy(), self.mouse.copy()
         prev_gap = np.hypot(pcat % W - pmouse % W, pcat // W - pmouse // W)
         prev_home = M.nest_field[mi, pmouse].astype(np.float32)
@@ -389,8 +506,8 @@ class VecEnv:
         d_cat = np.hypot(cx - mx, cy - my)
         audible = live & (self.cat_frozen == 0) & (d_cat <= S.HEARING_RANGE)
         noise = S.HEARING_BASE_NOISE + S.HEARING_DIST_NOISE * d_cat
-        jx = (self.rng.random(self.n) - 0.5) * noise * 6
-        jy = (self.rng.random(self.n) - 0.5) * noise * 6
+        jx = (self._draw() - 0.5) * noise * 6
+        jy = (self._draw() - 0.5) * noise * 6
         fresh = np.stack([
             np.clip(cx + jx, 0, W - 1),
             np.clip(cy + jy, 0, H - 1),
@@ -406,8 +523,16 @@ class VecEnv:
 
         new_gap = np.hypot(cx - mx, cy - my)
         new_home = M.nest_field[mi, self.mouse].astype(np.float32)
-        rc += np.where(self.saw_mouse, S.R_CAT_APPROACH * (prev_gap - new_gap), 0)
-        rm += S.R_MOUSE_APPROACH * (prev_home - new_home)
+        sh = self.shaping
+        rc += np.where(self.saw_mouse, sh["catApproachVisible"] * (prev_gap - new_gap), 0)
+        rm += sh["mouseApproach"] * (prev_home - new_home)
+        if sh["catApproachAlways"]:
+            # Walk-distance, not straight-line: closing across a wall is not progress.
+            # Only the reward sees this; the policy still gets the same observation.
+            prev_walk = M.dist[mi, pcat, pmouse].astype(np.float32)
+            new_walk = M.dist[mi, self.cat, self.mouse].astype(np.float32)
+            ok = (prev_walk >= 0) & (new_walk >= 0)
+            rc += np.where(ok, sh["catApproachAlways"] * (prev_walk - new_walk), 0)
         rc += S.R_CAT_STEP
         rm += S.R_MOUSE_STEP
 

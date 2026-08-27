@@ -2,9 +2,27 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "app",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8778",
+        "--directory",
+        "app"
+      ],
+      "port": 8778
+    },
+    {
       "name": "viz",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8777", "--directory", "viz"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8777",
+        "--directory",
+        "viz"
+      ],
       "port": 8777
     }
   ]

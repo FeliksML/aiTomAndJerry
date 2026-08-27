@@ -1,0 +1,639 @@
+/* The recording app.
+ *
+ * Screens: menu -> level generator -> school -> verdict -> grand final -> leaderboard.
+ * The arena and the algorithm panels are driven live by the Python trainer over a
+ * WebSocket; everything else is local so the page still works with the trainer down.
+ *
+ * Two things are deliberate and worth keeping:
+ *
+ *  - The canvas is a fixed 1920x1080 scaled by a transform. Recording is then exact
+ *    and identical whatever window it is previewed in.
+ *  - Every read of a school's identity goes through Reveal.view(). A screen cannot
+ *    leak a sealed school by forgetting to check, because there is nothing to forget.
+ *
+ * Keys: 1 2 3 schools · g generator · f final · b leaderboard · esc menu
+ *       space pause · enter continue · s skip episode · [ ] speed · t train live
+ *       r reveal next school · shift+R re-seal one
+ */
+(function () {
+  'use strict';
+
+  var E = window.CatMouseEnv;
+  var P = window.Paint;
+
+  var ALGOS = {
+    ppo: {
+      key: 'ppo', short: 'PPO', full: 'Proximal Policy Optimization',
+      line: 'gradient · clipped trust region',
+      color: '#4ea8ff', light: '#a6d3ff', deep: '#0a2544',
+      blurb: 'Gradient school. Every update is scored, then deliberately held back — the '
+        + 'new policy is never allowed to stray far from the one that collected the data.',
+      specs: [['OPTIMISER', 'policy gradient, clipped'], ['BATCH', '512 arenas × 128 steps'],
+              ['SIGNATURE', 'steady, low-variance climb']]
+    },
+    ga: {
+      key: 'ga', short: 'GA', full: 'Genetic Algorithm',
+      line: 'population 48 · elitism · tournament selection',
+      color: '#3ddc84', light: '#9af0be', deep: '#08331f',
+      blurb: 'No gradients at all. Forty-eight whole brains a generation; the ones that '
+        + 'survived the room breed, their children are a coin-flip mix with a few weights nudged.',
+      specs: [['POPULATION', '48 individuals'], ['OPERATORS', 'uniform crossover + sparse mutation'],
+              ['SIGNATURE', 'plateaus, then generational leaps']]
+    },
+    cmaes: {
+      key: 'cmaes', short: 'CMA-ES', full: 'Covariance Matrix Adaptation',
+      line: 'σ-adaptation · λ=32 · separable (diagonal)',
+      color: '#a97cff', light: '#cdb2ff', deep: '#26134d',
+      blurb: 'Fits a Gaussian over strategies and moves the whole distribution toward '
+        + 'whatever worked — widening along directions that keep paying off, narrowing where they do not.',
+      specs: [['LAMBDA', '32 samples per generation'], ['UPDATE', 'σ-adaptation, rank-μ, diagonal C'],
+              ['SIGNATURE', 'shape-aware search']]
+    }
+  };
+  var ORDER = ['ppo', 'ga', 'cmaes'];
+  var CP = ['untrained', 'half', 'trained'];
+  var CP_NAME = { untrained: 'UNTRAINED', half: 'HALF-TRAINED', trained: 'TRAINED' };
+  var CS = 44;
+
+  var App = {
+    screen: 'menu',
+    school: 'ppo',
+    checkpoint: 'trained',
+    speed: 4,
+    playing: true,
+    link: 'offline',
+    cat: null,                 // catalogue from the trainer
+    frame: null, prev: null, map: null, alpha: 1, mapKey: null,
+    results: [], runState: null,
+    levels: [], genIndex: 0, lastGen: 0,
+    panels: {}, lastTel: {},
+    banner: null, bannerAt: 0,
+    trainInfo: null,
+    net: null
+  };
+  window.App = App;
+
+  ORDER.forEach(function (k) { App.panels[k] = window.Panels.create(k); });
+
+  /* ---------------- helpers ---------------- */
+
+  function el(id) { return document.getElementById(id); }
+  function pct(v) { return (v === undefined || v === null || isNaN(v)) ? '—' : Math.round(v * 100) + '%'; }
+  function esc(s) { return String(s === undefined ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function view(key) { return window.Reveal.view(ALGOS[key]); }
+
+  /* Centre by translating half the canvas back before scaling, rather than relying on
+     flex/grid centring — a 1920-wide child inside a narrower box gets clipped at the
+     start edge, which silently cuts the left of every frame. */
+  function fitStage() {
+    var r = el('root');
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    r.style.transform = 'translate(' + (-960 * s) + 'px,' + (-540 * s) + 'px) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fitStage);
+
+  function backdrop(name, opacity) {
+    return '<div class="backdrop" style="background-image:url(assets/' + name + '.png);opacity:' + (opacity || 0.5) + '"></div>'
+      + '<div class="veil"></div><div class="grid-lines"></div>';
+  }
+
+  function statusChip() {
+    var cls = App.link === 'live' ? 'link-live' : (App.link === 'connecting' ? 'link-wait' : 'link-off');
+    var txt = App.link === 'live' ? 'TRAINER LIVE' : (App.link === 'connecting' ? 'CONNECTING' : 'TRAINER OFFLINE');
+    return '<span class="chip"><span class="link-dot ' + cls + '"></span>' + txt + '</span>';
+  }
+
+  function revealChip() {
+    var lv = window.Reveal.level;
+    return '<span class="chip" style="border-color:rgba(255,209,102,.3);color:#ffd166">REVEAL ' + (lv + 1) + ' / '
+      + (window.Reveal.max + 1) + ' &nbsp;·&nbsp; R</span>';
+  }
+
+  /* ---------------- screens ---------------- */
+
+  function renderMenu() {
+    var ready = App.levels.length >= 12;
+    var cards = ORDER.map(function (k, i) {
+      var v = view(k);
+      var prog = (App.cat && App.cat.tournament) ? App.cat.tournament : null;
+      var anchor = prog && prog.anchor && prog.anchor[k];
+      var art = v.sealed
+        ? '<div class="sealed-art" style="position:absolute;inset:0;background-image:url(assets/school-' + k + '.png);background-size:contain;background-position:center;background-repeat:no-repeat"></div>'
+          + '<div class="sealed-plate"><div class="sealed-tag">CLASSIFIED</div></div>'
+        : '<div style="position:absolute;inset:0;background-image:url(assets/school-' + k + '.png);background-size:contain;background-position:center;background-repeat:no-repeat"></div>'
+          + '<div style="position:absolute;inset:0;background:radial-gradient(70% 78% at 50% 46%,'
+          + P.rgba(v.color, .22) + ' 0%,' + P.rgba(v.color, .06) + ' 45%,rgba(0,0,0,0) 78%);mix-blend-mode:screen"></div>';
+      return '<div class="card" data-school="' + k + '" style="flex:1;display:flex;flex-direction:column;border-color:'
+        + P.rgba(v.color, v.sealed ? .18 : .34) + ';cursor:pointer">'
+        + '<div style="height:4px;background:' + v.color + ';opacity:' + (v.sealed ? .3 : .9) + '"></div>'
+        + '<div style="display:flex;justify-content:space-between;padding:14px 18px 0">'
+        + '<span class="chip">SCHOOL 0' + (i + 1) + '</span>'
+        + '<span class="chip" style="border-color:' + P.rgba(v.color, .32) + ';color:' + v.light + '">'
+        + (v.sealed ? 'SEALED' : (anchor ? 'GRADUATED' : 'READY')) + '</span></div>'
+        + '<div style="position:relative;height:250px;margin:8px 0">' + art + '</div>'
+        + '<div style="padding:0 22px 20px;display:flex;flex-direction:column;gap:12px;flex:1">'
+        + '<div style="display:flex;align-items:baseline;gap:12px">'
+        + '<span class="title" style="font-size:44px;color:' + (v.sealed ? '#8494ad' : v.color) + '">' + esc(v.short) + '</span>'
+        + '<span class="' + (v.sealed ? 'scramble' : 'dim') + '" style="font-size:13px;font-weight:600">' + esc(v.full) + '</span></div>'
+        + '<div class="dim" style="font-size:14px;line-height:1.5;min-height:63px">' + esc(v.blurb) + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px">'
+        + v.specs.map(function (r) {
+            return '<div style="display:flex;gap:14px;font-size:12px"><span class="faint mono" style="width:96px;letter-spacing:1px">'
+              + esc(r[0]) + '</span><span class="mono" style="color:#c9d8ee">' + esc(r[1]) + '</span></div>';
+          }).join('')
+        + '</div>'
+        + '<div style="display:flex;gap:10px;margin-top:auto">'
+        + scoreBox('TOM', anchor ? pct(anchor.cat.catch) : '—', 'var(--cat)')
+        + scoreBox('JERRY', anchor ? pct(anchor.mouse.escape) : '—', 'var(--mouse)')
+        + '</div></div></div>';
+    }).join('');
+
+    return '<div class="screen">' + backdrop('bg-academy', .55)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div><div class="kicker">Reinforcement learning · pursuit and evasion</div>'
+      + '<div class="title" style="font-size:62px;margin-top:6px">CAT &amp; MOUSE ACADEMY</div></div>'
+      + '<div style="display:flex;gap:10px;align-items:center">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:18px;margin-top:18px;flex:1">' + cards + '</div>'
+      + '<div style="position:relative;display:flex;gap:12px;align-items:center;margin-top:16px">'
+      + '<div class="btn" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
+      + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
+      + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
+      + '<div class="dim" style="margin-left:auto;font-size:13px">'
+      + (ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
+               : 'Generate the shared level set first') + '</div></div></div>';
+  }
+
+  function scoreBox(label, value, color) {
+    return '<div class="card" style="flex:1;padding:10px 14px;border-radius:10px">'
+      + '<div style="width:16px;height:2px;background:' + color + ';margin-bottom:8px"></div>'
+      + '<div class="mono" style="font-size:20px">' + value + '</div>'
+      + '<div class="faint" style="font-size:10px;letter-spacing:1.6px;margin-top:2px">' + label + '</div></div>';
+  }
+
+  function renderGen() {
+    var slots = [];
+    for (var i = 0; i < 12; i++) {
+      var lv = App.levels[i];
+      var seeding = !lv && i === App.levels.length;
+      slots.push('<div class="card" style="padding:8px;opacity:' + (lv || seeding ? 1 : .45)
+        + ';border-color:' + (seeding ? 'rgba(126,232,255,.4)' : 'var(--line)') + '">'
+        + '<div style="display:flex;justify-content:space-between;font-size:10px" class="mono">'
+        + '<span style="color:' + (lv ? '#c9d8ee' : (seeding ? '#7ee0ff' : '#4f6280')) + '">LEVEL ' + String(i + 1).padStart(2, '0') + '</span>'
+        + '<span class="faint">' + (lv ? '#' + (lv.seed % 100000) : (seeding ? 'seeding' : 'queued')) + '</span></div>'
+        + '<div id="lv' + i + '" style="margin:6px 0 4px;position:relative;overflow:hidden">'
+        + (seeding ? '<div style="position:absolute;left:0;right:0;height:2px;background:#7ee0ff;animation:scan 1.1s linear infinite"></div>' : '')
+        + '</div>'
+        + '<div class="faint" style="font-size:10px">' + (lv ? lv.route + ' cells · ' + lv.onRoute + ' traps on route' : '&nbsp;') + '</div></div>');
+    }
+    var rules = [
+      ['ONE ROOM, MANY SHAPES', 'Seven cover blocks and ten pillars, reseeded until 94% of the floor is one connected region.'],
+      ['TWO WAYS HOME', 'The hole always has two independent approaches, so camping it can never be unbeatable.'],
+      ['TRAPS ON THE WALKED PATH', 'Three of six traps sit on her shortest route and two flank it — a hazard off the path is never learned.'],
+      ['A REAL CHANCE FOR BOTH', 'She spawns 21–32 cells from home; he spawns at least 10 from her and within 17 of the hole.'],
+      ['SHARED BY EVERY SCHOOL', 'The same seeds train all three. Nobody gets to memorise one room.']
+    ].map(function (r) {
+      return '<div style="margin-bottom:16px"><div class="mono" style="font-size:11px;letter-spacing:1.6px;color:#c9d8ee">' + r[0] + '</div>'
+        + '<div class="faint" style="font-size:12.5px;line-height:1.5;margin-top:4px">' + r[1] + '</div></div>';
+    }).join('');
+
+    return '<div class="screen">' + backdrop('bg-academy', .35)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div><div class="kicker">Shared level set</div>'
+      + '<div class="title" style="font-size:46px;margin-top:6px">THE ARENAS</div></div>'
+      + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:22px;margin-top:16px;flex:1">'
+      + '<div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:min-content;gap:12px">' + slots.join('') + '</div>'
+      + '<div class="card" style="width:400px;padding:22px">' + rules + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:12px;margin-top:14px;align-items:center">'
+      + '<div class="btn" data-act="menu">BACK TO THE ACADEMY</div>'
+      + '<div class="dim" style="font-size:13px">' + (App.levels.length >= 12
+        ? 'Level set complete — ' + App.levels.reduce(function (a, l) { return a + l.onRoute; }, 0) + ' traps sitting on a walked route.'
+        : 'Building arena ' + Math.min(12, App.levels.length + 1) + ' of 12.') + '</div></div></div>';
+  }
+
+  function renderSchool() {
+    var v = view(App.school);
+    var accent = v.color;
+    var n = App.cat ? App.cat.levels.length : 12;
+    var st = App.runState || {};
+    var done = App.results.filter(Boolean);
+    var catch_ = done.filter(function (r) { return r === 'catch'; }).length;
+    var esc_ = done.filter(function (r) { return r === 'escape'; }).length;
+
+    var pills = CP.map(function (c) {
+      var on = App.checkpoint === c;
+      return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
+        + (on ? 'background:' + P.rgba(accent, .18) + ';border-color:' + P.rgba(accent, .45) + ';color:#dceaff' : '') + '">'
+        + CP_NAME[c] + '</div>';
+    }).join('');
+
+    var strip = [];
+    for (var i = 0; i < n; i++) {
+      var r = App.results[i];
+      var live = st.level === i && App.screen === 'school';
+      strip.push('<div style="flex:1;text-align:center;padding:5px 0;border-radius:6px;border:1px solid '
+        + (r === 'catch' ? 'rgba(255,138,92,.36)' : r === 'escape' ? 'rgba(126,224,255,.32)' : r ? 'var(--line)' : (live ? 'rgba(124,188,255,.5)' : 'rgba(130,160,200,.1)'))
+        + ';background:' + (r === 'catch' ? 'rgba(255,122,84,.14)' : r === 'escape' ? 'rgba(110,226,255,.12)' : r ? 'rgba(255,255,255,.04)' : (live ? 'rgba(124,188,255,.16)' : 'rgba(255,255,255,.02)'))
+        + '"><div class="mono" style="font-size:9px;color:var(--faint)">LV' + String(i + 1).padStart(2, '0') + '</div>'
+        + '<div class="mono" style="font-size:13px;color:'
+        + (r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : r ? '#8fa4c4' : (live ? '#f2f7ff' : '#3d4a60')) + '">'
+        + (r === 'catch' ? 'T' : r === 'escape' ? 'J' : r ? '–' : (live ? '▸' : '·')) + '</div></div>');
+    }
+
+    var f = App.frame;
+    var mode = f ? (f.cat.mode + ' · ' + f.mouse.mode) : '—';
+
+    return '<div class="screen">' + backdrop('bg-' + (v.sealed ? 'academy' : App.school), .32)
+      + '<div style="position:relative;display:flex;align-items:center;gap:18px">'
+      + '<div style="width:46px;height:46px;opacity:' + (v.sealed ? .5 : 1) + '">' + P.emblem(v.emblem, accent) + '</div>'
+      + '<div><div class="title" style="font-size:34px;color:' + (v.sealed ? '#8494ad' : '#f2f7ff') + '">'
+      + esc(v.short) + ' SCHOOL</div><div class="' + (v.sealed ? 'scramble' : 'dim') + '" style="font-size:12px">' + esc(v.line) + '</div></div>'
+      + '<div style="display:flex;gap:8px;margin-left:24px">' + pills + '</div>'
+      + '<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
+      + '<span class="chip">' + App.speed + '× &nbsp;[ ]</span>' + revealChip() + statusChip() + '</div></div>'
+
+      + '<div style="position:relative;display:flex;gap:18px;margin-top:14px;flex:1">'
+      + '<div style="position:relative;width:' + (E.W * CS) + 'px;flex:0 0 auto">'
+      + '<div id="arena" style="position:relative;width:' + (E.W * CS) + 'px;height:' + (E.H * CS) + 'px;border-radius:12px;overflow:hidden;border:1px solid var(--line)">'
+      + '<div id="arena-map" style="position:absolute;inset:0"></div>'
+      + '<div id="arena-fx" style="position:absolute;inset:0"></div>'
+      + '<div id="arena-banner"></div></div>'
+      + '<div style="display:flex;gap:4px;margin-top:10px">' + strip.join('') + '</div></div>'
+
+      + '<div style="flex:1;display:flex;flex-direction:column;gap:12px;min-width:0">'
+      + '<div style="display:flex;gap:12px">'
+      + scoreBox('TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
+      + scoreBox('JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
+      + scoreBox('ARENA', ((st.level || 0) + 1) + ' / ' + n, 'var(--gold)') + '</div>'
+      + '<div class="card" style="padding:14px 18px">'
+      + '<div class="faint mono" style="font-size:10px;letter-spacing:1.6px">WHAT THEY CAN SENSE RIGHT NOW</div>'
+      + '<div id="thought" class="mono" style="font-size:15px;margin-top:6px;color:#c9d8ee">' + esc(mode) + '</div></div>'
+      + '<div class="card" style="flex:1;padding:6px;position:relative;min-height:0">'
+      + (v.sealed
+        ? '<div class="sealed-plate" style="border-radius:12px"><div style="text-align:center"><div class="sealed-tag">METHOD CLASSIFIED</div>'
+          + '<div class="faint" style="font-size:12px;margin-top:12px">The explainer for this school is sealed until it is introduced.</div></div></div>'
+        : '<div id="panel" style="width:100%;height:100%"></div>')
+      + '</div></div></div>'
+
+      + '<div style="position:relative;display:flex;gap:10px;margin-top:12px;align-items:center">'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
+      + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
+      + '<div class="btn ghost" data-act="skip">SKIP EPISODE · S</div>'
+      + '<div class="btn ghost" data-act="train">TRAIN LIVE · T</div>'
+      + '<div class="dim" style="margin-left:auto;font-size:12px">'
+      + (App.trainInfo ? esc(App.trainInfo) : 'Frames are streaming from the trained policy — nothing here is scripted.')
+      + '</div></div></div>';
+  }
+
+  function renderFinal() {
+    var t = App.cat && App.cat.tournament;
+    var st = App.runState || {};
+    var ck = st.catSchool || (t && t.champion.cat) || 'ppo';
+    var mk = st.mouseSchool || (t && t.champion.mouse) || 'ppo';
+    var cv = view(ck), mv = view(mk);
+    var wins = st.wins || { cat: 0, mouse: 0, draw: 0 };
+    return '<div class="screen">' + backdrop('bg-final', .5)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div><div class="kicker">Champion versus champion · an arena neither has seen</div>'
+      + '<div class="title" style="font-size:50px;margin-top:6px">THE GRAND FINAL</div></div>'
+      + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:20px;margin-top:14px;flex:1;align-items:flex-start">'
+      + finalist('TOM', cv, wins.cat, 'cat')
+      + '<div style="position:relative;width:' + (E.W * CS) + 'px;flex:0 0 auto">'
+      + '<div id="arena" style="position:relative;width:' + (E.W * CS) + 'px;height:' + (E.H * CS) + 'px;border-radius:12px;overflow:hidden;border:1px solid var(--line)">'
+      + '<div id="arena-map" style="position:absolute;inset:0"></div>'
+      + '<div id="arena-fx" style="position:absolute;inset:0"></div>'
+      + '<div id="arena-banner"></div></div>'
+      + '<div class="dim" style="text-align:center;margin-top:10px;font-size:13px">Round ' + ((st.level || 0) + 1)
+      + ' of ' + (st.levels || 5) + ' &nbsp;·&nbsp; draws ' + wins.draw + '</div></div>'
+      + finalist('JERRY', mv, wins.mouse, 'mouse')
+      + '</div>'
+      + '<div style="position:relative;display:flex;gap:10px;margin-top:10px">'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
+      + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE' : 'RESUME') + '</div>'
+      + '<div class="btn ghost" data-act="board">LEADERBOARD · B</div></div></div>';
+  }
+
+  function finalist(name, v, wins, role) {
+    return '<div class="card" style="flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;border-color:' + P.rgba(v.color, .3) + '">'
+      + '<div style="display:flex;align-items:center;gap:12px">'
+      + '<div style="width:34px;height:34px">' + P.emblem(v.emblem, v.color) + '</div>'
+      + '<div><div class="title" style="font-size:30px;color:' + (role === 'cat' ? 'var(--cat)' : 'var(--mouse)') + '">' + name + '</div>'
+      + '<div class="' + (v.sealed ? 'scramble' : 'dim') + '" style="font-size:12px">' + esc(v.short) + ' school</div></div></div>'
+      + '<div style="height:190px">' + P.portrait(role, v.color, 130) + '</div>'
+      + '<div class="mono" style="font-size:44px;text-align:center">' + wins + '</div>'
+      + '<div class="faint" style="text-align:center;font-size:10px;letter-spacing:2px">ROUNDS WON</div></div>';
+  }
+
+  function renderBoard() {
+    var t = App.cat && App.cat.tournament;
+    if (!t) {
+      return '<div class="screen">' + backdrop('bg-academy', .4)
+        + '<div style="position:relative"><div class="title" style="font-size:46px">LEADERBOARD</div>'
+        + '<div class="dim" style="margin-top:14px;font-size:15px">No tournament has been run for this training run yet.<br>'
+        + 'Run <span class="mono">python trainer/scripts/tournament_run.py --run runs/latest</span> and reload.</div>'
+        + '<div class="btn ghost" style="margin-top:24px" data-act="menu">ESC · ACADEMY</div></div></div>';
+    }
+    var schools = t.schools;
+    var head = '<tr><th></th>' + schools.map(function (m) {
+      var v = view(m);
+      return '<th style="color:' + v.color + '">' + esc(v.short) + ' mouse</th>';
+    }).join('') + '<th>SCORE</th><th>vs EXAMINER</th></tr>';
+
+    var rows = schools.map(function (c) {
+      var v = view(c);
+      var s = t.catScore[c];
+      var a = t.anchor[c].cat;
+      return '<tr><th style="color:' + v.color + ';text-align:right">' + esc(v.short) + ' cat</th>'
+        + schools.map(function (m) {
+            var cell = t.cross[c][m];
+            return '<td' + (c === m ? ' class="you"' : '') + '>' + pct(cell.catch) + '</td>';
+          }).join('')
+        + '<td style="color:#e8eef9;font-weight:700">' + pct(s.rate)
+        + '<span class="ci">' + pct(s.lo) + '–' + pct(s.hi) + '</span></td>'
+        + '<td class="dim">' + pct(a.catch) + '</td></tr>';
+    }).join('');
+
+    var mrows = schools.map(function (m) {
+      var v = view(m);
+      var s = t.mouseScore[m];
+      var a = t.anchor[m].mouse;
+      return '<tr><th style="color:' + v.color + ';text-align:right">' + esc(v.short) + ' mouse</th>'
+        + schools.map(function (c) {
+            var cell = t.cross[c][m];
+            return '<td' + (c === m ? ' class="you"' : '') + '>' + pct(cell.escape) + '</td>';
+          }).join('')
+        + '<td style="color:#e8eef9;font-weight:700">' + pct(s.rate)
+        + '<span class="ci">' + pct(s.lo) + '–' + pct(s.hi) + '</span></td>'
+        + '<td class="dim">' + pct(a.escape) + '</td></tr>';
+    }).join('');
+
+    var champCat = view(t.champion.cat), champMouse = view(t.champion.mouse);
+    var contested = (t.contested.cat.length || t.contested.mouse.length);
+
+    var budgets = '';
+    if (App.cat.budgets) {
+      budgets = '<div style="display:flex;gap:12px;margin-top:14px">' + schools.map(function (s) {
+        var b = App.cat.budgets[s], v = view(s);
+        if (!b) return '';
+        return '<div class="card" style="flex:1;padding:12px 16px"><div class="mono" style="font-size:11px;color:'
+          + v.color + '">' + esc(v.short) + '</div>'
+          + '<div class="mono" style="font-size:17px;margin-top:6px">' + (b.envSteps / 1e6).toFixed(1) + 'M steps</div>'
+          + '<div class="faint" style="font-size:10.5px;margin-top:2px">' + Math.round(b.wall / 60) + ' min · '
+          + b.iters + ' updates</div></div>';
+      }).join('') + '</div>';
+    }
+
+    return '<div class="screen">' + backdrop('bg-final', .35)
+      + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
+      + '<div><div class="kicker">Every cat against every mouse · arenas nobody trained on</div>'
+      + '<div class="title" style="font-size:48px;margin-top:6px">THE LEADERBOARD</div></div>'
+      + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:22px;margin-top:18px;flex:1">'
+      + '<div class="card" style="padding:20px 24px"><table class="grid">' + head + rows + mrows + '</table>'
+      + '<div class="faint" style="font-size:11.5px;margin-top:14px;max-width:760px;line-height:1.6">'
+      + 'Each cell is ' + t.episodesPerPair + ' episodes on ' + t.arenas.length + ' held-out arenas. '
+      + 'SCORE is the mean against the whole field — the shaded diagonal is a school playing itself, which is the number '
+      + 'that flatters a school with a weak sparring partner. Ranges are 95% intervals.'
+      + '</div></div>'
+      + '<div style="flex:1;display:flex;flex-direction:column;gap:14px">'
+      + champBox('BEST TOM', champCat, pct(t.catScore[t.champion.cat].rate), 'cat')
+      + champBox('BEST JERRY', champMouse, pct(t.mouseScore[t.champion.mouse].rate), 'mouse')
+      + (contested ? '<div class="card" style="padding:14px 18px;border-color:rgba(255,209,102,.3)">'
+          + '<div class="mono" style="font-size:11px;color:var(--gold);letter-spacing:1.4px">TOO CLOSE TO CALL</div>'
+          + '<div class="faint" style="font-size:12px;margin-top:6px;line-height:1.5">'
+          + 'The intervals overlap, so this margin is not evidence. '
+          + (t.contested.cat.length ? 'Cat: ' + t.contested.cat.map(function (s) { return view(s).short; }).join(', ') + '. ' : '')
+          + (t.contested.mouse.length ? 'Mouse: ' + t.contested.mouse.map(function (s) { return view(s).short; }).join(', ') + '.' : '')
+          + '</div></div>' : '')
+      + budgets + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:10px;margin-top:12px">'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
+      + '<div class="btn" data-act="final">RUN THE GRAND FINAL · F</div></div></div>';
+  }
+
+  function champBox(label, v, score, role) {
+    return '<div class="card" style="padding:18px 20px;display:flex;gap:16px;align-items:center;border-color:' + P.rgba(v.color, .35) + '">'
+      + '<div style="width:96px;height:96px;flex:0 0 auto">' + P.portrait(role, v.color, 78) + '</div>'
+      + '<div><div class="faint" style="font-size:10px;letter-spacing:2px">' + label + '</div>'
+      + '<div class="title" style="font-size:32px;color:' + (v.sealed ? '#8494ad' : v.color) + ';margin-top:4px">' + esc(v.short) + '</div>'
+      + '<div class="mono" style="font-size:22px;margin-top:6px">' + score + '</div>'
+      + '<div class="faint" style="font-size:10.5px">against the whole field</div></div></div>';
+  }
+
+  /* ---------------- render + hot loop ---------------- */
+
+  function render() {
+    var html = { menu: renderMenu, gen: renderGen, school: renderSchool,
+                 final: renderFinal, board: renderBoard }[App.screen]();
+    el('root').innerHTML = html;
+    App.mapKey = null;                 // force a repaint into the new DOM
+    fitStage();
+  }
+
+  function paintArena(now) {
+    var host = el('arena-map'), fx = el('arena-fx');
+    if (!host || !fx || !App.map) return;
+    var key = App.map.seed + ':' + App.map.nest.join(',');
+    if (App.mapKey !== key) {
+      App.mapKey = key;
+      host.innerHTML = P.mapSvg(localMap(App.map), CS);
+    }
+    if (!App.frame) return;
+    var v = view(App.screen === 'final' ? (App.runState && App.runState.catSchool) || App.school : App.school);
+    var mv = view(App.screen === 'final' ? (App.runState && App.runState.mouseSchool) || App.school : App.school);
+    fx.innerHTML = P.fxSvg({
+      frame: App.frame, prev: App.prev, alpha: App.alpha, cs: CS, map: App.map,
+      key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color
+    });
+    var b = el('arena-banner');
+    if (b) {
+      b.innerHTML = App.banner && now - App.bannerAt < 3200
+        ? '<div class="banner" style="color:' + App.banner.c + '">' + App.banner.t + '</div>' : '';
+    }
+  }
+
+  /* The trainer sends a flat grid; the painters want the richer local shape (blocks,
+     pillars, spawns). Regenerating from the seed is exact — the Python port is verified
+     bit-for-bit against this same env.js — so the two always agree. */
+  function localMap(payload) {
+    if (payload._local) return payload._local;
+    var m = E.genMap(payload.seed >>> 0);
+    payload._local = m;
+    return m;
+  }
+
+  function paintPanel() {
+    var host = el('panel');
+    if (!host) return;
+    var p = App.panels[App.school];
+    if (!p || !p.draw) return;
+    host.innerHTML = p.draw(760, 420, view(App.school).color);
+  }
+
+  var last = 0;
+  function loop(now) {
+    requestAnimationFrame(loop);
+    var dt = now - (last || now); last = now;
+    if (App.screen === 'gen') genTick(now);
+    // Interpolate between the last two frames so movement is smooth at any speed.
+    App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
+    if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
+  }
+
+  function genTick(now) {
+    if (App.levels.length >= 12) return;
+    if (now - App.lastGen < 300) return;
+    App.lastGen = now;
+    var seeds = App.cat ? App.cat.levels.map(function (l) { return l.seed; }) : null;
+    var seed = seeds ? seeds[App.levels.length] : (20260826 + App.levels.length * 911);
+    var m = E.genMap(seed >>> 0);
+    var on = {};
+    (m.route || []).forEach(function (p) { on[p[0] + ',' + p[1]] = 1; });
+    App.levels.push({
+      seed: seed >>> 0, map: m, route: m.optimal,
+      onRoute: m.traps.filter(function (t) { return on[t[0] + ',' + t[1]]; }).length
+    });
+    render();
+    var host = el('lv' + (App.levels.length - 1));
+    if (host) host.innerHTML = P.mapSvg(m, 11);
+    for (var i = 0; i < App.levels.length; i++) {
+      var h2 = el('lv' + i);
+      if (h2 && !h2.querySelector('svg')) h2.innerHTML = P.mapSvg(App.levels[i].map, 11);
+    }
+  }
+
+  /* ---------------- commands ---------------- */
+
+  function go(screen) {
+    App.screen = screen;
+    if (screen === 'gen') { App.levels = []; App.lastGen = 0; }
+    render();
+  }
+
+  function playSchool(key, cp) {
+    App.school = key;
+    App.checkpoint = cp || App.checkpoint;
+    App.results = [];
+    App.frame = App.prev = null;
+    App.trainInfo = null;
+    App.screen = 'school';
+    render();
+    App.net.send({ cmd: 'play', school: key, checkpoint: App.checkpoint });
+  }
+
+  function trainLive() {
+    App.trainInfo = 'Training live — the panel is this run\'s own telemetry.';
+    App.net.send({ cmd: 'train', school: App.school, minutes: 10 });
+    render();
+  }
+
+  function bind() {
+    el('root').addEventListener('click', function (e) {
+      var t = e.target.closest('[data-act],[data-school],[data-cp]');
+      if (!t) return;
+      if (t.dataset.school) { playSchool(t.dataset.school); return; }
+      if (t.dataset.cp) { playSchool(App.school, t.dataset.cp); return; }
+      var a = t.dataset.act;
+      if (a === 'menu') go('menu');
+      else if (a === 'gen') go('gen');
+      else if (a === 'board') go('board');
+      else if (a === 'final') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
+      else if (a === 'pause') { App.playing = !App.playing; App.net.send({ cmd: App.playing ? 'resume' : 'pause' }); render(); }
+      else if (a === 'skip') App.net.send({ cmd: 'skip' });
+      else if (a === 'train') trainLive();
+    });
+
+    window.addEventListener('keydown', function (e) {
+      var k = (e.key || '').toLowerCase();
+      if (k === 'escape') go('menu');
+      else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
+      else if (k === 'g') go('gen');
+      else if (k === 'b') go('board');
+      else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
+      else if (k === 't') trainLive();
+      else if (k === 's') App.net.send({ cmd: 'skip' });
+      else if (e.code === 'Space') {
+        e.preventDefault();
+        App.playing = !App.playing;
+        App.net.send({ cmd: App.playing ? 'resume' : 'pause' });
+        render();
+      } else if (k === '[' || k === ']') {
+        var steps = [1, 2, 4, 8, 16];
+        var i = steps.indexOf(App.speed);
+        App.speed = steps[Math.max(0, Math.min(steps.length - 1, i + (k === ']' ? 1 : -1)))];
+        App.net.send({ cmd: 'speed', value: App.speed });
+        render();
+      }
+    });
+
+    window.Reveal.bindKeys();
+    window.Reveal.on(function () { render(); });
+  }
+
+  /* ---------------- wiring ---------------- */
+
+  function start() {
+    fitStage();
+    App.net = new window.Net();
+    App.net
+      .on('status', function (m) { App.link = m.status; render(); })
+      .on('hello', function (m) {
+        App.cat = m;
+        if (!App.levels.length && m.levels) {
+          App.levels = m.levels.map(function (l) {
+            var mm = E.genMap(l.seed >>> 0);
+            return { seed: l.seed, map: mm, route: l.optimal, onRoute: l.trapsOnRoute };
+          });
+        }
+        render();
+      })
+      .on('frame', function (m) {
+        App.prev = App.frame || m;
+        App.frame = m;
+        App.alpha = 0;
+        if (m.map) { App.map = m.map; App.mapKey = null; }
+        if (m.level !== undefined && App.runState) App.runState.level = m.level;
+        var th = el('thought');
+        if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
+      })
+      .on('episodeEnd', function (m) {
+        App.results[m.level] = m.result;
+        App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
+          : m.result === 'escape' ? { t: 'JERRY GOT HOME', c: '#ffd166' }
+          : { t: 'TIME OUT', c: '#8fa4c4' };
+        App.bannerAt = performance.now();
+        render();
+      })
+      .on('state', function (m) { App.runState = m; App.playing = m.playing !== false; render(); })
+      .on('runEnd', function (m) { App.runState = m; render(); })
+      .on('train', function (m) {
+        if (m.kind === 'algo') {
+          var p = App.panels[m.school];
+          if (p) {
+            // Cat and mouse telemetry both arrive; the panel shows the cat's, which is
+            // the side the arena is usually following.
+            p.update(Object.assign({ gen: m.iter }, m.cat || m, { year: (m.cat || {}).year }));
+          }
+        } else if (m.kind === 'eval') {
+          App.trainInfo = 'live · cat ' + pct(m.catExam) + ' · mouse ' + pct(m.mouseExam)
+            + ' vs the Examiner · ' + (m.steps / 1e6).toFixed(1) + 'M steps';
+        } else if (m.kind === 'promotion') {
+          App.banner = { t: m.role.toUpperCase() + ' PROMOTED TO YEAR ' + m.year, c: '#ffd166' };
+          App.bannerAt = performance.now();
+        } else if (m.kind === 'trainDone') {
+          App.trainInfo = 'training finished';
+        }
+      })
+      .connect();
+
+    bind();
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

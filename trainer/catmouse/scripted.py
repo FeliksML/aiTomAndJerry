@@ -34,19 +34,27 @@ from .vec import NCELL, VecEnv, W, H
 SKILL_DEFAULT = 0.60
 
 
-def _trap_weight(skill: float, tunnel: np.ndarray) -> np.ndarray:
+def _trap_weight(skill, tunnel: np.ndarray) -> np.ndarray:
     """Learned caution: near zero while clumsy, full weight once competent — and
     almost gone when the target is right there."""
-    w = 26.0 * min(1.0, max(0.0, (skill - 0.2) / 0.62))
+    w = 26.0 * np.clip((np.asarray(skill) - 0.2) / 0.62, 0.0, 1.0)
     return np.where(tunnel, w * 0.06, w)
 
 
 class ScriptedPair:
-    """Both scripted roles for one batch. Either half can be used on its own."""
+    """Both scripted roles for one batch. Either half can be used on its own.
 
-    def __init__(self, env: VecEnv, skill: float = SKILL_DEFAULT, seed: int = 0):
+    `skill` may be a scalar or one value per environment. The per-environment form is
+    what lets a single bot present a whole difficulty ladder inside one generation:
+    a candidate is then scored against easy, medium and hard opponents at once, and
+    its fitness stops depending on which rung the generation happened to land on.
+    Cycling one skill per generation instead makes the objective move under the
+    optimiser, and the measured result of that was a flat learning curve.
+    """
+
+    def __init__(self, env: VecEnv, skill=SKILL_DEFAULT, seed: int = 0):
         self.env = env
-        self.skill = float(skill)
+        self.skill = skill
         self.rng = np.random.default_rng(seed)
         n = env.n
         self._ar = np.arange(n)
@@ -93,7 +101,8 @@ class ScriptedPair:
         instead would add the same constant to all five scores and leave the argmax
         untouched, making every skill level behave as a fully greedy controller.
         """
-        return (self.rng.random((n, 5)) - 0.5) * 17.0 * (1.0 - self.skill) ** 1.5
+        amp = 17.0 * (1.0 - np.asarray(self.skill, np.float64)) ** 1.5
+        return (self.rng.random((n, 5)) - 0.5) * np.reshape(amp, (-1, 1))
 
     # ---------- cat ----------
 
@@ -106,6 +115,7 @@ class ScriptedPair:
         scent_cell, _, scent_ok = e.scent_cue()
 
         # Where he aims. The branches are exclusive and ordered, as in the original.
+        sk = np.broadcast_to(np.asarray(sk, np.float64), (n,))
         m_vis = vis
         m_scent = ~m_vis & scent_ok & (sk > 0.25)
         m_mem = ~m_vis & ~m_scent & self.has_last_seen & (self.last_seen_age < 14) & (sk > 0.15)
@@ -114,11 +124,14 @@ class ScriptedPair:
         m_camp = reach_camp & ((self.camp_clock % 54) < 26)
         m_wander = ~m_vis & ~m_scent & ~m_mem & ~m_camp
 
-        # Lead her: aim at where her route home will have taken her.
-        lead = int(np.floor(3 * sk + 0.5))
-        ahead = mouse.copy()
-        for _ in range(lead):
-            ahead = M.next_home[mi, ahead].astype(np.int32)
+        # Lead her: aim at where her route home will have taken her. How far ahead is
+        # itself a function of skill, so chain the greedy step to the deepest lead any
+        # environment needs and pick the right depth per environment.
+        lead = np.floor(3 * sk + 0.5).astype(np.int32)
+        chain = [mouse.copy()]
+        for _ in range(int(lead.max()) if len(lead) else 0):
+            chain.append(M.next_home[mi, chain[-1]].astype(np.int32))
+        ahead = np.stack(chain, 0)[lead, np.arange(n)] if len(chain) > 1 else mouse.copy()
 
         need = m_wander & (~self.has_wander | (self.wander_age > 18) | (self.rng.random(n) < 0.06))
         if need.any():
@@ -139,7 +152,7 @@ class ScriptedPair:
         self.last_seen_age = np.where(m_vis, 0, self.last_seen_age)
         self.last_seen_age += 1
         self.wander_age += 1
-        self.cat_mode = np.where(m_vis, 2 if lead > 1 else 1,
+        self.cat_mode = np.where(m_vis, np.where(lead > 1, 2, 1),
                          np.where(m_scent, 3, np.where(m_mem, 4, np.where(m_camp, 5, 0)))).astype(np.int8)
 
         field = M.dist[mi, target]                              # (n, NCELL)
@@ -166,6 +179,7 @@ class ScriptedPair:
         e, M, mi, sk = self.env, self.env.M, self.env.map_idx, self.skill
         n = e.n
         cat, mouse = e.cat, e.mouse
+        sk = np.broadcast_to(np.asarray(sk, np.float64), (n,))
         vis = M.sees[mi, mouse, e.mouse_face, cat]
 
         heard_cell = (np.rint(e.heard[:, 1]).astype(np.int32) * W
@@ -207,8 +221,7 @@ class ScriptedPair:
             sc -= np.where(near & (dc <= 2), 20.0 * sk * commit, 0.0)
 
             sc -= np.where(M.grid[mi, cell] == S.TRAP, trap_w, 0.0)
-            if sk > 0.3:
-                sc += np.where(vis & ~M.los[mi, cat, cell], 6.0 * sk, 0.0)
+            sc += np.where(vis & ~M.los[mi, cat, cell] & (sk > 0.3), 6.0 * sk, 0.0)
             if a == 0:
                 sc += np.where(hidden & (conf > 0.5) & (sk > 0.6), 1.5 * sk, -1.4)
             scores.append(sc + noise[:, a])

@@ -78,7 +78,8 @@
   function on(fn) { listeners.push(fn); }
 
   /* Keyboard: `r` reveals the next school, `shift+R` takes one back (for a re-shoot),
-     `0` reseals everything. Deliberately not on a common key. */
+     `shift+0` reseals everything back to PPO-only. Deliberately off the common keys —
+     a stray keypress mid-take must not unseal the rest of the video. */
   function bindKeys() {
     window.addEventListener('keydown', function (e) {
       if (e.key === 'r') { set(level + 1); e.preventDefault(); }

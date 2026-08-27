@@ -35,7 +35,7 @@ Then open <http://localhost:8778>.
 
 **Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
-`h` highlight reel · `t` train live on camera · **`r` reveal the next school**, `shift+R` re-seal one.
+`h` highlight reel · `t` train live on camera · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
 
 ## The reveal
 

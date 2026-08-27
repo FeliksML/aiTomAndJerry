@@ -746,7 +746,8 @@
     ['space', 'pause / resume'], ['s', 'skip this episode'],
     ['[  ]', 'slower / faster'], ['t', 'train live, on camera'],
     ['esc', 'back to the academy'], ['?', 'this card'],
-    ['R', 'REVEAL the next school'], ['shift+R', 're-seal one (for a re-shoot)'],
+    ['r', 'REVEAL the next school'], ['shift+R', 're-seal one (for a re-shoot)'],
+    ['shift+0', 're-seal everything — back to PPO only'],
   ];
 
   function keyCard() {
@@ -756,7 +757,7 @@
       + '<div class="title" style="font-size:30px;margin-bottom:22px">KEYS</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 44px">'
       + KEYS.map(function (k) {
-          var hot = k[0] === 'R' || k[0] === 'shift+R';
+          var hot = k[0][0] === 'r' || k[0].indexOf('shift') === 0;
           return '<div style="display:flex;gap:16px;align-items:baseline">'
             + '<span class="mono" style="width:82px;color:' + (hot ? 'var(--gold)' : '#c9d8ee')
             + ';font-size:14px">' + esc(k[0]) + '</span>'

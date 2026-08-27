@@ -35,6 +35,7 @@ serve() {
 }
 
 verify() {
+  $PY trainer/scripts/check_arenas.py
   node trainer/scripts/dump_js.js 1 200 > runs/parity-js.json
   $PY trainer/scripts/parity.py runs/parity-js.json
   $PY trainer/scripts/vec_parity.py 6

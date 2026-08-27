@@ -191,6 +191,7 @@ The environment is the contract, so it is tested rather than trusted.
 | `trainer/scripts/parity.py` | `env.py` reproduces `env.js` exactly — 560 seeds, identical maps, identical trajectories, rewards to 1e-9 |
 | `trainer/scripts/vec_parity.py` | the batched trainer environment matches the reference step for step |
 | `trainer/scripts/balance.py` vs `js_balance.js` | the scripted Examiner behaves like the JS original across the whole skill sweep |
+| `trainer/scripts/check_arenas.py` | the training, evaluation and tournament rooms are disjoint — the claim the leaderboard rests on |
 | `trainer/scripts/train.py --minutes 3` | end-to-end smoke: three schools, checkpoints, telemetry |
 
 Run the first three after any change to `env.py`, `vec.py` or `scripted.py`. The map

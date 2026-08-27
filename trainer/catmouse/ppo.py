@@ -29,7 +29,7 @@ import torch.nn.functional as F
 from . import arena
 from .nets import Critic, FlatActor, PolicyNet, init_flat
 from .league import Promotion, ladder_for, scripted_share
-from .school import Budget, School
+from .school import School
 from .scripted import ScriptedPair
 from .vec import VecEnv
 

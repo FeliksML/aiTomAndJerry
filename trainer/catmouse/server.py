@@ -32,7 +32,7 @@ import torch
 from . import arena
 from .league import EXAMINER_SKILL
 from .nets import FlatActor
-from .school import Budget, load_checkpoints
+from .school import Budget
 from .scripted import ScriptedPair
 from .tournament import LABELS, SCHOOLS, load_run
 from .vec import MapSet, VecEnv

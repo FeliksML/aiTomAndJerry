@@ -18,7 +18,7 @@ tables and is checked against this file.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from .jsmath import JsRng, floor_mul

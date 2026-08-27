@@ -98,13 +98,12 @@ class CMAESSchool(EvoSchool):
         return x.astype(np.float32)
 
     def tell(self, role: str, pop: np.ndarray, fit: np.ndarray) -> dict:
-        n, lam, mu, w = self.n, self.lam, self.mu, self.w
+        n, mu, w = self.n, self.mu, self.w
         d = np.sqrt(self.C[role])
         self.count[role] += 1
         g = self.count[role]
 
-        order = np.argsort(-fit)                       # maximising
-        sel = order[:mu]
+        order = np.argsort(-fit)                       # maximising, so best first
         x = pop[order].astype(np.float64)
         z = self._z[role][order]
 

@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#04060a;}
+*{box-sizing:border-box;}
+a{color:#7cbcff;text-decoration:none}
+a:hover{color:#bd97ff}
+@keyframes bannerIn{0%{opacity:0;transform:translateY(6px) scale(.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
+</style>
+<script src="env.js"></script>
+<script src="agents.js"></script>
+</helmet>
+
+<div style="width:1920px;height:1080px;position:relative;overflow:hidden;background:radial-gradient(120% 90% at 50% -10%,#0b1424 0%,#05070d 55%,#03050a 100%);font-family:Manrope,sans-serif;color:#e8eef9;padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+
+  <div style="position:absolute;inset:0;pointer-events:none;opacity:.3;background-image:linear-gradient(rgba(120,160,220,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,160,220,.05) 1px,transparent 1px);background-size:60px 60px"></div>
+
+  <div style="position:relative;height:58px;flex:0 0 auto;display:flex;align-items:center;gap:22px">
+    <div style="display:flex;flex-direction:column;gap:3px;width:318px;flex:0 0 auto">
+      <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:31px;letter-spacing:2.2px;line-height:1;color:#f2f7ff;white-space:nowrap">CAT &amp; MOUSE LAB</div>
+      <div style="font-size:12px;letter-spacing:.4px;color:#7d90ad;font-weight:500;white-space:nowrap">Three algorithms · six policies · one map</div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px;padding:4px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(130,160,200,.14);flex:0 0 auto">
+      <sc-for list="{{ screenChips }}" as="sc" hint-placeholder-count="2">
+        <div onClick="{{ sc.on }}" style="cursor:pointer;height:30px;padding:0 15px;display:flex;align-items:center;border-radius:8px;font-family:Oswald,sans-serif;font-size:12.5px;letter-spacing:1.5px;background:{{ sc.bg }};color:{{ sc.color }}">{{ sc.label }}</div>
+      </sc-for>
+    </div>
+
+    <div style="width:1px;height:28px;background:rgba(140,170,210,.16);flex:0 0 auto"></div>
+
+    <div style="display:flex;align-items:center;gap:10px;flex:0 0 auto">
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#e9f1ff;line-height:1;white-space:nowrap">{{ roundLabel }}</div>
+        <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392;white-space:nowrap">SHARED BY ALL ARENAS</div>
+      </div>
+      <div onClick="{{ newRoundBtn }}" style="cursor:pointer;height:32px;padding:0 13px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.3px;color:#9db1cd;white-space:nowrap">NEW MAP</div>
+    </div>
+
+    <div style="flex:1 1 auto"></div>
+
+    <div style="display:flex;align-items:center;gap:14px;flex:0 0 auto">
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
+        <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#e9f1ff;line-height:1">{{ genLabel }}</div>
+        <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392;white-space:nowrap">EPISODES RUN</div>
+      </div>
+      <div style="width:1px;height:28px;background:rgba(140,170,210,.16)"></div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <sc-for list="{{ speeds }}" as="sp" hint-placeholder-count="4">
+          <div onClick="{{ sp.on }}" style="cursor:pointer;min-width:40px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-family:JetBrains Mono,monospace;font-size:12.5px;font-weight:700;border:1px solid {{ sp.border }};background:{{ sp.bg }};color:{{ sp.color }}">{{ sp.label }}</div>
+        </sc-for>
+      </div>
+      <div onClick="{{ togglePlay }}" style="cursor:pointer;height:32px;padding:0 16px;display:flex;align-items:center;gap:8px;border-radius:9px;border:1px solid rgba(124,188,255,.4);background:rgba(30,60,100,.35);font-family:Oswald,sans-serif;font-size:12px;letter-spacing:1.4px;color:#cfe6ff">
+        <sc-if value="{{ playing }}" hint-placeholder-val="{{ true }}"><span style="letter-spacing:0">❚❚</span></sc-if>
+        <sc-if value="{{ paused }}"><span style="letter-spacing:0">▶</span></sc-if>
+        <span>SPACE</span>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ isTrain }}" hint-placeholder-val="{{ true }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px">
+
+      <div style="height:620px;flex:0 0 auto;display:flex;gap:13px">
+        <sc-for list="{{ arenas }}" as="a" hint-placeholder-count="3">
+          <div style="width:618px;flex:0 0 auto;display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;border:1px solid rgba(130,160,200,.14);background:linear-gradient(180deg,rgba(16,24,38,.72),rgba(8,12,20,.6))">
+
+            <div style="height:38px;flex:0 0 auto;display:flex;align-items:center;gap:10px">
+              <div style="width:38px;height:38px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:11px;background:{{ a.deep }};border:1px solid {{ a.borderSoft }}">
+                <div style="width:23px;height:23px">
+                  <dc-import name="AlgoEmblem" algo="{{ a.key }}" color="{{ a.color }}" hint-size="23px,23px"></dc-import>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0">
+                <div style="font-family:Oswald,sans-serif;font-size:17px;font-weight:600;letter-spacing:1.2px;color:{{ a.light }};line-height:1.05">{{ a.short }}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:9.5px;color:#6d80a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.line }}</div>
+              </div>
+              <div style="display:flex;gap:6px;flex:0 0 auto">
+                <div style="display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:8px;background:rgba(255,122,84,.12);border:1px solid rgba(255,138,92,.3)">
+                  <span style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.2px;color:#ffb094">CAT</span>
+                  <span style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:#ffd0bd">{{ a.catWins }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:8px;background:rgba(110,226,255,.1);border:1px solid rgba(126,224,255,.28)">
+                  <span style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.2px;color:#8fdcff">MOUSE</span>
+                  <span style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:#d3f2ff">{{ a.mouseWins }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="width:594px;height:418px;flex:0 0 auto;position:relative;border-radius:11px;overflow:hidden;background:#0a0d13;border:1px solid rgba(130,160,200,.1)">
+              <div ref="{{ a.mapRef }}" style="position:absolute;left:0;top:0"></div>
+              <div ref="{{ a.fxRef }}" style="position:absolute;left:0;top:0"></div>
+              <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px 30px rgba(3,5,9,.55)"></div>
+              <div style="position:absolute;left:9px;top:9px;display:flex;gap:6px">
+                <div style="font-family:JetBrains Mono,monospace;font-size:10.5px;font-weight:700;padding:4px 8px;border-radius:7px;background:rgba(5,8,14,.82);border:1px solid {{ a.borderSoft }};color:{{ a.light }}">EP {{ a.episode }}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:10.5px;font-weight:600;padding:4px 8px;border-radius:7px;background:rgba(5,8,14,.82);border:1px solid rgba(130,160,200,.18);color:#9db1cd">STEP {{ a.step }}</div>
+              </div>
+              <sc-if value="{{ a.hasBanner }}">
+                <div style="position:absolute;left:50%;top:14px;transform:translateX(-50%);animation:bannerIn .22s ease-out;font-family:Oswald,sans-serif;font-size:15px;letter-spacing:2.2px;padding:7px 16px;border-radius:9px;background:rgba(4,7,12,.9);border:1px solid {{ a.bannerColor }};color:{{ a.bannerColor }};white-space:nowrap">{{ a.bannerText }}</div>
+              </sc-if>
+            </div>
+
+            <div style="height:56px;flex:0 0 auto;display:flex;gap:7px">
+              <sc-for list="{{ a.stats }}" as="st" hint-placeholder-count="4">
+                <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:7px 10px;border-radius:9px;background:rgba(255,255,255,.028);border:1px solid rgba(130,160,200,.1)">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:700;line-height:1;color:{{ st.color }}">{{ st.value }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.1px;color:#66799a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ st.label }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="flex:1 1 auto;min-height:0;display:flex;align-items:center;gap:12px;padding:0 2px">
+              <div style="display:flex;flex-direction:column;gap:3px;flex:1 1 auto;min-width:0">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.3px;padding:2px 6px;border-radius:5px;color:{{ a.thoughtColor }};border:1px solid {{ a.thoughtColor }}">{{ a.thoughtLabel }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">DECISION</div>
+                </div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.3;color:#a9bcd8;max-height:30px;overflow:hidden;text-wrap:pretty">{{ a.thought }}</div>
+              </div>
+              <div style="width:138px;flex:0 0 auto;display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:.9px;color:#ffb094;width:40px">CAT</div>
+                  <div style="flex:1 1 auto;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden"><div style="height:100%;border-radius:3px;background:#ff8a5c;width:{{ a.catSkillW }}"></div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px">
+                  <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:.9px;color:#8fdcff;width:40px">MOUSE</div>
+                  <div style="flex:1 1 auto;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden"><div style="height:100%;border-radius:3px;background:#6ee2ff;width:{{ a.mouseSkillW }}"></div></div>
+                </div>
+                <div style="font-family:Oswald,sans-serif;font-size:8.5px;letter-spacing:1.1px;color:#4f6280">POLICY LEVEL</div>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:13px">
+
+        <div style="width:500px;flex:0 0 auto;display:flex;flex-direction:column;gap:7px;padding:13px 15px;border-radius:16px;border:1px solid rgba(130,160,200,.14);background:linear-gradient(180deg,rgba(16,24,38,.7),rgba(8,12,20,.6))">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;flex:0 0 auto">
+            <div style="font-family:Oswald,sans-serif;font-size:14px;letter-spacing:1.7px;color:#c9d8ee">LEADERBOARD · 6 POLICIES</div>
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.2px;color:#5f7392">WINS / LOSSES</div>
+          </div>
+          <sc-for list="{{ board }}" as="b" hint-placeholder-count="6">
+            <div style="flex:1 1 0;min-height:0;display:flex;align-items:center;gap:9px;padding:0 9px;border-radius:9px;background:rgba(255,255,255,.026);border:1px solid rgba(130,160,200,.09)">
+              <div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#4f6280;width:16px;flex:0 0 auto">{{ b.rank }}</div>
+              <div style="width:24px;height:24px;flex:0 0 auto">
+                <dc-import name="AlgoEmblem" algo="{{ b.key }}" color="{{ b.color }}" hint-size="24px,24px"></dc-import>
+              </div>
+              <div style="font-family:Oswald,sans-serif;font-size:14px;letter-spacing:1px;color:#e2ebf9;width:66px;flex:0 0 auto">{{ b.short }}</div>
+              <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.2px;padding:2px 7px;border-radius:5px;flex:0 0 auto;color:{{ b.roleColor }};background:{{ b.roleBg }};border:1px solid {{ b.roleBorder }}">{{ b.role }}</div>
+              <div style="flex:1 1 auto;min-width:0;height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden"><div style="height:100%;border-radius:3px;background:{{ b.barColor }};width:{{ b.barW }}"></div></div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:700;color:#eaf2ff;width:44px;text-align:right;flex:0 0 auto">{{ b.pct }}</div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:10.5px;color:#7c8fae;width:44px;text-align:right;flex:0 0 auto">{{ b.wl }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="flex:1 1 auto;min-width:0;display:flex;gap:13px">
+          <sc-for list="{{ charts }}" as="ch" hint-placeholder-count="2">
+            <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:8px;padding:13px 15px;border-radius:16px;border:1px solid rgba(130,160,200,.14);background:linear-gradient(180deg,rgba(16,24,38,.7),rgba(8,12,20,.6))">
+              <div style="display:flex;align-items:center;gap:10px;flex:0 0 auto">
+                <div style="font-family:Oswald,sans-serif;font-size:13px;letter-spacing:1.5px;color:{{ ch.accent }};white-space:nowrap">{{ ch.title }}</div>
+                <div style="flex:1 1 auto"></div>
+                <sc-for list="{{ ch.lines }}" as="ln" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:5px">
+                    <div style="width:9px;height:3px;border-radius:2px;background:{{ ln.color }}"></div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:10px;color:#8fa4c4">{{ ln.value }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="flex:1 1 auto;min-height:0;position:relative;border-radius:9px;background:rgba(255,255,255,.02);border:1px solid rgba(130,160,200,.09);overflow:hidden">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+                  <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(140,175,215,.1)" stroke-width="0.6" vector-effect="non-scaling-stroke"></line>
+                  <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(140,175,215,.16)" stroke-width="0.6" vector-effect="non-scaling-stroke"></line>
+                  <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(140,175,215,.1)" stroke-width="0.6" vector-effect="non-scaling-stroke"></line>
+                  <sc-for list="{{ ch.lines }}" as="ln" hint-placeholder-count="3">
+                    <polyline points="{{ ln.points }}" fill="none" stroke="{{ ln.color }}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"></polyline>
+                  </sc-for>
+                </svg>
+                <div style="position:absolute;left:8px;top:5px;font-family:JetBrains Mono,monospace;font-size:9px;color:#4f6280">100%</div>
+                <div style="position:absolute;left:8px;bottom:4px;font-family:JetBrains Mono,monospace;font-size:9px;color:#4f6280">0%</div>
+              </div>
+              <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:1.2px;color:#4f6280;flex:0 0 auto">ROLLING MEAN · LAST 160 EPISODES</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="width:400px;flex:0 0 auto;display:flex;flex-direction:column;gap:9px;padding:13px 15px;border-radius:16px;border:1px solid rgba(130,160,200,.14);background:linear-gradient(180deg,rgba(16,24,38,.7),rgba(8,12,20,.6))">
+          <div style="font-family:Oswald,sans-serif;font-size:14px;letter-spacing:1.7px;color:#c9d8ee;flex:0 0 auto">SENSORS &amp; RULES</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;align-items:center;flex:0 0 auto">
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;height:16px;flex:0 0 auto;clip-path:polygon(0 50%,100% 0,100% 100%);background:linear-gradient(90deg,rgba(255,122,84,.55),rgba(255,122,84,.06))"></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">cat vision cone</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;height:16px;flex:0 0 auto;clip-path:polygon(0 50%,100% 0,100% 100%);background:linear-gradient(90deg,rgba(110,226,255,.55),rgba(110,226,255,.06))"></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">mouse vision cone</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;justify-content:center;flex:0 0 auto"><div style="width:16px;height:16px;border-radius:50%;border:1px dashed rgba(196,240,255,.6)"></div></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">mouse hearing</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;align-items:center;gap:3px;flex:0 0 auto">
+                <div style="width:7px;height:7px;border-radius:50%;background:rgba(126,232,255,.55)"></div>
+                <div style="width:6px;height:6px;border-radius:50%;background:rgba(126,232,255,.32)"></div>
+                <div style="width:5px;height:5px;border-radius:50%;background:rgba(126,232,255,.16)"></div>
+              </div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">scent trail</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;justify-content:center;flex:0 0 auto">
+                <svg viewBox="0 0 20 20" style="width:19px;height:19px;display:block">
+                  <circle cx="10" cy="10" r="7.2" fill="rgba(12,18,26,.6)"></circle>
+                  <path d="M10 2.6a7.4 7.4 0 0 0 0 14.8" fill="none" stroke="#b9cade" stroke-width="2" stroke-linecap="round"></path>
+                  <path d="M10 2.6a7.4 7.4 0 0 1 0 14.8" fill="none" stroke="#b9cade" stroke-width="2" stroke-linecap="round"></path>
+                  <path d="M4.6 7.4l2.6 1M4.6 12.6l2.6-1M15.4 7.4l-2.6 1M15.4 12.6l-2.6-1" stroke="#b9cade" stroke-width="1" stroke-linecap="round"></path>
+                  <circle cx="10" cy="10" r="2.8" fill="#f2b544" stroke="#0f151d" stroke-width="0.8"></circle>
+                </svg>
+              </div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">trap · snaps, freezes 5</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;justify-content:center;flex:0 0 auto"><div style="width:17px;height:13px;border-radius:9px 9px 1px 1px;background:#05080c;border:2px solid #ffd166"></div></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">mouse hole · her goal</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;justify-content:center;flex:0 0 auto"><div style="width:15px;height:15px;border-radius:50% 50% 45% 45%;background:linear-gradient(160deg,#8b9cb8,#55647e)"></div></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">cat · algo collar</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:20px">
+              <div style="width:26px;display:flex;justify-content:center;flex:0 0 auto"><div style="width:13px;height:13px;border-radius:50%;background:linear-gradient(160deg,#e0ab77,#b07840)"></div></div>
+              <div style="font-size:11px;color:#a9bcd8;font-weight:500;white-space:nowrap">mouse · algo scarf</div>
+            </div>
+          </div>
+
+          <div style="height:1px;background:rgba(140,170,210,.14);flex:0 0 auto"></div>
+
+          <div style="display:flex;flex-direction:column;gap:7px;flex:1 1 auto;min-height:0">
+            <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#5f7392">ROUND RULES</div>
+            <div style="font-size:11.5px;line-height:1.45;color:#94a8c6;text-wrap:pretty">The cat wins on contact — same cell or one cell away; the mouse wins at her hole. 180 steps is a draw.</div>
+            <div style="font-size:11.5px;line-height:1.45;color:#94a8c6;text-wrap:pretty">He knows where the hole is, so camping it is legal. Three of six traps sit on her route.</div>
+            <div style="font-size:11.5px;line-height:1.45;color:#94a8c6;text-wrap:pretty">Both move and see identically, and all three arenas share one map and one pair of spawns.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isFinal }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px">
+      <div style="height:68px;flex:0 0 auto;display:flex;align-items:center;gap:22px;padding:0 20px;border-radius:14px;border:1px solid rgba(130,160,200,.16);background:linear-gradient(90deg,rgba(255,122,84,.1),rgba(10,14,22,.55) 38%,rgba(10,14,22,.55) 62%,rgba(110,226,255,.1))">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-family:Oswald,sans-serif;font-size:20px;letter-spacing:2.4px;color:#f2f7ff;white-space:nowrap">FINAL · BEST CAT VS BEST MOUSE</div>
+          <div style="font-size:11.5px;color:#7d90ad;font-weight:500">Fresh map, five rounds, both policies frozen</div>
+        </div>
+        <div style="flex:1 1 auto"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <sc-for list="{{ fin.pips }}" as="pp" hint-placeholder-count="5">
+            <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px;font-family:Oswald,sans-serif;font-size:16px;letter-spacing:.5px;background:{{ pp.bg }};border:1px solid {{ pp.border }};color:{{ pp.color }}">{{ pp.label }}</div>
+          </sc-for>
+        </div>
+        <div style="width:1px;height:32px;background:rgba(140,170,210,.18)"></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-family:JetBrains Mono,monospace;font-size:30px;font-weight:700;color:#ff9a72;line-height:1">{{ fin.scoreCat }}</div>
+          <div style="font-family:Oswald,sans-serif;font-size:16px;color:#5f7392">:</div>
+          <div style="font-family:JetBrains Mono,monospace;font-size:30px;font-weight:700;color:#7ee0ff;line-height:1">{{ fin.scoreMouse }}</div>
+        </div>
+        <div onClick="{{ restartFinal }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.26);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.3px;color:#9db1cd">RESET</div>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:15px">
+
+        <div style="width:385px;flex:0 0 auto;display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:16px;border:1px solid rgba(255,138,92,.24);background:linear-gradient(180deg,rgba(42,20,14,.55),rgba(9,12,19,.6))">
+          <div style="display:flex;align-items:center;gap:14px;flex:0 0 auto">
+            <div style="width:76px;height:76px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:18px;background:{{ fin.catDeep }};border:1px solid {{ fin.catBorder }}">
+              <div style="width:48px;height:48px">
+                <dc-import name="AlgoEmblem" algo="{{ fin.catKey }}" color="{{ fin.catColor }}" hint-size="48px,48px"></dc-import>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.9px;padding:3px 9px;border-radius:6px;align-self:flex-start;color:#ffb094;background:rgba(255,122,84,.14);border:1px solid rgba(255,138,92,.34)">CAT · HUNTER</div>
+              <div style="font-family:Oswald,sans-serif;font-size:32px;font-weight:600;letter-spacing:1.4px;line-height:1.16;color:{{ fin.catColor }}">{{ fin.catShort }}</div>
+            </div>
+          </div>
+          <div style="font-size:12.5px;line-height:1.4;color:#93a7c5;flex:0 0 auto">{{ fin.catFull }}</div>
+          <div style="height:1px;background:rgba(255,138,92,.16);flex:0 0 auto"></div>
+          <div style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto">
+            <div style="font-family:JetBrains Mono,monospace;font-size:44px;font-weight:700;line-height:1;color:#ff9a72">{{ fin.catRate }}</div>
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#66799a">CATCH RATE IN TRAINING</div>
+          </div>
+          <div style="display:flex;gap:8px;flex:0 0 auto">
+            <sc-for list="{{ fin.catStats }}" as="cs" hint-placeholder-count="2">
+              <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(130,160,200,.1)">
+                <div style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:700;line-height:1;color:#e9f1ff">{{ cs.value }}</div>
+                <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:1.1px;color:#66799a;white-space:nowrap">{{ cs.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px;flex:0 0 auto">
+            <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.6px;color:#5f7392">WHAT HE LEARNED</div>
+            <sc-for list="{{ fin.catTactics }}" as="tc" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:flex-start">
+                <div style="width:5px;height:5px;border-radius:50%;background:#ff8a5c;margin-top:6px;flex:0 0 auto"></div>
+                <div style="font-size:12.5px;line-height:1.42;color:#a9bcd8;text-wrap:pretty">{{ tc.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1 1 auto;min-height:0"></div>
+          <div style="height:1px;background:rgba(255,138,92,.16);flex:0 0 auto"></div>
+          <div style="display:flex;flex-direction:column;gap:5px;flex:0 0 auto">
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">RIGHT NOW</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.35;color:#ffbfa8;min-height:32px;text-wrap:pretty">{{ fin.catThought }}</div>
+          </div>
+        </div>
+
+        <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <div style="width:1080px;height:760px;flex:0 0 auto;position:relative;border-radius:14px;overflow:hidden;background:#0a0d13;border:1px solid rgba(130,160,200,.16)">
+            <div ref="{{ finalMapRef }}" style="position:absolute;left:0;top:0"></div>
+            <div ref="{{ finalFxRef }}" style="position:absolute;left:0;top:0"></div>
+            <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 50px rgba(3,5,9,.5)"></div>
+            <div style="position:absolute;left:12px;top:12px;display:flex;gap:8px">
+              <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:1.6px;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#c9d8ee;white-space:nowrap">{{ fin.round }}</div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#9db1cd;white-space:nowrap">STEP {{ fin.steps }}</div>
+            </div>
+            <sc-if value="{{ fin.hasBanner }}">
+              <div style="position:absolute;left:50%;top:18px;transform:translateX(-50%);animation:bannerIn .24s ease-out;font-family:Oswald,sans-serif;font-size:22px;letter-spacing:3.4px;padding:11px 26px;border-radius:11px;background:rgba(4,7,12,.92);border:1px solid {{ fin.bannerColor }};color:{{ fin.bannerColor }};white-space:nowrap">{{ fin.bannerText }}</div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="width:385px;flex:0 0 auto;display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:16px;border:1px solid rgba(110,226,255,.22);background:linear-gradient(180deg,rgba(12,32,44,.55),rgba(9,12,19,.6))">
+          <div style="display:flex;align-items:center;gap:14px;flex:0 0 auto">
+            <div style="width:76px;height:76px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:18px;background:{{ fin.mouseDeep }};border:1px solid {{ fin.mouseBorder }}">
+              <div style="width:48px;height:48px">
+                <dc-import name="AlgoEmblem" algo="{{ fin.mouseKey }}" color="{{ fin.mouseColor }}" hint-size="48px,48px"></dc-import>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.9px;padding:3px 9px;border-radius:6px;align-self:flex-start;color:#8fdcff;background:rgba(110,226,255,.12);border:1px solid rgba(126,224,255,.3)">MOUSE · RUNNER</div>
+              <div style="font-family:Oswald,sans-serif;font-size:32px;font-weight:600;letter-spacing:1.4px;line-height:1.16;color:{{ fin.mouseColor }}">{{ fin.mouseShort }}</div>
+            </div>
+          </div>
+          <div style="font-size:12.5px;line-height:1.4;color:#93a7c5;flex:0 0 auto">{{ fin.mouseFull }}</div>
+          <div style="height:1px;background:rgba(110,226,255,.16);flex:0 0 auto"></div>
+          <div style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto">
+            <div style="font-family:JetBrains Mono,monospace;font-size:44px;font-weight:700;line-height:1;color:#7ee0ff">{{ fin.mouseRate }}</div>
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#66799a">ESCAPE RATE IN TRAINING</div>
+          </div>
+          <div style="display:flex;gap:8px;flex:0 0 auto">
+            <sc-for list="{{ fin.mouseStats }}" as="ms" hint-placeholder-count="2">
+              <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(130,160,200,.1)">
+                <div style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:700;line-height:1;color:#e9f1ff">{{ ms.value }}</div>
+                <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:1.1px;color:#66799a;white-space:nowrap">{{ ms.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px;flex:0 0 auto">
+            <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.6px;color:#5f7392">WHAT SHE LEARNED</div>
+            <sc-for list="{{ fin.mouseTactics }}" as="tm" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:flex-start">
+                <div style="width:5px;height:5px;border-radius:50%;background:#6ee2ff;margin-top:6px;flex:0 0 auto"></div>
+                <div style="font-size:12.5px;line-height:1.42;color:#a9bcd8;text-wrap:pretty">{{ tm.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1 1 auto;min-height:0"></div>
+          <div style="height:1px;background:rgba(110,226,255,.16);flex:0 0 auto"></div>
+          <div style="display:flex;flex-direction:column;gap:5px;flex:0 0 auto">
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">RIGHT NOW</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.35;color:#a9e6ff;min-height:32px;text-wrap:pretty">{{ fin.mouseThought }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1920,&quot;height&quot;:1080},&quot;showVision&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;},&quot;showHearing&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;},&quot;showScent&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;},&quot;stepsPerSecond&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:9,&quot;min&quot;:3,&quot;max&quot;:30,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pace&quot;},&quot;episodeStride&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;min&quot;:1,&quot;max&quot;:10,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pace&quot;},&quot;roundEpisodes&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:24,&quot;min&quot;:4,&quot;max&quot;:120,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pace&quot;}}">
+class Component extends DCLogic {
+  state = { ready: false, screen: 'train', playing: true, speed: 2, ui: 0, round: 1 };
+
+  componentDidMount() {
+    this.CS = 22; this.CSF = 40;
+    this.acc = 0; this.roundNum = 1; this.roundEps = 0;
+    this.finalMapRef = React.createRef();
+    this.finalFxRef = React.createRef();
+    this.onKey = (e) => {
+      const k = (e.key || '').toLowerCase();
+      if (e.code === 'Space') { e.preventDefault(); this.setState(s => ({ playing: !s.playing })); }
+      else if (k === 'f') this.toggleScreen();
+      else if (k === 'r') this.newRound(false);
+    };
+    window.addEventListener('keydown', this.onKey);
+    this.onVis = () => { this.tick = performance.now(); this.acc = 0; if (this.arenas) this.loop(); };
+    document.addEventListener('visibilitychange', this.onVis);
+    this.waiter = setInterval(() => {
+      if (window.CatMouseEnv && window.CatMouseAgents) { clearInterval(this.waiter); this.boot(); }
+    }, 30);
+  }
+
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf); clearInterval(this.waiter);
+    window.removeEventListener('keydown', this.onKey);
+    document.removeEventListener('visibilitychange', this.onVis);
+  }
+
+  /* ---------- setup ---------- */
+
+  boot() {
+    this.E = window.CatMouseEnv; this.A = window.CatMouseAgents;
+    this.adapter = window.CATMOUSE_ADAPTER || null;
+    this.keys = ['ppo', 'ga', 'cmaes'];
+    this.arenas = this.keys.map(k => this.mkArena(k));
+    if (this.adapter && this.adapter.init) {
+      this.adapter.init({ grid: { w: this.E.W, h: this.E.H }, arenas: this.keys.map((k, i) => ({ algo: k, seed: 1000 + i })) });
+    }
+    this.newRound(true);
+    this.setState({ ready: true });
+    this.tick = performance.now();
+    this.loop();
+    // A hidden tab never fires requestAnimationFrame, so paint one frame straight
+    // away and force another the moment the tab comes back into view.
+    setTimeout(() => this.loop(), 0);
+  }
+
+  mkArena(key) {
+    const A = this.A;
+    return {
+      key, algo: A.ALGOS[key],
+      mapRef: React.createRef(), fxRef: React.createRef(),
+      pol: { cat: A.makePolicy(key, 'cat'), mouse: A.makePolicy(key, 'mouse') },
+      episode: 1, eps: 0, stepsSum: 0, trapHits: 0,
+      curveCat: [], curveMouse: [], wins: { cat: 0, mouse: 0, timeout: 0 },
+      s: null, view: null, prevView: null, alpha: 0, mapPainted: null,
+      skills: { cat: 0.05, mouse: 0.05 }, modes: { cat: 'patrol', mouse: 'dash' },
+      thought: '', thoughtCat: '', thoughtMouse: '', thoughtRole: 'cat', thoughtSwap: 0,
+      banner: null, doneAt: 0
+    };
+  }
+
+  newRound(first) {
+    if (!this.arenas) return;
+    if (!first) this.roundNum++;
+    this.map = this.E.genMap(20260826 + this.roundNum * 911);
+    this.roundEps = 0;
+    this.arenas.forEach(ar => { ar.map = this.map; ar.mapPainted = null; this.newEpisode(ar); });
+    if (!first) this.setState({ round: this.roundNum });
+  }
+
+  newEpisode(ar) {
+    const seed = (ar.episode * 7919) ^ (ar.key.length * 131) ^ (this.roundNum * 17);
+    ar.s = this.E.reset(ar.map, seed);
+    ar.pol.cat.reset(); ar.pol.mouse.reset();
+    ar.banner = null; ar.doneAt = 0;
+    this.syncView(ar, true);
+  }
+
+  /* ---------- simulation ---------- */
+
+  syncView(ar, init) {
+    const E = this.E, s = ar.s;
+    const cc = E.castCone(s.grid, s.cat.x, s.cat.y, s.cat.facing);
+    const cm = E.castCone(s.grid, s.mouse.x, s.mouse.y, s.mouse.facing);
+    const scent = [];
+    for (let y = 1; y < E.H - 1; y++) for (let x = 1; x < E.W - 1; x++) {
+      const v = s.scent[E.idx(x, y)];
+      if (v > 0.08) scent.push([x, y, v]);
+    }
+    const v = {
+      step: s.step, result: s.result,
+      cat: { x: s.cat.x, y: s.cat.y, facing: s.cat.facing, frozen: s.cat.frozen, cone: cc.poly, sees: s.sawMouse },
+      mouse: {
+        x: s.mouse.x, y: s.mouse.y, facing: s.mouse.facing, frozen: s.mouse.frozen, cone: cm.poly, sees: s.sawCat,
+        heard: s.heard ? { x: s.heard.x, y: s.heard.y, conf: s.heard.conf, radius: s.heard.radius } : null
+      },
+      scent
+    };
+    ar.prevView = init ? v : (ar.view || v);
+    ar.view = v;
+  }
+
+  simStep(ar) {
+    const E = this.E, s = ar.s;
+    const oc = E.observe(s, 'cat'), om = E.observe(s, 'mouse');
+    const rc = ar.pol.cat.act(s, oc, ar.episode), rm = ar.pol.mouse.act(s, om, ar.episode);
+    ar.skills.cat = rc.skill; ar.skills.mouse = rm.skill;
+    ar.modes.cat = rc.mode || 'patrol'; ar.modes.mouse = rm.mode || 'dash';
+    const ev = E.step(s, { cat: rc.action, mouse: rm.action });
+    if (ev.trapCat || ev.trapMouse) ar.trapHits++;
+    this.syncView(ar);
+    this.updateThought(ar);
+    if (s.done) {
+      ar.doneAt = performance.now();
+      if (ar.isFinal) this.finishFinal(ar); else this.finishEpisode(ar);
+    }
+  }
+
+  pushPoint(ar, c, m) {
+    ar.curveCat.push(c); ar.curveMouse.push(m);
+    if (ar.curveCat.length > 400) { ar.curveCat.shift(); ar.curveMouse.shift(); }
+  }
+
+  finishEpisode(ar) {
+    const r = ar.s.result, A = this.A;
+    ar.eps++; ar.stepsSum += ar.s.step;
+    if (r === 'catch') { ar.wins.cat++; ar.banner = { t: 'CAUGHT', c: '#ff8a5c' }; }
+    else if (r === 'escape') { ar.wins.mouse++; ar.banner = { t: 'SAFE IN THE HOLE', c: '#ffd166' }; }
+    else { ar.wins.timeout++; ar.banner = { t: 'TIME OUT', c: '#8fa4c4' }; }
+    this.pushPoint(ar, r === 'catch' ? 1 : 0, r === 'escape' ? 1 : 0);
+
+    // Placeholder learner: fill in the episodes the viewer does not watch so the
+    // curves advance at a believable rate. Real training pushes one point per episode.
+    const stride = Math.max(1, this.props.episodeStride ?? 4);
+    for (let i = 1; i < stride; i++) {
+      const sc = A.skillFor(ar.key, 'cat', ar.episode + i);
+      const sm = A.skillFor(ar.key, 'mouse', ar.episode + i);
+      const pc = sc / (sc + sm + 0.02);
+      const roll = ar.s.rand();
+      const cWin = roll < pc * 0.88;
+      const mWin = !cWin && roll > 1 - (1 - pc) * 0.86;
+      this.pushPoint(ar, cWin ? 1 : 0, mWin ? 1 : 0);
+      if (cWin) ar.wins.cat++; else if (mWin) ar.wins.mouse++; else ar.wins.timeout++;
+    }
+    ar.episode += stride;
+
+    if (ar === this.arenas[0]) {
+      this.roundEps++;
+      if (this.roundEps >= Math.max(4, this.props.roundEpisodes ?? 24)) this.pendingRound = true;
+    }
+  }
+
+  updateThought(ar) {
+    const E = this.E, s = ar.s;
+    const dm = Math.abs(s.cat.x - s.mouse.x) + Math.abs(s.cat.y - s.mouse.y);
+    const dn = ar.map.nestField[E.idx(s.mouse.x, s.mouse.y)];
+    const cat = {
+      intercept: 'target in sight — cutting across her line to the hole',
+      chase: 'open pursuit, ' + dm + ' cells out',
+      scent: 'trail is fresh, following the scent',
+      memory: 'lost visual — checking her last known cell',
+      camp: 'sitting on the hole; she has to come to me',
+      patrol: 'sweeping the sector, cone is empty'
+    };
+    const mouse = {
+      evade: 'cat in my cone — breaking line of sight behind cover',
+      listen: 'footsteps ~' + dm + ' cells out, going round the other way',
+      dash: 'route reads clean, ' + (dn >= 0 ? dn : '?') + ' cells to the hole'
+    };
+    const t = performance.now();
+    if (!ar.thoughtSwap || t - ar.thoughtSwap > 2400) {
+      ar.thoughtSwap = t;
+      ar.thoughtRole = ar.thoughtRole === 'cat' ? 'mouse' : 'cat';
+    }
+    ar.thoughtCat = s.cat.frozen > 0 ? ('snapped into a trap — frozen ' + s.cat.frozen + ' steps') : (cat[ar.modes.cat] || '…');
+    ar.thoughtMouse = s.mouse.frozen > 0 ? ('caught in a trap, ' + s.mouse.frozen + ' steps stuck') : (mouse[ar.modes.mouse] || '…');
+    if (s.cat.frozen > 0) ar.thoughtRole = 'cat';
+    else if (s.mouse.frozen > 0) ar.thoughtRole = 'mouse';
+    ar.thought = ar.thoughtRole === 'cat' ? ar.thoughtCat : ar.thoughtMouse;
+  }
+
+  /* ---------- finals ---------- */
+
+  rate(arr) { const w = arr.slice(-160); return w.length ? w.reduce((a, b) => a + b, 0) / w.length : 0; }
+
+  bootFinal() {
+    const A = this.A;
+    let bc = this.arenas[0], bm = this.arenas[0];
+    this.arenas.forEach(ar => {
+      if (this.rate(ar.curveCat) > this.rate(bc.curveCat)) bc = ar;
+      if (this.rate(ar.curveMouse) > this.rate(bm.curveMouse)) bm = ar;
+    });
+    const fa = {
+      isFinal: true, key: bc.key, algo: A.ALGOS[bc.key],
+      catKey: bc.key, mouseKey: bm.key,
+      catAlgo: A.ALGOS[bc.key], mouseAlgo: A.ALGOS[bm.key],
+      catRate: this.rate(bc.curveCat), mouseRate: this.rate(bm.curveMouse),
+      pol: { cat: A.makePolicy(bc.key, 'cat'), mouse: A.makePolicy(bm.key, 'mouse') },
+      episode: 4000, eps: 0, stepsSum: 0, trapHits: 0,
+      curveCat: [], curveMouse: [], wins: { cat: 0, mouse: 0, timeout: 0 },
+      skills: { cat: A.skillFor(bc.key, 'cat', 4000), mouse: A.skillFor(bm.key, 'mouse', 4000) },
+      modes: { cat: 'patrol', mouse: 'dash' },
+      thought: '', thoughtCat: '', thoughtMouse: '', thoughtRole: 'cat', thoughtSwap: 0,
+      s: null, view: null, prevView: null, alpha: 0, banner: null, doneAt: 0,
+      series: [], mapPainted: null
+    };
+    fa.map = this.E.genMap(0x5eed21);
+    this.finalAr = fa;
+    this.newEpisode(fa);
+  }
+
+  finishFinal(fa) {
+    const r = fa.s.result;
+    fa.series.push(r); fa.eps++; fa.stepsSum += fa.s.step;
+    if (r === 'catch') { fa.wins.cat++; fa.banner = { t: 'CAT TAKES THE ROUND', c: '#ff8a5c' }; }
+    else if (r === 'escape') { fa.wins.mouse++; fa.banner = { t: 'MOUSE IS HOME', c: '#ffd166' }; }
+    else { fa.wins.timeout++; fa.banner = { t: 'DRAW', c: '#8fa4c4' }; }
+    if (fa.series.length >= 5) {
+      fa.banner = {
+        t: fa.wins.cat > fa.wins.mouse ? 'SERIES: CAT' : (fa.wins.mouse > fa.wins.cat ? 'SERIES: MOUSE' : 'SERIES DRAWN'),
+        c: '#f2f7ff'
+      };
+    }
+  }
+
+  nextFinalRound() {
+    const fa = this.finalAr;
+    if (fa.series.length >= 5) return;
+    fa.map = this.E.genMap(0x5eed21 + fa.series.length * 3301);
+    fa.mapPainted = null; fa.episode += 1;
+    this.newEpisode(fa);
+  }
+
+  toggleScreen() {
+    const next = this.state.screen === 'train' ? 'final' : 'train';
+    if (next === 'final' && !this.finalAr) this.bootFinal();
+    this.setState({ screen: next, playing: true });
+  }
+
+  /* ---------- adapter path (real training) ---------- */
+
+  pullAdapter() {
+    const f = this.adapter.nextFrame && this.adapter.nextFrame();
+    if (!f || !f.arenas) return;
+    f.arenas.forEach((fr, i) => {
+      const ar = this.arenas[i]; if (!ar) return;
+      if (fr.map) { ar.map = fr.map; ar.mapPainted = null; }
+      ar.episode = fr.episode ?? ar.episode;
+      const prev = ar.view;
+      ar.view = { step: fr.step | 0, result: fr.result || null, cat: fr.cat, mouse: fr.mouse, scent: fr.scent || [] };
+      ar.prevView = prev || ar.view;
+      ar.alpha = 1;
+      if (fr.metrics) { ar.skills.cat = fr.metrics.catSkill ?? ar.skills.cat; ar.skills.mouse = fr.metrics.mouseSkill ?? ar.skills.mouse; }
+      if (fr.curves) { ar.curveCat = fr.curves.cat || ar.curveCat; ar.curveMouse = fr.curves.mouse || ar.curveMouse; }
+      if (fr.cat && fr.cat.mode) ar.modes.cat = fr.cat.mode;
+      if (fr.mouse && fr.mouse.mode) ar.modes.mouse = fr.mouse.mode;
+    });
+  }
+
+  /* ---------- loop ---------- */
+
+  loop() {
+    this.raf = requestAnimationFrame(() => this.loop());
+    try { this.frame(); } catch (e) {
+      if (!this._logged) { this._logged = 1; console.error('CatMouseLab frame error:', e); }
+    }
+  }
+
+  frame() {
+    const now = performance.now();
+    const dt = Math.min(90, now - (this.tick || now)); this.tick = now;
+    const onFinal = this.state.screen === 'final';
+    const list = onFinal ? (this.finalAr ? [this.finalAr] : []) : (this.arenas || []);
+
+    if (this.adapter) this.pullAdapter();
+    else if (this.state.playing && list.length) {
+      const sps = Math.max(1, this.props.stepsPerSecond ?? 9) * this.state.speed;
+      this.acc += dt / 1000 * sps;
+      let guard = 0;
+      while (this.acc >= 1 && guard++ < 80) {
+        this.acc -= 1;
+        for (const ar of list) {
+          if (!ar.s) continue;
+          if (ar.s.done) {
+            const hold = 1000 / Math.max(1, this.state.speed);
+            if (now - ar.doneAt > hold) { if (ar.isFinal) this.nextFinalRound(); else this.newEpisode(ar); }
+          } else this.simStep(ar);
+        }
+      }
+      for (const ar of list) ar.alpha = (ar.s && ar.s.done) ? 1 : Math.min(1, this.acc);
+      if (this.pendingRound) { this.pendingRound = false; this.newRound(false); }
+    }
+
+    // innerHTML is lost whenever React recreates the host div, so the guard checks
+    // the DOM as well as the cached map reference.
+    if (this.arenas) for (const ar of this.arenas) {
+      const host = ar.mapRef.current;
+      if (host && (ar.mapPainted !== ar.map || !host.firstChild)) { ar.mapPainted = ar.map; host.innerHTML = this.mapSvg(ar.map, this.CS); }
+      if (!onFinal && ar.fxRef.current) ar.fxRef.current.innerHTML = this.fxSvg(ar, this.CS, now);
+    }
+    const fa = this.finalAr;
+    if (fa) {
+      const fhost = this.finalMapRef.current;
+      if (fhost && (fa.mapPainted !== fa.map || !fhost.firstChild)) { fa.mapPainted = fa.map; fhost.innerHTML = this.mapSvg(fa.map, this.CSF); }
+      if (onFinal && this.finalFxRef.current) this.finalFxRef.current.innerHTML = this.fxSvg(fa, this.CSF, now);
+    }
+
+    if (now - (this.lastUi || 0) > 110) { this.lastUi = now; this.setState({ ui: now | 0 }); }
+  }
+
+  /* ---------- map painting ---------- */
+
+  mapSvg(map, CS) {
+    const E = this.E, W = E.W, H = E.H, g = map.grid, w = W * CS, h = H * CS, p = [];
+    const f = (v) => (+v).toFixed(1);
+    p.push('<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">');
+    p.push('<rect width="' + w + '" height="' + h + '" fill="#0b0f16"/>');
+
+    // floor: tiled kitchen boards, every other cell a shade lighter
+    let tile = '';
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      if (g[E.idx(x, y)] === E.WALL) continue;
+      if ((x + y) % 2) continue;
+      tile += 'M' + (x * CS) + ' ' + (y * CS) + 'h' + CS + 'v' + CS + 'h-' + CS + 'Z';
+    }
+    p.push('<path d="' + tile + '" fill="rgba(150,185,235,.022)"/>');
+    let dots = '';
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      if (g[E.idx(x, y)] === E.WALL) continue;
+      dots += 'M' + f(x * CS + CS / 2) + ' ' + f(y * CS + CS / 2) + 'h0.5';
+    }
+    p.push('<path d="' + dots + '" stroke="rgba(130,170,225,.16)" stroke-width="' + f(CS / 14) + '" stroke-linecap="round"/>');
+
+    // room walls
+    const b = CS;
+    p.push('<g fill="#111a2a">');
+    p.push('<rect x="0" y="0" width="' + w + '" height="' + b + '"/>');
+    p.push('<rect x="0" y="' + (h - b) + '" width="' + w + '" height="' + b + '"/>');
+    p.push('<rect x="0" y="' + b + '" width="' + b + '" height="' + (h - 2 * b) + '"/>');
+    p.push('<rect x="' + (w - b) + '" y="' + b + '" width="' + b + '" height="' + (h - 2 * b) + '"/>');
+    p.push('</g>');
+    p.push('<rect x="' + (b - 0.5) + '" y="' + (b - 0.5) + '" width="' + (w - 2 * b + 1) + '" height="' + (h - 2 * b + 1) + '" fill="none" stroke="rgba(135,175,230,.2)" stroke-width="1.2"/>');
+
+    // furniture blocks: solid face + lit top edge + inset seam
+    const r = Math.max(3, CS * 0.24);
+    map.blocks.forEach(bl => {
+      const x = bl.x * CS + 1, y = bl.y * CS + 1, bw = bl.w * CS - 2, bh = bl.h * CS - 2;
+      p.push('<rect x="' + f(x) + '" y="' + f(y) + '" width="' + f(bw) + '" height="' + f(bh) + '" rx="' + f(r) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
+      p.push('<rect x="' + f(x + CS * 0.22) + '" y="' + f(y + CS * 0.22) + '" width="' + f(bw - CS * 0.44) + '" height="' + f(bh - CS * 0.44) + '" rx="' + f(r * 0.6) + '" fill="none" stroke="rgba(120,160,215,.1)" stroke-width="1"/>');
+    });
+
+    // stools / table legs: round obstacles, concentric so they read dead-centre in the cell
+    map.pillars.forEach(pp => {
+      const cx = (pp[0] + 0.5) * CS, cy = (pp[1] + 0.5) * CS;
+      p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.34) + '" fill="#1b2740" stroke="rgba(138,180,235,.28)" stroke-width="1.1"/>');
+      p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.17) + '" fill="none" stroke="rgba(175,215,255,.16)" stroke-width="1"/>');
+    });
+
+    // traps live in the effects layer so they can snap shut — see trapSvg()
+
+    // the hole: arched doorway in the baseboard
+    const n = map.nest, nx = (n[0] + 0.5) * CS, ny = (n[1] + 0.5) * CS;
+    const hw = CS * 0.62, hh = CS * 0.72;
+    p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,.06)"/>');
+    p.push('<path d="M' + f(nx - hw / 2) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw / 2) + ' ' + f(ny - hh * 0.05) + 'A' + f(hw / 2) + ' ' + f(hw / 2) + ' 0 0 1 ' + f(nx + hw / 2) + ' ' + f(ny - hh * 0.05) + 'L' + f(nx + hw / 2) + ' ' + f(ny + hh / 2) + 'Z" fill="#05080c" stroke="#ffd166" stroke-width="' + f(Math.max(1.6, CS * 0.085)) + '"/>');
+    p.push('<path d="M' + f(nx - hw * 0.28) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'A' + f(hw * 0.28) + ' ' + f(hw * 0.28) + ' 0 0 1 ' + f(nx + hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'L' + f(nx + hw * 0.28) + ' ' + f(ny + hh / 2) + 'Z" fill="rgba(255,209,102,.16)"/>');
+    p.push('</svg>');
+    return p.join('');
+  }
+
+  /* ---------- effects + characters ---------- */
+
+  fxSvg(ar, CS, now) {
+    const E = this.E, v = ar.view;
+    if (!v) return '';
+    const pv = ar.prevView || v, a = ar.alpha, key = ar.key || 'x';
+    const P = this.props;
+    const showV = P.showVision !== false, showH = P.showHearing !== false, showS = P.showScent !== false;
+    const w = E.W * CS, h = E.H * CS, p = [];
+    const f = (x) => (+x).toFixed(1);
+    const lp = (x0, x1) => x0 + (x1 - x0) * a;
+    const cx = lp(pv.cat.x, v.cat.x), cy = lp(pv.cat.y, v.cat.y);
+    const mx = lp(pv.mouse.x, v.mouse.x), my = lp(pv.mouse.y, v.mouse.y);
+    const range = (E.CFG.vision.range + 0.6) * CS;
+    p.push('<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">');
+
+    if (showV) {
+      const grad = (id, col, cxp, cyp, boost) =>
+        '<radialGradient id="' + id + '" gradientUnits="userSpaceOnUse" cx="' + f(cxp) + '" cy="' + f(cyp) + '" r="' + f(range) + '">' +
+        '<stop offset="0" stop-color="' + col + '" stop-opacity="' + (0.34 * boost).toFixed(2) + '"/>' +
+        '<stop offset="0.5" stop-color="' + col + '" stop-opacity="' + (0.15 * boost).toFixed(2) + '"/>' +
+        '<stop offset="1" stop-color="' + col + '" stop-opacity="0"/></radialGradient>';
+      p.push('<defs>' +
+        grad('cmc-' + key, '#6ee2ff', (mx + 0.5) * CS, (my + 0.5) * CS, v.mouse.sees ? 1.7 : 1) +
+        grad('cmk-' + key, '#ff7a54', (cx + 0.5) * CS, (cy + 0.5) * CS, v.cat.sees ? 1.9 : 1) +
+        '</defs>');
+    }
+
+    p.push(this.trapsSvg(ar, CS));
+
+    if (showS && v.scent && v.scent.length) {
+      let g = '<g>';
+      for (const c of v.scent) {
+        const rr = CS * (0.07 + 0.14 * c[2]);
+        g += '<circle cx="' + f((c[0] + 0.5) * CS) + '" cy="' + f((c[1] + 0.5) * CS) + '" r="' + f(rr) + '" fill="rgba(126,232,255,' + (0.04 + 0.19 * c[2]).toFixed(3) + ')"/>';
+      }
+      p.push(g + '</g>');
+    }
+
+    const poly = (pts, dx, dy) => pts.map(q => f((q[0] + dx) * CS) + ',' + f((q[1] + dy) * CS)).join(' ');
+    if (showV) {
+      if (v.mouse.cone) p.push('<polygon points="' + poly(v.mouse.cone, mx - v.mouse.x, my - v.mouse.y) + '" fill="url(#cmc-' + key + ')" stroke="rgba(150,235,255,' + (v.mouse.sees ? 0.5 : 0.22) + ')" stroke-width="1"/>');
+      if (v.cat.cone) p.push('<polygon points="' + poly(v.cat.cone, cx - v.cat.x, cy - v.cat.y) + '" fill="url(#cmk-' + key + ')" stroke="rgba(255,155,115,' + (v.cat.sees ? 0.66 : 0.28) + ')" stroke-width="1"/>');
+    }
+
+    if (showH && v.mouse.heard) {
+      const hd = v.mouse.heard, hx = (hd.x + 0.5) * CS, hy = (hd.y + 0.5) * CS;
+      const R = Math.max(CS * 0.9, (hd.radius || 2) * CS * 0.7);
+      for (let k = 0; k < 3; k++) {
+        const ph = ((now / 950) + k / 3) % 1;
+        p.push('<circle cx="' + f(hx) + '" cy="' + f(hy) + '" r="' + f(R * ph) + '" fill="none" stroke="rgba(196,240,255,' + (0.36 * (1 - ph) * hd.conf).toFixed(3) + ')" stroke-width="1.4"/>');
+      }
+      p.push('<circle cx="' + f(hx) + '" cy="' + f(hy) + '" r="' + f(R) + '" fill="none" stroke="rgba(196,240,255,' + (0.2 * hd.conf).toFixed(3) + ')" stroke-width="1" stroke-dasharray="' + f(CS * 0.2) + ' ' + f(CS * 0.22) + '"/>');
+      p.push('<line x1="' + f((mx + 0.5) * CS) + '" y1="' + f((my + 0.5) * CS) + '" x2="' + f(hx) + '" y2="' + f(hy) + '" stroke="rgba(196,240,255,' + (0.15 * hd.conf).toFixed(3) + ')" stroke-width="1" stroke-dasharray="2 4"/>');
+      const q = CS * 0.13;
+      p.push('<path d="M' + f(hx - q) + ' ' + f(hy - q) + 'L' + f(hx + q) + ' ' + f(hy + q) + 'M' + f(hx + q) + ' ' + f(hy - q) + 'L' + f(hx - q) + ' ' + f(hy + q) + '" stroke="rgba(196,240,255,' + (0.55 * hd.conf).toFixed(3) + ')" stroke-width="1.5" stroke-linecap="round"/>');
+    }
+
+    p.push(this.mouseSvg(mx, my, CS, ar.mouseAlgo || ar.algo, v.mouse));
+    p.push(this.catSvg(cx, cy, CS, ar.catAlgo || ar.algo, v.cat));
+    p.push('</svg>');
+    return p.join('');
+  }
+
+  /* A steel jaw trap. Armed = two toothed jaws spread into an open ring around an
+     amber pressure plate. Snapped = the jaws slam together into a vertical lens,
+     teeth interlocked, with a flash and sparks while the victim is held. Circle vs
+     lens keeps it unmistakable at 22px — and unlike the arched mouse hole. */
+  trapSvg(cx, cy, S, snapped, frozen) {
+    const n = (v) => (S * v).toFixed(2);
+    const steel = snapped ? '#f2f9ff' : '#b9cade', dark = '#0f151d';
+    const o = ['<g transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ')">'];
+    o.push('<circle cx="0" cy="0" r="' + n(0.64) + '" fill="rgba(242,181,68,' + (snapped ? 0.22 : 0.09) + ')"/>');
+    o.push('<ellipse cx="0" cy="' + n(0.4) + '" rx="' + n(0.42) + '" ry="' + n(0.1) + '" fill="rgba(0,0,0,.42)"/>');
+    // chain stub anchoring the trap to the floor
+    o.push('<path d="M' + n(0.36) + ' ' + n(0.26) + 'L' + n(0.6) + ' ' + n(0.42) + '" stroke="#6b7d92" stroke-width="' + n(0.05) + '" stroke-linecap="round"/>');
+    o.push('<circle cx="' + n(0.62) + '" cy="' + n(0.44) + '" r="' + n(0.07) + '" fill="none" stroke="#6b7d92" stroke-width="' + n(0.04) + '"/>');
+    // springs at the hinge points
+    o.push('<circle cx="' + n(-0.42) + '" cy="0" r="' + n(0.1) + '" fill="' + dark + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '"/>');
+    o.push('<circle cx="' + n(0.42) + '" cy="0" r="' + n(0.1) + '" fill="' + dark + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '"/>');
+
+    if (!snapped) {
+      o.push('<circle cx="0" cy="0" r="' + n(0.34) + '" fill="rgba(12,18,26,.55)"/>');
+      o.push('<path d="M0 ' + n(-0.38) + 'A' + n(0.38) + ' ' + n(0.38) + ' 0 0 0 0 ' + n(0.38) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.1) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.38) + 'A' + n(0.38) + ' ' + n(0.38) + ' 0 0 1 0 ' + n(0.38) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.1) + '" stroke-linecap="round"/>');
+      let teeth = '';
+      for (const [a0, a1] of [[122, 238], [-58, 58]]) {
+        for (let k = 0; k < 4; k++) {
+          const ang = (a0 + (a1 - a0) * (k + 0.5) / 4) * Math.PI / 180;
+          teeth += 'M' + n(Math.cos(ang) * 0.32) + ' ' + n(Math.sin(ang) * 0.32) +
+            'L' + n(Math.cos(ang) * 0.19) + ' ' + n(Math.sin(ang) * 0.19);
+        }
+      }
+      o.push('<path d="' + teeth + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '" stroke-linecap="round" opacity=".9"/>');
+      o.push('<circle cx="0" cy="0" r="' + n(0.15) + '" fill="#f2b544" stroke="' + dark + '" stroke-width="' + n(0.035) + '"/>');
+    } else {
+      const t = Math.max(0, Math.min(1, frozen / 5));
+      o.push('<path d="M' + n(-0.42) + ' 0H' + n(-0.06) + 'M' + n(0.42) + ' 0H' + n(0.06) + '" stroke="' + steel + '" stroke-width="' + n(0.075) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.4) + 'Q' + n(-0.15) + ' 0 0 ' + n(0.4) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.4) + 'Q' + n(0.15) + ' 0 0 ' + n(0.4) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+      o.push('<path d="M' + n(-0.1) + ' ' + n(-0.2) + 'h' + n(0.2) + 'M' + n(-0.12) + ' 0h' + n(0.24) + 'M' + n(-0.1) + ' ' + n(0.2) + 'h' + n(0.2) + '" stroke="' + dark + '" stroke-width="' + n(0.04) + '" stroke-linecap="round"/>');
+      o.push('<path d="M' + n(-0.56) + ' ' + n(-0.34) + 'l' + n(-0.16) + ' ' + n(-0.12) + 'M' + n(0.56) + ' ' + n(-0.34) + 'l' + n(0.16) + ' ' + n(-0.12) + 'M0 ' + n(-0.52) + 'v' + n(-0.18) + '" stroke="rgba(255,240,200,' + (0.85 * t).toFixed(2) + ')" stroke-width="' + n(0.055) + '" stroke-linecap="round"/>');
+      o.push('<circle cx="0" cy="0" r="' + n(0.46 + 0.36 * (1 - t)) + '" fill="none" stroke="rgba(255,236,190,' + (0.6 * t).toFixed(2) + ')" stroke-width="' + n(0.055) + '"/>');
+    }
+    o.push('</g>');
+    return o.join('');
+  }
+
+  trapsSvg(ar, CS) {
+    const v = ar.view, out = [];
+    const busy = {};
+    for (const a of [v.cat, v.mouse]) {
+      if (a && a.frozen > 0) busy[Math.round(a.x) + ',' + Math.round(a.y)] = a.frozen;
+    }
+    for (const t of ar.map.traps) {
+      const fr = busy[t[0] + ',' + t[1]] || 0;
+      out.push(this.trapSvg((t[0] + 0.5) * CS, (t[1] + 0.5) * CS, CS, fr > 0, fr));
+    }
+    return out.join('');
+  }
+
+  // Eyes shared by both characters: wide when alert, X'd out when frozen.
+  eyesSvg(S, cfg) {
+    const n = (v) => (S * v).toFixed(2);
+    const { dx, ry, rx, pr, ox, oy, dark, frozen, alert } = cfg;
+    const o = [];
+    for (const side of [-1, 1]) {
+      const ex = side * dx;
+      if (frozen) {
+        const q = rx * 0.85;
+        o.push('<path d="M' + n(ex - q) + ' ' + n(-q) + 'L' + n(ex + q) + ' ' + n(q) + 'M' + n(ex + q) + ' ' + n(-q) + 'L' + n(ex - q) + ' ' + n(q) + '" stroke="#1b232e" stroke-width="' + n(0.032) + '" stroke-linecap="round"/>');
+        continue;
+      }
+      if (dark) {
+        o.push('<ellipse cx="' + n(ex) + '" cy="0" rx="' + n(rx) + '" ry="' + n(ry) + '" fill="#141c26"/>');
+        o.push('<circle cx="' + n(ex - rx * 0.3) + '" cy="' + n(-ry * 0.34) + '" r="' + n(rx * 0.34) + '" fill="rgba(255,255,255,.9)"/>');
+      } else {
+        o.push('<ellipse cx="' + n(ex) + '" cy="0" rx="' + n(rx) + '" ry="' + n(alert ? ry * 1.12 : ry) + '" fill="#fdfefe"/>');
+        o.push('<circle cx="' + n(ex + ox) + '" cy="' + n(oy) + '" r="' + n(alert ? pr * 0.78 : pr) + '" fill="#141c26"/>');
+        o.push('<circle cx="' + n(ex + ox - pr * 0.34) + '" cy="' + n(oy - pr * 0.4) + '" r="' + n(pr * 0.3) + '" fill="rgba(255,255,255,.85)"/>');
+      }
+    }
+    return o.join('');
+  }
+
+  frostSvg(S) {
+    const n = (v) => (S * v).toFixed(2);
+    return '<circle cx="0" cy="' + n(-0.1) + '" r="' + n(0.62) + '" fill="none" stroke="rgba(168,232,255,.75)" stroke-width="' + n(0.05) + '" stroke-dasharray="' + n(0.14) + ' ' + n(0.1) + '"/>' +
+      '<path d="M' + n(-0.7) + ' ' + n(-0.62) + 'l' + n(0.1) + ' ' + n(0.1) + 'M' + n(-0.6) + ' ' + n(-0.62) + 'l' + n(-0.1) + ' ' + n(0.1) + 'M' + n(0.62) + ' ' + n(0.2) + 'l' + n(0.1) + ' ' + n(0.1) + 'M' + n(0.72) + ' ' + n(0.2) + 'l' + n(-0.1) + ' ' + n(0.1) + '" stroke="rgba(200,244,255,.7)" stroke-width="' + n(0.035) + '" stroke-linecap="round"/>';
+  }
+
+  /* Big slate-blue cartoon cat. Body stays upright; direction reads from the
+     vision cone, the pupils, and a horizontal flip when he faces west. */
+  catSvg(cx, cy, S, algo, st) {
+    const n = (v) => (S * v).toFixed(2);
+    const f = st.facing, flip = f === 3 ? -1 : 1;
+    const back = f === 0, front = f === 2;
+    const fur = '#7e90ad', dk = '#55647e', lt = '#9fb1cb', cream = '#f2e8d5', accent = algo.color;
+    const o2 = [];
+    o2.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ',' + ((cy + 0.5) * S).toFixed(1) + ')">');
+    o2.push('<ellipse cx="0" cy="' + n(0.44) + '" rx="' + n(0.38) + '" ry="' + n(0.13) + '" fill="rgba(0,0,0,.5)"/>');
+    o2.push('<g transform="scale(' + flip + ',1)">');
+
+    // tail sweeping behind
+    o2.push('<path d="M' + n(-0.22) + ' ' + n(0.3) + 'C' + n(-0.62) + ' ' + n(0.34) + ' ' + n(-0.72) + ' ' + n(-0.06) + ' ' + n(-0.5) + ' ' + n(-0.16) + '" fill="none" stroke="' + dk + '" stroke-width="' + n(0.13) + '" stroke-linecap="round"/>');
+    o2.push('<path d="M' + n(-0.56) + ' ' + n(-0.14) + 'C' + n(-0.66) + ' ' + n(-0.16) + ' ' + n(-0.66) + ' ' + n(-0.02) + ' ' + n(-0.56) + ' ' + n(-0.02) + '" fill="none" stroke="' + cream + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+
+    // haunches
+    o2.push('<path d="M' + n(-0.3) + ' ' + n(0.42) + 'C' + n(-0.44) + ' ' + n(0.12) + ' ' + n(-0.36) + ' ' + n(-0.14) + ' 0 ' + n(-0.18) + 'C' + n(0.36) + ' ' + n(-0.14) + ' ' + n(0.44) + ' ' + n(0.12) + ' ' + n(0.3) + ' ' + n(0.42) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '"/>');
+    o2.push('<ellipse cx="0" cy="' + n(0.22) + '" rx="' + n(0.19) + '" ry="' + n(0.19) + '" fill="' + cream + '" opacity="' + (back ? 0 : 0.95) + '"/>');
+    o2.push('<ellipse cx="' + n(-0.17) + '" cy="' + n(0.42) + '" rx="' + n(0.1) + '" ry="' + n(0.07) + '" fill="' + lt + '"/>');
+    o2.push('<ellipse cx="' + n(0.17) + '" cy="' + n(0.42) + '" rx="' + n(0.1) + '" ry="' + n(0.07) + '" fill="' + lt + '"/>');
+
+    // collar
+    o2.push('<path d="M' + n(-0.2) + ' ' + n(-0.12) + 'Q0 ' + n(0.0) + ' ' + n(0.2) + ' ' + n(-0.12) + '" fill="none" stroke="' + accent + '" stroke-width="' + n(0.085) + '" stroke-linecap="round"/>');
+    o2.push('<circle cx="0" cy="' + n(-0.03) + '" r="' + n(0.05) + '" fill="' + accent + '" stroke="rgba(255,255,255,.5)" stroke-width="' + n(0.018) + '"/>');
+
+    // head
+    o2.push('<g transform="translate(0,' + n(-0.42) + ')">');
+    o2.push('<path d="M' + n(-0.3) + ' ' + n(-0.12) + 'L' + n(-0.42) + ' ' + n(-0.52) + 'L' + n(-0.06) + ' ' + n(-0.3) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o2.push('<path d="M' + n(0.3) + ' ' + n(-0.12) + 'L' + n(0.42) + ' ' + n(-0.52) + 'L' + n(0.06) + ' ' + n(-0.3) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o2.push('<path d="M' + n(-0.27) + ' ' + n(-0.18) + 'L' + n(-0.35) + ' ' + n(-0.44) + 'L' + n(-0.13) + ' ' + n(-0.29) + 'Z" fill="' + accent + '" opacity=".75"/>');
+    o2.push('<path d="M' + n(0.27) + ' ' + n(-0.18) + 'L' + n(0.35) + ' ' + n(-0.44) + 'L' + n(0.13) + ' ' + n(-0.29) + 'Z" fill="' + accent + '" opacity=".75"/>');
+    o2.push('<ellipse cx="0" cy="0" rx="' + n(0.36) + '" ry="' + n(0.32) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '"/>');
+    o2.push('<ellipse cx="' + n(-0.24) + '" cy="' + n(0.02) + '" rx="' + n(0.11) + '" ry="' + n(0.09) + '" fill="' + lt + '" opacity=".5"/>');
+    o2.push('<ellipse cx="' + n(0.24) + '" cy="' + n(0.02) + '" rx="' + n(0.11) + '" ry="' + n(0.09) + '" fill="' + lt + '" opacity=".5"/>');
+
+    if (!back) {
+      o2.push('<ellipse cx="0" cy="' + n(0.13) + '" rx="' + n(0.19) + '" ry="' + n(0.13) + '" fill="' + cream + '"/>');
+      o2.push('<g transform="translate(0,' + n(-0.05) + ')">' + this.eyesSvg(S, {
+        dx: 0.14, rx: 0.115, ry: 0.13, pr: 0.055,
+        ox: (this.E.DIRS[f] || [0, 1])[0] * 0.035, oy: (this.E.DIRS[f] || [0, 1])[1] * 0.03,
+        dark: false, frozen: st.frozen > 0, alert: st.sees
+      }) + '</g>');
+      const brow = st.sees ? 0.055 : 0.02;
+      o2.push('<path d="M' + n(-0.23) + ' ' + n(-0.21 + brow) + 'L' + n(-0.08) + ' ' + n(-0.25) + 'M' + n(0.23) + ' ' + n(-0.21 + brow) + 'L' + n(0.08) + ' ' + n(-0.25) + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '" stroke-linecap="round"/>');
+      o2.push('<path d="M0 ' + n(0.07) + 'l' + n(-0.05) + ' ' + n(0.05) + 'l' + n(0.05) + ' ' + n(0.04) + 'l' + n(0.05) + ' ' + n(-0.04) + 'Z" fill="#f2a3ad"/>');
+      o2.push('<path d="M0 ' + n(0.16) + 'q' + n(-0.06) + ' ' + n(0.05) + ' ' + n(-0.1) + ' 0M0 ' + n(0.16) + 'q' + n(0.06) + ' ' + n(0.05) + ' ' + n(0.1) + ' 0" fill="none" stroke="' + dk + '" stroke-width="' + n(0.028) + '" stroke-linecap="round"/>');
+      o2.push('<path d="M' + n(-0.19) + ' ' + n(0.1) + 'H' + n(-0.42) + 'M' + n(-0.19) + ' ' + n(0.16) + 'l' + n(-0.22) + ' ' + n(0.06) + 'M' + n(0.19) + ' ' + n(0.1) + 'H' + n(0.42) + 'M' + n(0.19) + ' ' + n(0.16) + 'l' + n(0.22) + ' ' + n(0.06) + '" stroke="rgba(240,248,255,.55)" stroke-width="' + n(0.022) + '" stroke-linecap="round"/>');
+    } else {
+      o2.push('<path d="M' + n(-0.14) + ' ' + n(0.02) + 'q' + n(0.14) + ' ' + n(0.1) + ' ' + n(0.28) + ' 0" fill="none" stroke="' + dk + '" stroke-width="' + n(0.03) + '" stroke-linecap="round" opacity=".5"/>');
+    }
+    o2.push('</g>');
+    o2.push('</g>');
+    if (st.frozen > 0) o2.push(this.frostSvg(S));
+    if (st.sees) o2.push('<g transform="translate(0,' + n(-1.02) + ')"><path d="M0 0v' + n(0.16) + '" stroke="#ff8a5c" stroke-width="' + n(0.1) + '" stroke-linecap="round"/><circle cx="0" cy="' + n(0.29) + '" r="' + n(0.055) + '" fill="#ff8a5c"/></g>');
+    o2.push('</g>');
+    return o2.join('');
+  }
+
+  /* Small tan cartoon mouse — big round ears, algorithm-coloured scarf. */
+  mouseSvg(cx, cy, S, algo, st) {
+    const n = (v) => (S * v).toFixed(2);
+    const f = st.facing, flip = f === 3 ? -1 : 1, back = f === 0;
+    const fur = '#d09b6a', dk = '#a16c3a', lt = '#e8c39a', cream = '#f8ecd9', pink = '#f2a3ad';
+    const accent = algo.color, o = [];
+    o.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ',' + ((cy + 0.5) * S).toFixed(1) + ')">');
+    o.push('<ellipse cx="0" cy="' + n(0.34) + '" rx="' + n(0.26) + '" ry="' + n(0.09) + '" fill="rgba(0,0,0,.45)"/>');
+    o.push('<g transform="scale(' + flip + ',1)">');
+
+    o.push('<path d="M' + n(-0.16) + ' ' + n(0.24) + 'C' + n(-0.5) + ' ' + n(0.3) + ' ' + n(-0.58) + ' ' + n(-0.04) + ' ' + n(-0.38) + ' ' + n(-0.12) + '" fill="none" stroke="' + pink + '" stroke-width="' + n(0.06) + '" stroke-linecap="round" opacity=".85"/>');
+
+    o.push('<path d="M' + n(-0.21) + ' ' + n(0.32) + 'C' + n(-0.31) + ' ' + n(0.08) + ' ' + n(-0.25) + ' ' + n(-0.1) + ' 0 ' + n(-0.13) + 'C' + n(0.25) + ' ' + n(-0.1) + ' ' + n(0.31) + ' ' + n(0.08) + ' ' + n(0.21) + ' ' + n(0.32) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o.push('<ellipse cx="0" cy="' + n(0.17) + '" rx="' + n(0.13) + '" ry="' + n(0.14) + '" fill="' + cream + '" opacity="' + (back ? 0 : 0.95) + '"/>');
+    o.push('<ellipse cx="' + n(-0.12) + '" cy="' + n(0.33) + '" rx="' + n(0.075) + '" ry="' + n(0.05) + '" fill="' + pink + '"/>');
+    o.push('<ellipse cx="' + n(0.12) + '" cy="' + n(0.33) + '" rx="' + n(0.075) + '" ry="' + n(0.05) + '" fill="' + pink + '"/>');
+
+    o.push('<path d="M' + n(-0.15) + ' ' + n(-0.08) + 'Q0 ' + n(0.02) + ' ' + n(0.15) + ' ' + n(-0.08) + '" fill="none" stroke="' + accent + '" stroke-width="' + n(0.075) + '" stroke-linecap="round"/>');
+    o.push('<path d="M' + n(0.13) + ' ' + n(-0.05) + 'l' + n(0.12) + ' ' + n(0.12) + 'l' + n(-0.07) + ' ' + n(0.03) + 'Z" fill="' + accent + '"/>');
+
+    o.push('<g transform="translate(0,' + n(-0.3) + ')">');
+    o.push('<circle cx="' + n(-0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.17) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.028) + '"/>');
+    o.push('<circle cx="' + n(0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.17) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.028) + '"/>');
+    o.push('<circle cx="' + n(-0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.1) + '" fill="' + pink + '" opacity=".8"/>');
+    o.push('<circle cx="' + n(0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.1) + '" fill="' + pink + '" opacity=".8"/>');
+    o.push('<ellipse cx="0" cy="0" rx="' + n(0.26) + '" ry="' + n(0.24) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o.push('<ellipse cx="' + n(-0.17) + '" cy="' + n(0.04) + '" rx="' + n(0.08) + '" ry="' + n(0.065) + '" fill="' + lt + '" opacity=".55"/>');
+    o.push('<ellipse cx="' + n(0.17) + '" cy="' + n(0.04) + '" rx="' + n(0.08) + '" ry="' + n(0.065) + '" fill="' + lt + '" opacity=".55"/>');
+
+    if (!back) {
+      o.push('<ellipse cx="0" cy="' + n(0.11) + '" rx="' + n(0.145) + '" ry="' + n(0.105) + '" fill="' + cream + '"/>');
+      o.push('<g transform="translate(0,' + n(-0.04) + ')">' + this.eyesSvg(S, {
+        dx: 0.105, rx: 0.078, ry: 0.092, pr: 0.04,
+        ox: (this.E.DIRS[f] || [0, 1])[0] * 0.02, oy: (this.E.DIRS[f] || [0, 1])[1] * 0.02,
+        dark: true, frozen: st.frozen > 0, alert: st.sees
+      }) + '</g>');
+      o.push('<circle cx="0" cy="' + n(0.13) + '" r="' + n(0.042) + '" fill="' + pink + '"/>');
+      o.push('<path d="M' + n(-0.15) + ' ' + n(0.09) + 'H' + n(-0.33) + 'M' + n(-0.15) + ' ' + n(0.15) + 'l' + n(-0.17) + ' ' + n(0.05) + 'M' + n(0.15) + ' ' + n(0.09) + 'H' + n(0.33) + 'M' + n(0.15) + ' ' + n(0.15) + 'l' + n(0.17) + ' ' + n(0.05) + '" stroke="rgba(255,250,242,.6)" stroke-width="' + n(0.02) + '" stroke-linecap="round"/>');
+    }
+    o.push('</g>');
+    o.push('</g>');
+    if (st.frozen > 0) o.push(this.frostSvg(S));
+    if (st.sees) o.push('<g transform="translate(0,' + n(-0.86) + ')"><path d="M0 0v' + n(0.15) + '" stroke="#6ee2ff" stroke-width="' + n(0.09) + '" stroke-linecap="round"/><circle cx="0" cy="' + n(0.27) + '" r="' + n(0.05) + '" fill="#6ee2ff"/></g>');
+    o.push('</g>');
+    return o.join('');
+  }
+
+  /* ---------- view model ---------- */
+
+  rgba(hex, a) {
+    const h = (hex || '#8fb6e6').replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
+
+  tactics(key, role) {
+    const T = {
+      ppo: {
+        cat: ['Keeps the clipped step: no lunging into a greedy chase, just a steady squeeze on the angle.',
+          'Learned to lead her — cutting to her route to the hole instead of running in her footprints.',
+          'Reads traps confidently; the −0.05 penalty reached the advantage estimate fast.'],
+        mouse: ['Builds distance smoothly — the policy shifts in small steps, never panics.',
+          'Treats the hole as a safe route rather than the nearest point on the grid.',
+          'Refuses any corridor where the cat is audible within four cells.']
+      },
+      ga: {
+        cat: ['Generations selected one crude but vicious strategy: sit on the hole and wait.',
+          'Mutation found two ambush cells where the cone covers both approaches at once.',
+          'Weak spot: once the trail goes cold he loses her after breaking line of sight.'],
+        mouse: ['Selection produced the counter-intuitive move: freeze behind cover instead of running.',
+          'The population kept detours 20–30% longer than optimal — and far safer.',
+          'Traps are a hard taboo; individuals that stepped in them simply did not survive.']
+      },
+      cmaes: {
+        cat: ['Narrowed the covariance around interception fast — barely spends steps on scouting.',
+          'Uses scent as the primary sensor: follows the fresh trail rather than memory.',
+          'On σ spikes he still gambles on shortcuts straight through trap country.'],
+        mouse: ['Covariance converged on a tight loop: cover → pause → sprint.',
+          'Works her hearing aggressively, switching flanks on every noisy step the cat takes.',
+          'Occasionally over-explores and loses tempo — the price of those σ spikes.']
+      }
+    };
+    const src = (T[key] && T[key][role]) || [];
+    return src.map((t, i) => ({ key: 'tt' + i, text: t }));
+  }
+
+  renderVals() {
+    const S = this.state, pct = (v) => Math.round(v * 100) + '%';
+    const speeds = [1, 2, 4, 10].map(v => ({
+      key: 'sp' + v, label: v + '×', on: () => this.setState({ speed: v }),
+      bg: S.speed === v ? 'rgba(124,188,255,.18)' : 'rgba(255,255,255,.03)',
+      color: S.speed === v ? '#cfe6ff' : '#7d90ad',
+      border: S.speed === v ? 'rgba(124,188,255,.45)' : 'rgba(130,160,200,.16)'
+    }));
+    const screenChips = [{ key: 'train', label: 'TRAINING' }, { key: 'final', label: 'FINAL' }].map(c => ({
+      key: c.key, label: c.label,
+      on: () => { if (S.screen !== c.key) this.toggleScreen(); },
+      bg: S.screen === c.key ? 'rgba(124,188,255,.2)' : 'transparent',
+      color: S.screen === c.key ? '#dceaff' : '#7d90ad'
+    }));
+
+    const arenas = (this.arenas || []).map(ar => {
+      const cr = this.rate(ar.curveCat), mr = this.rate(ar.curveMouse);
+      const avg = ar.eps ? Math.round(ar.stepsSum / ar.eps) : 0;
+      return {
+        key: ar.key, short: ar.algo.short, line: ar.algo.line,
+        color: ar.algo.color, light: ar.algo.light, deep: ar.algo.deep,
+        borderSoft: this.rgba(ar.algo.color, 0.3),
+        mapRef: ar.mapRef, fxRef: ar.fxRef,
+        catWins: String(ar.wins.cat), mouseWins: String(ar.wins.mouse),
+        episode: String(ar.episode), step: String(ar.view ? ar.view.step : 0),
+        stats: [
+          { key: 'st1', label: 'EPISODE', value: String(ar.episode), color: '#e9f1ff' },
+          { key: 'st2', label: 'CAUGHT', value: pct(cr), color: '#ff9a72' },
+          { key: 'st3', label: 'ESCAPED', value: pct(mr), color: '#7ee0ff' },
+          { key: 'st4', label: 'STEPS/EP', value: String(avg), color: '#c9d8ee' }
+        ],
+        thought: ar.thought || '…',
+        thoughtLabel: ar.thoughtRole === 'cat' ? 'CAT' : 'MOUSE',
+        thoughtColor: ar.thoughtRole === 'cat' ? '#ff9a72' : '#7ee0ff',
+        catSkillW: Math.round(ar.skills.cat * 100) + '%',
+        mouseSkillW: Math.round(ar.skills.mouse * 100) + '%',
+        hasBanner: !!ar.banner,
+        bannerText: ar.banner ? ar.banner.t : '',
+        bannerColor: ar.banner ? ar.banner.c : '#e9f1ff'
+      };
+    });
+
+    const rows = [];
+    (this.arenas || []).forEach(ar => {
+      rows.push({
+        key: ar.key, short: ar.algo.short, color: ar.algo.color, role: 'CAT',
+        roleColor: '#ffb094', roleBg: 'rgba(255,122,84,.14)', roleBorder: 'rgba(255,138,92,.34)',
+        barColor: '#ff8a5c', score: this.rate(ar.curveCat), w: ar.wins.cat, l: ar.wins.mouse
+      });
+      rows.push({
+        key: ar.key, short: ar.algo.short, color: ar.algo.color, role: 'MOUSE',
+        roleColor: '#8fdcff', roleBg: 'rgba(110,226,255,.1)', roleBorder: 'rgba(126,224,255,.3)',
+        barColor: '#6ee2ff', score: this.rate(ar.curveMouse), w: ar.wins.mouse, l: ar.wins.cat
+      });
+    });
+    rows.sort((a, b) => b.score - a.score);
+    const board = rows.map((r, i) => ({
+      id: r.key + r.role, key: r.key, short: r.short, color: r.color,
+      role: r.role, roleColor: r.roleColor, roleBg: r.roleBg, roleBorder: r.roleBorder,
+      rank: String(i + 1).padStart(2, '0'), pct: pct(r.score),
+      barW: Math.round(r.score * 100) + '%', barColor: r.barColor,
+      wl: r.w + ' / ' + r.l
+    }));
+
+    const cp = (arr) => {
+      const N = 160, src = arr.slice(-N);
+      if (src.length < 2) return '';
+      const out = [], win = 12;
+      for (let i = 0; i < src.length; i++) {
+        let s = 0, c = 0;
+        for (let j = Math.max(0, i - win); j <= i; j++) { s += src[j]; c++; }
+        out.push(((i / (N - 1)) * 100).toFixed(2) + ',' + ((1 - s / c) * 100).toFixed(2));
+      }
+      return out.join(' ');
+    };
+    const mkLines = (pick) => (this.arenas || []).map(ar => ({
+      key: ar.key, color: ar.algo.color, label: ar.algo.short,
+      points: cp(pick(ar)), value: pct(this.rate(pick(ar)))
+    }));
+    const charts = [
+      { key: 'c1', title: 'CAT · CATCH RATE', accent: '#ff9a72', lines: mkLines(ar => ar.curveCat) },
+      { key: 'c2', title: 'MOUSE · ESCAPE RATE', accent: '#7ee0ff', lines: mkLines(ar => ar.curveMouse) }
+    ];
+
+    const fa = this.finalAr;
+    const fin = fa ? {
+      catKey: fa.catKey, catShort: fa.catAlgo.short, catFull: fa.catAlgo.full,
+      catColor: fa.catAlgo.color, catDeep: fa.catAlgo.deep, catBorder: this.rgba(fa.catAlgo.color, 0.32),
+      catRate: pct(fa.catRate),
+      mouseKey: fa.mouseKey, mouseShort: fa.mouseAlgo.short, mouseFull: fa.mouseAlgo.full,
+      mouseColor: fa.mouseAlgo.color, mouseDeep: fa.mouseAlgo.deep, mouseBorder: this.rgba(fa.mouseAlgo.color, 0.32),
+      mouseRate: pct(fa.mouseRate),
+      catStats: [
+        { key: 'cs1', label: 'POLICY LEVEL', value: pct(fa.skills.cat) },
+        { key: 'cs2', label: 'CATCHES IN FINAL', value: String(fa.wins.cat) }
+      ],
+      mouseStats: [
+        { key: 'ms1', label: 'POLICY LEVEL', value: pct(fa.skills.mouse) },
+        { key: 'ms2', label: 'ESCAPES IN FINAL', value: String(fa.wins.mouse) }
+      ],
+      catTactics: this.tactics(fa.catKey, 'cat'),
+      mouseTactics: this.tactics(fa.mouseKey, 'mouse'),
+      catThought: fa.thoughtCat || 'stepping onto the floor',
+      mouseThought: fa.thoughtMouse || 'looking for a route to the hole',
+      scoreCat: String(fa.wins.cat), scoreMouse: String(fa.wins.mouse),
+      steps: String(fa.view ? fa.view.step : 0),
+      round: 'ROUND ' + Math.min(5, fa.series.length + 1) + ' / 5',
+      pips: [0, 1, 2, 3, 4].map(i => {
+        const r = fa.series[i];
+        return {
+          key: 'pip' + i,
+          label: r === 'catch' ? 'C' : r === 'escape' ? 'M' : r ? '—' : '·',
+          color: r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : r ? '#8fa4c4' : '#3d4a60',
+          bg: r ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)',
+          border: r === 'catch' ? 'rgba(255,138,92,.45)' : r === 'escape' ? 'rgba(110,226,255,.45)' : 'rgba(130,160,200,.16)'
+        };
+      }),
+      hasBanner: !!fa.banner,
+      bannerText: fa.banner ? fa.banner.t : '',
+      bannerColor: fa.banner ? fa.banner.c : '#f2f7ff'
+    } : {
+      catKey: 'ppo', catShort: '—', catFull: '', catColor: '#4ea8ff', catDeep: '#0a2544', catBorder: 'rgba(78,168,255,.3)', catRate: '—',
+      mouseKey: 'ga', mouseShort: '—', mouseFull: '', mouseColor: '#3ddc84', mouseDeep: '#08331f', mouseBorder: 'rgba(61,220,132,.3)', mouseRate: '—',
+      catStats: [], mouseStats: [], catTactics: [], mouseTactics: [],
+      catThought: '', mouseThought: '', scoreCat: '0', scoreMouse: '0', steps: '0',
+      round: 'ROUND 1 / 5', pips: [], hasBanner: false, bannerText: '', bannerColor: '#f2f7ff'
+    };
+
+    const totalEps = (this.arenas || []).reduce((a, ar) => a + ar.episode, 0);
+
+    return {
+      ready: S.ready,
+      isTrain: S.screen === 'train', isFinal: S.screen === 'final',
+      playing: S.playing, paused: !S.playing,
+      togglePlay: () => this.setState(s => ({ playing: !s.playing })),
+      newRoundBtn: () => this.newRound(false),
+      restartFinal: () => { this.finalAr = null; this.bootFinal(); this.setState({ playing: true }); },
+      screenChips, speeds,
+      roundLabel: 'MAP ' + String(S.round).padStart(2, '0'),
+      genLabel: String(totalEps),
+      arenas, board, charts, fin,
+      finalMapRef: this.finalMapRef, finalFxRef: this.finalFxRef
+    };
+  }
+}
+
+</script>
+</body>
+</html>

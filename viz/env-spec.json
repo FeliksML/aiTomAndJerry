@@ -1,0 +1,153 @@
+{
+  "$schema": "cat-mouse-lab/env-spec/1",
+  "name": "CatMousePursuit-v1",
+  "summary": "Symmetric grid pursuit-evasion. A cat must catch a mouse; the mouse must reach its nest. Both are learned policies. Reference JS implementation: env.js (port 1:1 to Python — same seed must yield the same map).",
+
+  "grid": {
+    "width": 27,
+    "height": 19,
+    "cellCodes": { "0": "EMPTY", "1": "WALL", "2": "TRAP", "3": "NEST" },
+    "generation": {
+      "seeded": true,
+      "border": "solid wall ring",
+      "coverBlocks": { "count": 7, "size": "2-5 x 2-4", "minGapBetweenBlocks": 2 },
+      "pillars": { "count": 10, "note": "single cells, never adjacent to more than one wall — keeps corridors open" },
+      "connectivity": ">=94% of free cells in one region, else reseed",
+      "nest": "free cell within 4 cells of a short edge with TWO INDEPENDENT APPROACHES — walling any single neighbour must leave it reachable. With capture radius 1 a one-corridor pocket can be sealed by a camping cat and every episode dies on the step limit.",
+      "mouseSpawn": "BFS distance to nest in [21, 32] — long enough that the cat gets a real chance to intercept",
+      "catSpawn": "BFS distance to mouse >= 10 and to nest in [5, 17] (camping the exit must be viable)",
+      "traps": { "count": 6, "placement": "3 sit ON the mouse's BFS shortest route to the nest (spaced, skipping the first 3 cells so nobody spawns trapped), 2 flank that route so detouring is not automatically safe, the rest scattered; nest mouth kept clear; a map that cannot place 4 is reseeded", "why": "a trap parked off the walked route is never learned and never seen" }
+    }
+  },
+
+  "agents": ["cat", "mouse"],
+  "symmetry": "Full. Identical speed (1 cell/step), identical action space, identical vision cone, identical trap effect. Only the sensor suite and the objective differ.",
+
+  "actionSpace": {
+    "type": "discrete",
+    "n": 5,
+    "labels": ["stay", "north", "east", "south", "west"],
+    "note": "A movement action also sets `facing`, which aims the vision cone. `stay` preserves facing. Blocked moves are no-ops but still turn the agent."
+  },
+
+  "sensors": {
+    "vision": {
+      "who": "both",
+      "halfAngleDeg": 50,
+      "range": 8.5,
+      "rays": 21,
+      "occlusion": "walls block rays and line of sight",
+      "output": "21 normalised ray distances in [0,1]"
+    },
+    "hearing": {
+      "who": "mouse only",
+      "range": 12,
+      "trigger": "only when the cat actually moved this step (frozen cat is silent)",
+      "noiseSigma": "0.10 + 0.055 * distance, applied to the reported cat position",
+      "output": "[x/W, y/H, confidence] or null; confidence = 1 - d/range",
+      "decayWhenSilent": "confidence *= 0.82 per step, dropped below 0.1"
+    },
+    "scent": {
+      "who": "cat only",
+      "range": 6,
+      "note": "the mouse deposits scent 1.0 on its cell each step; the whole field decays *0.93 per step. The cat reads the strongest cell within BFS range 6.",
+      "output": "[x/W, y/H, strength] or null"
+    }
+  },
+
+  "observation": {
+    "shared": {
+      "pos": "[x/W, y/H]",
+      "facing": "0..3 (N,E,S,W)",
+      "frozen": "framesRemaining / 5",
+      "rays": "float[21]",
+      "nestBearing": "radians, both agents know where the nest is",
+      "nestDist": "BFS distance / (W+H)",
+      "targetVisible": "0 | 1",
+      "targetBearing": "radians, valid only when targetVisible",
+      "targetDist": "euclidean / visionRange, 1.0 when unseen",
+      "stepFrac": "step / maxSteps"
+    },
+    "mouseExtra": { "heard": "[x/W, y/H, confidence] | null" },
+    "catExtra": { "scent": "[x/W, y/H, strength] | null" },
+    "suggestedFlatSize": { "cat": 34, "mouse": 34 }
+  },
+
+  "dynamics": {
+    "resolution": "simultaneous — both actions applied in the same step",
+    "traps": {
+      "neutral": true,
+      "effect": "stepping on a trap freezes that agent for 5 steps; the trap stays armed",
+      "note": "traps hit cat and mouse identically — the asymmetry is entirely in what each has learned to avoid"
+    },
+    "maxSteps": 180
+  },
+
+  "termination": {
+    "catch": "capture radius 1 — same cell, Manhattan distance 1, or the two swapped through each other -> cat wins. A same-cell-only rule is nearly unsatisfiable with simultaneous moves at equal speed: the pair just trade places forever.",
+    "escape": "mouse reaches the nest cell -> mouse wins. CHECKED BEFORE catch: reaching the hole beats a simultaneous catch, otherwise sitting on the hole is an absolute strategy.",
+    "timeout": "step == maxSteps -> draw (counts for neither side)"
+  },
+
+  "reward": {
+    "cat": { "catch": 1, "mouseEscaped": -1, "perStep": -0.002, "approachWhenVisible": "+0.012 per cell closed", "trap": -0.05 },
+    "mouse": { "reachedNest": 1, "caught": -1, "perStep": -0.002, "approachNest": "+0.010 per cell closed", "trap": -0.05 },
+    "note": "Shaping terms are a starting point, not a requirement. Terminal terms are the contract."
+  },
+
+  "training": {
+    "pairing": "self-play within an algorithm: each algorithm trains its own cat AND its own mouse against each other (3 algorithms x 2 roles = 6 policies).",
+    "algorithms": [
+      { "key": "ppo", "label": "PPO", "batch": 8, "notes": "on-policy, clipped objective" },
+      { "key": "ga", "label": "GA", "population": 48, "notes": "elitism + mutation 0.08, fitness = episode return" },
+      { "key": "cmaes", "label": "CMA-ES", "lambda": 16, "notes": "sigma adaptation, rank-mu update" }
+    ],
+    "fairness": "All three arenas run the identical map and identical spawns for a given round seed.",
+    "finals": "Take argmax catch-rate cat and argmax escape-rate mouse across algorithms, run a 5-round series on a fresh map.",
+    "measuredBalance": "Reference run, 432 episodes over the 6 shipped maps: 39% catch, 53% escape, 8% draw; 338 trap hits, 14 of them after episode 28. Use these as a sanity target — a cat under 20% or draws over 20% means something is wrong with the rules, not the learner."
+  },
+
+  "metrics": {
+    "perRole": ["catchRate", "escapeRate", "avgEpisodeSteps", "trapHits", "meanReturn"],
+    "curves": "rolling window of 160 episodes, one point per episode",
+    "leaderboardScore": "cat = catchRate, mouse = escapeRate"
+  },
+
+  "frameProtocol": {
+    "purpose": "What the visualiser consumes. Implement this and the UI needs no other change.",
+    "global": "window.CATMOUSE_ADAPTER",
+    "methods": {
+      "init(cfg)": "cfg = { grid:{w,h}, arenas:[{algo, seed}] }. Called once.",
+      "nextFrame()": "Called once per animation frame. Return null to hold the previous frame."
+    },
+    "frame": {
+      "t": "ms",
+      "arenas": [
+        {
+          "algo": "ppo|ga|cmaes",
+          "episode": "int",
+          "generation": "int",
+          "step": "int",
+          "map": "OPTIONAL, only when it changed: { grid:number[], nest:[x,y], traps:[[x,y]], blocks:[{x,y,w,h}], pillars:[[x,y]] }",
+          "cat": { "x": "float (may be fractional for smooth interpolation)", "y": "float", "facing": "0..3", "frozen": "int", "cone": "[[x,y],...] polygon in cell units", "mode": "string, drives the on-screen thought line" },
+          "mouse": { "x": "float", "y": "float", "facing": "0..3", "frozen": "int", "cone": "[[x,y],...]", "heard": "{x,y,conf,radius} | null", "mode": "string" },
+          "scent": "[[x,y,strength],...] strengths > 0.08 only",
+          "result": "null | catch | escape | timeout",
+          "metrics": { "catchRate": "0..1", "escapeRate": "0..1", "avgSteps": "float", "catSkill": "0..1", "mouseSkill": "0..1", "trapHits": "int" },
+          "curves": { "cat": "float[] rolling catch rate", "mouse": "float[] rolling escape rate" }
+        }
+      ]
+    }
+  },
+
+  "registry": {
+    "note": "Adding a fourth algorithm = one entry in agents.js ALGOS plus one emblem branch in AlgoEmblem.dc.html. Nothing else in the UI is algorithm-aware.",
+    "fields": ["key", "short", "full", "line", "color", "light", "deep", "curve", "jitter", "batch"],
+    "roleColorConvention": {
+      "algorithmIdentity": "emblem + accent object (cat collar and inner ears, mouse scarf)",
+      "roleIdentity": "species and cone colour, never fur — cat is slate (#7e90ad) and large, mouse is tan (#d09b6a) and small; cat cones warm (#ff7a54), mouse cones cool (#6ee2ff)",
+      "neutral": { "trap": "#f2b544 pressure plate in a steel jaw trap; armed = open toothed ring, triggered = closed vertical lens with sparks, rendered from the victim frozen counter", "nest": "#ffd166, arch silhouette" },
+      "stateReads": "alert = wide eyes + exclamation tick + brighter cone; frozen = X eyes + dashed frost ring; facing = pupil offset and horizontal flip, characters never rotate"
+    }
+  }
+}

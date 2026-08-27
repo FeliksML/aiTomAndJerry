@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#04060a;}
+*{box-sizing:border-box;}
+a{color:#7cbcff;text-decoration:none}
+a:hover{color:#bd97ff}
+@keyframes bannerIn{0%{opacity:0;transform:translateY(8px) scale(.97)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes scanline{0%{transform:translateY(-8px);opacity:0}20%{opacity:1}100%{transform:translateY(200px);opacity:0}}
+</style>
+<script src="env.js"></script>
+<script src="agents.js"></script>
+</helmet>
+
+<div style="width:1920px;height:1080px;position:relative;overflow:hidden;background:radial-gradient(120% 90% at 50% -10%,#0b1424 0%,#05070d 55%,#03050a 100%);font-family:Manrope,sans-serif;color:#e8eef9;padding:18px 20px;display:flex;flex-direction:column">
+  <div style="position:absolute;inset:0;pointer-events:none;background-image:{{ backdropImg }};background-size:cover;background-position:center;opacity:{{ backdropOpacity }}"></div>
+  <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(125% 100% at 50% 44%,rgba(3,5,10,.2) 0%,rgba(3,5,10,.62) 62%,rgba(3,5,10,.88) 100%);opacity:{{ backdropVeil }}"></div>
+  <div style="position:absolute;inset:0;pointer-events:none;opacity:.3;background-image:linear-gradient(rgba(120,160,220,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,160,220,.05) 1px,transparent 1px);background-size:60px 60px"></div>
+
+  <sc-if value="{{ isMenu }}" hint-placeholder-val="{{ true }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:26px">
+
+      <div style="height:104px;flex:0 0 auto;display:flex;align-items:flex-end;gap:30px;padding:0 6px">
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:9px">
+          <div style="font-family:Oswald,sans-serif;font-size:13px;letter-spacing:5px;color:#5f7392;white-space:nowrap">REINFORCEMENT LEARNING · PURSUIT AND EVASION</div>
+          <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:58px;letter-spacing:3px;line-height:.94;color:#f2f7ff;white-space:nowrap">CAT &amp; MOUSE ACADEMY</div>
+        </div>
+        <div style="flex:1 1 auto"></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px">
+          <div style="font-size:15px;color:#8fa4c4;font-weight:500;white-space:nowrap">Three schools · one shared level set · one final</div>
+          <div style="display:flex;gap:9px">
+            <div onClick="{{ regenLevels }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.4px;color:#9db1cd">NEW LEVEL SET</div>
+            <div onClick="{{ resetRun }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.4px;color:#9db1cd">RESET RUN</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:0 0 auto;display:flex;gap:26px;justify-content:center">
+        <sc-for list="{{ schools }}" as="s" hint-placeholder-count="3">
+          <div onClick="{{ s.on }}" style="width:560px;height:660px;cursor:pointer;display:flex;flex-direction:column;border-radius:20px;overflow:hidden;border:1px solid {{ s.border }};background:{{ s.bg }};opacity:{{ s.opacity }}">
+            <div style="height:6px;flex:0 0 auto;background:{{ s.bar }}"></div>
+
+            <div style="height:204px;flex:0 0 auto;position:relative;overflow:hidden">
+              <div style="position:absolute;inset:0;background:{{ s.glow }}"></div>
+              <div style="position:absolute;left:50%;top:10px;transform:translateX(-50%);width:196px;height:192px;background-image:{{ s.img }};background-size:contain;background-position:center bottom;background-repeat:no-repeat;filter:drop-shadow(0 18px 26px rgba(0,0,0,.55))"></div>
+              <div style="position:absolute;left:22px;top:16px;font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:3px;color:#8fa4c4">SCHOOL {{ s.num }}</div>
+              <div style="position:absolute;right:20px;top:14px;height:28px;padding:0 11px;display:flex;align-items:center;border-radius:8px;background:{{ s.chipBg }};border:1px solid {{ s.chipBorder }};font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.6px;color:{{ s.chipColor }};white-space:nowrap">{{ s.status }}</div>
+              <div style="position:absolute;left:0;right:0;bottom:0;height:70px;background:linear-gradient(180deg,rgba(8,12,20,0),rgba(8,12,20,.9))"></div>
+            </div>
+
+            <div style="flex:1 1 auto;min-height:0;padding:2px 28px 24px;display:flex;flex-direction:column;gap:14px">
+
+              <div style="flex:0 0 auto;display:flex;align-items:baseline;gap:14px">
+                <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:38px;letter-spacing:2px;line-height:1;color:{{ s.color }};white-space:nowrap">{{ s.short }}</div>
+                <div style="flex:1 1 auto;min-width:0;font-family:Oswald,sans-serif;font-size:12.5px;letter-spacing:1.4px;color:#8fa4c4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.full }}</div>
+              </div>
+
+              <div style="flex:0 0 auto;font-size:14.5px;line-height:1.45;color:#9db1cd;text-wrap:pretty;min-height:58px">{{ s.blurb }}</div>
+
+              <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ s.specs }}" as="sp" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:12px;height:26px">
+                    <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#5f7392;width:104px;flex:0 0 auto">{{ sp.label }}</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:12px;color:#c1d2ea;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ sp.value }}</div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="flex:1 1 auto;min-height:0"></div>
+              <div style="height:1px;flex:0 0 auto;background:rgba(140,170,210,.14)"></div>
+
+              <div style="flex:0 0 auto;display:flex;gap:10px">
+                <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:10px 13px;border-radius:11px;background:rgba(255,122,84,.08);border:1px solid rgba(255,138,92,.22)">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:700;line-height:1;color:#ff9a72">{{ s.catRate }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.3px;color:#a5806f">TOM · CAUGHT HER</div>
+                </div>
+                <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:10px 13px;border-radius:11px;background:rgba(110,226,255,.07);border:1px solid rgba(126,224,255,.2)">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:700;line-height:1;color:#7ee0ff">{{ s.mouseRate }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.3px;color:#6d93a5">JERRY · GOT HOME</div>
+                </div>
+              </div>
+
+              <div style="flex:0 0 auto;font-size:13px;line-height:1.32;color:{{ s.noteColor }};min-height:30px">{{ s.note }}</div>
+
+              <div style="flex:0 0 auto;height:52px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:{{ s.ctaBg }};border:1px solid {{ s.ctaBorder }};font-family:Oswald,sans-serif;font-size:15px;letter-spacing:2.4px;color:{{ s.ctaColor }}">{{ s.cta }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:26px;justify-content:center">
+
+        <div style="width:1060px;flex:0 0 auto;display:flex;flex-direction:column;gap:13px;padding:20px 24px;border-radius:18px;border:1px solid rgba(130,160,200,.16);background:linear-gradient(180deg,rgba(16,24,38,.7),rgba(8,12,20,.6))">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:16px">
+            <div style="font-family:Oswald,sans-serif;font-size:16px;letter-spacing:2.2px;color:#c9d8ee">SHARED LEVEL SET</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:12px;color:#6d80a0">{{ levelSetLine }}</div>
+            <div style="flex:1 1 auto"></div>
+            <div onClick="{{ openGen }}" style="cursor:pointer;height:36px;padding:0 18px;display:flex;align-items:center;border-radius:10px;background:{{ genCtaBg }};border:1px solid {{ genCtaBorder }};font-family:Oswald,sans-serif;font-size:12px;letter-spacing:1.8px;color:{{ genCtaColor }}">{{ genCta }}</div>
+          </div>
+          <div style="flex:0 0 auto;font-size:13.5px;line-height:1.45;color:#94a8c6;text-wrap:pretty">Every school trains on the same seeded arenas, so nobody can overfit to one room — and the comparison between the three algorithms stays honest.</div>
+          <div style="flex:1 1 auto;min-height:0;display:flex;gap:7px;align-items:stretch">
+            <sc-for list="{{ levelChips }}" as="lc" hint-placeholder-count="12">
+              <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;background:{{ lc.bg }};border:1px solid {{ lc.border }}">
+                <div style="font-family:JetBrains Mono,monospace;font-size:15px;font-weight:700;line-height:1;color:{{ lc.color }}">{{ lc.num }}</div>
+                <div style="font-family:Oswald,sans-serif;font-size:8.5px;letter-spacing:.9px;color:#5f7392;line-height:1">{{ lc.sub }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div onClick="{{ openFinal }}" style="width:646px;flex:0 0 auto;cursor:pointer;display:flex;flex-direction:column;gap:12px;padding:20px 24px;border-radius:18px;border:1px solid {{ finalCardBorder }};background:{{ finalCardBg }};opacity:{{ finalCardOpacity }}">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:14px">
+            <div style="flex:0 0 auto;font-family:Oswald,sans-serif;font-size:16px;letter-spacing:2.2px;color:#f2f7ff;white-space:nowrap">GRAND FINAL</div>
+            <div style="flex:0 1 auto;min-width:0;height:26px;padding:0 10px;display:flex;align-items:center;border-radius:7px;background:rgba(255,255,255,.05);border:1px solid rgba(130,160,200,.2);font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#9db1cd;white-space:nowrap;overflow:hidden">{{ finalStatus }}</div>
+          </div>
+          <div style="flex:0 0 auto;font-size:13.5px;line-height:1.45;color:#94a8c6;text-wrap:pretty">The best cat and the best mouse of all three schools meet for five rounds on a level neither of them has ever trained on.</div>
+          <div style="flex:1 1 auto;min-height:0;display:flex;align-items:center;gap:12px">
+            <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:11px 14px;border-radius:11px;background:rgba(255,122,84,.08);border:1px solid rgba(255,138,92,.22)">
+              <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#a5806f">BEST CAT</div>
+              <div style="font-family:Oswald,sans-serif;font-size:22px;letter-spacing:1.4px;line-height:1;color:#ff9a72">{{ bestCatLine }}</div>
+            </div>
+            <div style="font-family:Oswald,sans-serif;font-size:14px;color:#5f7392;flex:0 0 auto">VS</div>
+            <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:11px 14px;border-radius:11px;background:rgba(110,226,255,.07);border:1px solid rgba(126,224,255,.2)">
+              <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#6d93a5">BEST MOUSE</div>
+              <div style="font-family:Oswald,sans-serif;font-size:22px;letter-spacing:1.4px;line-height:1;color:#7ee0ff">{{ bestMouseLine }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isGen }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:16px">
+
+      <div style="height:62px;flex:0 0 auto;display:flex;align-items:center;gap:20px">
+        <div onClick="{{ toMenu }}" style="cursor:pointer;height:36px;padding:0 15px;display:flex;align-items:center;gap:8px;border-radius:10px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#9db1cd">← SCHOOLS</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:30px;letter-spacing:2.6px;line-height:1;color:#f2f7ff">LEVEL GENERATOR</div>
+          <div style="font-size:12.5px;color:#7d90ad;font-weight:500">Seeded arenas · the same set trains every school</div>
+        </div>
+        <div style="flex:1 1 auto"></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <div style="font-family:JetBrains Mono,monospace;font-size:26px;font-weight:700;line-height:1;color:#e9f1ff">{{ genCount }}</div>
+          <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#5f7392">ARENAS BUILT</div>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:20px;justify-content:center">
+
+        <div style="width:398px;flex:0 0 auto;display:flex;flex-direction:column;gap:14px;padding:20px 22px;border-radius:18px;border:1px solid rgba(130,160,200,.16);background:linear-gradient(180deg,rgba(16,24,38,.72),rgba(8,12,20,.6))">
+          <div style="flex:0 0 auto;font-family:Oswald,sans-serif;font-size:14px;letter-spacing:2px;color:#c9d8ee">WHAT THE GENERATOR GUARANTEES</div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:11px">
+            <sc-for list="{{ genRules }}" as="gr" hint-placeholder-count="5">
+              <div style="display:flex;gap:11px;align-items:flex-start">
+                <div style="width:6px;height:6px;border-radius:50%;background:#4ea8ff;margin-top:7px;flex:0 0 auto"></div>
+                <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:1.4px;color:#c9d8ee">{{ gr.title }}</div>
+                  <div style="font-size:12.5px;line-height:1.4;color:#8fa4c4;text-wrap:pretty">{{ gr.text }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:1 1 auto;min-height:0"></div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:5px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#5f7392">STATUS</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:12.5px;line-height:1.4;color:#a9bcd8;min-height:52px">{{ genStatus }}</div>
+          </div>
+          <div onClick="{{ genPrimary }}" style="flex:0 0 auto;cursor:pointer;height:54px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:{{ genPrimaryBg }};border:1px solid {{ genPrimaryBorder }};font-family:Oswald,sans-serif;font-size:14px;letter-spacing:2.2px;color:{{ genPrimaryColor }}">{{ genPrimaryLabel }}</div>
+        </div>
+
+        <div style="flex:0 0 auto;display:grid;grid-template-columns:repeat(4,317px);grid-auto-rows:1fr;gap:14px">
+          <sc-for list="{{ genSlots }}" as="g" hint-placeholder-count="12">
+            <div style="display:flex;flex-direction:column;gap:7px;padding:11px;border-radius:14px;border:1px solid {{ g.border }};background:{{ g.bg }};opacity:{{ g.opacity }}">
+              <div style="flex:0 0 auto;display:flex;align-items:center;gap:9px">
+                <div style="font-family:Oswald,sans-serif;font-size:12.5px;letter-spacing:1.8px;color:{{ g.numColor }}">{{ g.num }}</div>
+                <div style="flex:1 1 auto"></div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:10px;color:#6d80a0">{{ g.seed }}</div>
+              </div>
+              <div style="flex:1 1 auto;min-height:0;position:relative;border-radius:9px;overflow:hidden;background:#0a0d13;border:1px solid rgba(130,160,200,.1)">
+                <div ref="{{ g.ref }}" style="position:absolute;left:0;top:0"></div>
+                <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 40px 14px rgba(3,5,9,.5)"></div>
+                <div style="position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(126,232,255,.9),transparent);opacity:{{ g.scanOpacity }};animation:scanline 1.1s linear infinite"></div>
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-size:11px;letter-spacing:2px;color:#4f6280;opacity:{{ g.waitOpacity }}">{{ g.waitLabel }}</div>
+              </div>
+              <div style="flex:0 0 auto;display:flex;gap:8px">
+                <div style="flex:1 1 0;min-width:0;font-family:JetBrains Mono,monospace;font-size:10.5px;color:#8fa4c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.metaA }}</div>
+                <div style="flex:0 0 auto;font-family:JetBrains Mono,monospace;font-size:10.5px;color:#c9a35f">{{ g.metaB }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isSchool }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px">
+
+      <div style="height:58px;flex:0 0 auto;display:flex;align-items:center;gap:16px">
+        <div onClick="{{ toMenu }}" style="cursor:pointer;height:36px;padding:0 15px;display:flex;align-items:center;gap:8px;border-radius:10px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#9db1cd">← SCHOOLS</div>
+        <div style="width:44px;height:44px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:12px;background:{{ sch.deep }};border:1px solid {{ sch.border }}">
+          <div style="width:26px;height:26px">
+            <dc-import name="AlgoEmblem" algo="{{ sch.key }}" color="{{ sch.color }}" hint-size="26px,26px"></dc-import>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:24px;letter-spacing:2px;line-height:1;color:{{ sch.color }}">{{ sch.title }}</div>
+          <div style="font-family:JetBrains Mono,monospace;font-size:10.5px;color:#6d80a0">{{ sch.line }}</div>
+        </div>
+        <div style="width:1px;height:30px;background:rgba(140,170,210,.16);flex:0 0 auto"></div>
+        <div style="display:flex;gap:8px;flex:0 0 auto">
+          <sc-for list="{{ cpPills }}" as="p" hint-placeholder-count="3">
+            <div style="height:34px;padding:0 13px;display:flex;align-items:center;gap:9px;border-radius:9px;background:{{ p.bg }};border:1px solid {{ p.border }}">
+              <span style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{{ p.color }}">{{ p.num }}</span>
+              <span style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:{{ p.color }}">{{ p.name }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:1 1 auto"></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:0 0 auto">
+          <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;line-height:1;color:#e9f1ff">{{ sch.levelLabel }}</div>
+          <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">TOURNAMENT LEVEL</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;flex:0 0 auto">
+          <sc-for list="{{ speeds }}" as="sp" hint-placeholder-count="4">
+            <div onClick="{{ sp.on }}" style="cursor:pointer;min-width:42px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-family:JetBrains Mono,monospace;font-size:12.5px;font-weight:700;border:1px solid {{ sp.border }};background:{{ sp.bg }};color:{{ sp.color }}">{{ sp.label }}</div>
+          </sc-for>
+        </div>
+        <div onClick="{{ togglePlay }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(124,188,255,.4);background:rgba(30,60,100,.35);font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:1.4px;color:#cfe6ff;flex:0 0 auto">{{ playLabel }}</div>
+        <div onClick="{{ skipCp }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:1.4px;color:#9db1cd;flex:0 0 auto">SKIP ▸▸</div>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:16px;justify-content:center">
+
+        <div style="width:330px;flex:0 0 auto;display:flex;flex-direction:column;gap:13px;padding:17px 19px;border-radius:16px;border:1px solid rgba(130,160,200,.16);background:linear-gradient(180deg,rgba(16,24,38,.72),rgba(8,12,20,.6))">
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:3px">
+            <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:2px;color:#5f7392">CHECKPOINT {{ sch.cpLabel }}</div>
+            <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:31px;letter-spacing:1.6px;line-height:1.05;color:#f2f7ff">{{ sch.cpName }}</div>
+          </div>
+          <div style="flex:0 0 auto;font-size:13px;line-height:1.45;color:#94a8c6;text-wrap:pretty">{{ sch.cpBlurb }}</div>
+
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:10px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">POLICY LEVEL · FROZEN FOR THIS CHECKPOINT</div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.2px;color:#ffb094;width:52px;flex:0 0 auto">TOM</div>
+              <div style="flex:1 1 auto;height:8px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden"><div style="height:100%;border-radius:4px;background:#ff8a5c;width:{{ sch.catSkillW }}"></div></div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:#ffd0bd;width:38px;text-align:right;flex:0 0 auto">{{ sch.catSkill }}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.2px;color:#8fdcff;width:52px;flex:0 0 auto">JERRY</div>
+              <div style="flex:1 1 auto;height:8px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden"><div style="height:100%;border-radius:4px;background:#6ee2ff;width:{{ sch.mouseSkillW }}"></div></div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:#d3f2ff;width:38px;text-align:right;flex:0 0 auto">{{ sch.mouseSkill }}</div>
+            </div>
+          </div>
+
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:9px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">WHAT TO WATCH</div>
+            <sc-for list="{{ sch.watch }}" as="w" hint-placeholder-count="4">
+              <div style="display:flex;gap:9px;align-items:flex-start">
+                <div style="width:5px;height:5px;border-radius:50%;background:{{ w.dot }};margin-top:6px;flex:0 0 auto"></div>
+                <div style="font-size:12.5px;line-height:1.42;color:#a9bcd8;text-wrap:pretty">{{ w.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="flex:1 1 auto;min-height:0"></div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.3px;padding:2px 7px;border-radius:5px;color:{{ sch.thoughtColor }};border:1px solid {{ sch.thoughtColor }}">{{ sch.thoughtLabel }}</div>
+              <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">DECISION</div>
+            </div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.35;color:#a9bcd8;min-height:46px;text-wrap:pretty">{{ sch.thought }}</div>
+          </div>
+        </div>
+
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:10px">
+          <div style="width:1188px;height:836px;flex:0 0 auto;position:relative;border-radius:14px;overflow:hidden;background:#0a0d13;border:1px solid rgba(130,160,200,.14)">
+            <div ref="{{ schoolMapRef }}" style="position:absolute;left:0;top:0"></div>
+            <div ref="{{ schoolFxRef }}" style="position:absolute;left:0;top:0"></div>
+            <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 46px rgba(3,5,9,.5)"></div>
+            <div style="position:absolute;left:12px;top:12px;display:flex;gap:8px">
+              <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:1.6px;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid {{ sch.border }};color:{{ sch.light }};white-space:nowrap">{{ sch.levelLabel }}</div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#9db1cd;white-space:nowrap">STEP {{ sch.step }}</div>
+              <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#9db1cd;white-space:nowrap">ROUTE {{ sch.route }}</div>
+            </div>
+            <sc-if value="{{ sch.hasBanner }}">
+              <div style="position:absolute;left:50%;top:16px;transform:translateX(-50%);animation:bannerIn .22s ease-out;font-family:Oswald,sans-serif;font-size:20px;letter-spacing:3px;padding:10px 24px;border-radius:10px;background:rgba(4,7,12,.9);border:1px solid {{ sch.bannerColor }};color:{{ sch.bannerColor }};white-space:nowrap">{{ sch.bannerText }}</div>
+            </sc-if>
+            <sc-if value="{{ sch.showOverlay }}">
+              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,7,12,.84)">
+                <div style="width:660px;padding:32px 36px;border-radius:20px;border:1px solid rgba(130,160,200,.26);background:linear-gradient(180deg,rgba(18,26,42,.97),rgba(9,13,21,.97));display:flex;flex-direction:column;gap:18px;animation:bannerIn .26s ease-out">
+                  <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:3px;color:#5f7392">{{ ov.kicker }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:38px;letter-spacing:1.6px;line-height:1.05;color:#f2f7ff">{{ ov.title }}</div>
+                  <div style="font-size:15px;line-height:1.5;color:#9db1cd;text-wrap:pretty">{{ ov.body }}</div>
+                  <div style="display:flex;gap:12px">
+                    <div style="flex:1 1 0;display:flex;flex-direction:column;gap:4px;padding:13px 16px;border-radius:12px;background:rgba(255,122,84,.1);border:1px solid rgba(255,138,92,.26)">
+                      <div style="font-family:JetBrains Mono,monospace;font-size:26px;font-weight:700;line-height:1;color:#ff9a72">{{ ov.catValue }}</div>
+                      <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.4px;color:#a5806f">TOM · CATCHES</div>
+                    </div>
+                    <div style="flex:1 1 0;display:flex;flex-direction:column;gap:4px;padding:13px 16px;border-radius:12px;background:rgba(110,226,255,.08);border:1px solid rgba(126,224,255,.24)">
+                      <div style="font-family:JetBrains Mono,monospace;font-size:26px;font-weight:700;line-height:1;color:#7ee0ff">{{ ov.mouseValue }}</div>
+                      <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.4px;color:#6d93a5">JERRY · ESCAPES</div>
+                    </div>
+                    <div style="flex:1 1 0;display:flex;flex-direction:column;gap:4px;padding:13px 16px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(130,160,200,.16)">
+                      <div style="font-family:JetBrains Mono,monospace;font-size:26px;font-weight:700;line-height:1;color:#c9d8ee">{{ ov.drawValue }}</div>
+                      <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.4px;color:#66799a">TIME OUT</div>
+                    </div>
+                  </div>
+                  <div onClick="{{ ov.on }}" style="cursor:pointer;height:56px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(124,188,255,.18);border:1px solid rgba(124,188,255,.45);font-family:Oswald,sans-serif;font-size:15px;letter-spacing:2.4px;color:#dceaff">{{ ov.cta }}</div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="width:1188px;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:6px">
+            <div style="flex:0 0 auto;display:flex;align-items:baseline;gap:12px">
+              <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.8px;color:#5f7392">TOURNAMENT · {{ sch.cpName }}</div>
+              <div style="flex:1 1 auto"></div>
+              <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.4px;color:#a5806f">T = TOM CAUGHT HER</div>
+              <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.4px;color:#6d93a5">J = JERRY GOT HOME</div>
+              <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.4px;color:#66799a">– = TIME OUT</div>
+            </div>
+            <div style="flex:1 1 auto;min-height:0;display:flex;gap:6px">
+              <sc-for list="{{ strip }}" as="c" hint-placeholder-count="12">
+                <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:9px;background:{{ c.bg }};border:1px solid {{ c.border }}">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:17px;font-weight:700;line-height:1;color:{{ c.color }}">{{ c.mark }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:8.5px;letter-spacing:.9px;color:#5f7392;line-height:1">{{ c.label }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="width:330px;flex:0 0 auto;display:flex;flex-direction:column;gap:13px;padding:17px 19px;border-radius:16px;border:1px solid rgba(130,160,200,.16);background:linear-gradient(180deg,rgba(16,24,38,.72),rgba(8,12,20,.6))">
+          <div style="flex:0 0 auto;font-family:Oswald,sans-serif;font-size:14px;letter-spacing:2px;color:#c9d8ee">SCOREBOARD</div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:12px;background:rgba(255,122,84,.08);border:1px solid rgba(255,138,92,.22)">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <div style="font-family:JetBrains Mono,monospace;font-size:34px;font-weight:700;line-height:1;color:#ff9a72">{{ sch.catPct }}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:14px;color:#a5806f">{{ sch.catCount }}</div>
+              </div>
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#a5806f">TOM · CATCH RATE, THIS CHECKPOINT</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:12px;background:rgba(110,226,255,.07);border:1px solid rgba(126,224,255,.2)">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <div style="font-family:JetBrains Mono,monospace;font-size:34px;font-weight:700;line-height:1;color:#7ee0ff">{{ sch.mousePct }}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:14px;color:#6d93a5">{{ sch.mouseCount }}</div>
+              </div>
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.5px;color:#6d93a5">JERRY · ESCAPE RATE, THIS CHECKPOINT</div>
+            </div>
+          </div>
+
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:10px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">EXAM VS THE TRAINED OPPONENT</div>
+            <div style="display:flex;gap:10px">
+              <div style="font-family:Oswald,sans-serif;font-size:8.5px;letter-spacing:1px;color:#a5806f">TOM VS TRAINED JERRY</div>
+              <div style="font-family:Oswald,sans-serif;font-size:8.5px;letter-spacing:1px;color:#6d93a5">JERRY VS TRAINED TOM</div>
+            </div>
+            <sc-for list="{{ progRows }}" as="pr" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:5px;opacity:{{ pr.opacity }}">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#6d80a0;flex:0 0 auto">{{ pr.num }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.3px;color:#c9d8ee;flex:1 1 auto">{{ pr.name }}</div>
+                  <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;font-weight:700;color:#ff9a72;flex:0 0 auto">{{ pr.cat }}</div>
+                  <div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#4f6280;flex:0 0 auto">/</div>
+                  <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;font-weight:700;color:#7ee0ff;flex:0 0 auto">{{ pr.mouse }}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:3px">
+                  <div style="height:7px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:4px;background:#ff8a5c;width:{{ pr.catW }}"></div></div>
+                  <div style="height:7px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:4px;background:#6ee2ff;width:{{ pr.mouseW }}"></div></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="flex:1 1 auto;min-height:0"></div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:7px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">RULES OF THE ROUND</div>
+            <div style="font-size:12px;line-height:1.45;color:#8fa4c4;text-wrap:pretty">Tom wins on contact, Jerry wins at the hole, 180 steps is a time out. Traps freeze whoever steps on them for 5 steps.</div>
+            <div style="font-size:12px;line-height:1.45;color:#8fa4c4;text-wrap:pretty">One episode per level, {{ levelCountLabel }} levels per checkpoint — the same set in every school.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isVerdict }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:15px">
+
+      <div style="height:52px;flex:0 0 auto;display:flex;align-items:center;gap:18px">
+        <div onClick="{{ toMenu }}" style="cursor:pointer;height:36px;padding:0 15px;display:flex;align-items:center;gap:8px;border-radius:10px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#9db1cd">← SCHOOLS</div>
+        <div style="width:40px;height:40px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:11px;background:{{ vd.deep }};border:1px solid {{ vd.border }}">
+          <div style="width:24px;height:24px">
+            <dc-import name="AlgoEmblem" algo="{{ vd.key }}" color="{{ vd.color }}" hint-size="24px,24px"></dc-import>
+          </div>
+        </div>
+        <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:24px;letter-spacing:2.2px;color:{{ vd.color }}">{{ vd.title }}</div>
+        <div style="height:28px;padding:0 11px;display:flex;align-items:center;border-radius:8px;background:rgba(61,220,132,.1);border:1px solid rgba(61,220,132,.3);font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.6px;color:#9af0be">GRADUATED</div>
+        <div style="flex:1 1 auto"></div>
+        <div style="flex:0 0 auto;font-family:JetBrains Mono,monospace;font-size:12px;color:#6d80a0;white-space:nowrap">{{ vd.subline }}</div>
+      </div>
+
+      <div style="height:126px;flex:0 0 auto;display:flex;align-items:center;gap:26px;padding:0 34px;border-radius:18px;border:1px solid {{ vd.plateBorder }};background:{{ vd.plateBg }}">
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1 1 auto;min-width:0">
+          <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:3.4px;color:#8fa4c4">SCHOOL CHAMPION</div>
+          <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:52px;letter-spacing:3px;line-height:1;color:{{ vd.champColor }}">{{ vd.champLine }}</div>
+        </div>
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:660px">
+          <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.8px;color:#5f7392">MARGIN ON THE TRAINED CHECKPOINT</div>
+          <div style="font-size:14.5px;line-height:1.4;color:#a9bcd8;text-align:right;text-wrap:pretty">{{ vd.champNote }}</div>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:20px;justify-content:center">
+        <sc-for list="{{ vd.cards }}" as="c" hint-placeholder-count="2">
+          <div style="width:906px;flex:0 0 auto;display:flex;flex-direction:column;gap:16px;padding:22px 26px;border-radius:18px;border:1px solid {{ c.border }};background:{{ c.bg }};opacity:{{ c.opacity }}">
+            <div style="flex:0 0 auto;display:flex;align-items:center;gap:22px">
+              <div style="width:196px;height:224px;flex:0 0 auto;border-radius:16px;background:rgba(0,0,0,.28);border:1px solid {{ c.border }};display:flex;align-items:center;justify-content:center;overflow:hidden">
+                <div ref="{{ c.ref }}" style="width:176px;height:200px"></div>
+              </div>
+              <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:9px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="flex:0 0 auto;height:26px;padding:0 10px;display:flex;align-items:center;border-radius:7px;background:{{ c.tagBg }};border:1px solid {{ c.tagBorder }};font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.7px;color:{{ c.tagColor }};white-space:nowrap">{{ c.role }}</div>
+                  <div style="flex:0 0 auto;height:26px;padding:0 10px;display:flex;align-items:center;border-radius:7px;background:rgba(255,255,255,.05);border:1px solid rgba(130,160,200,.2);font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.7px;color:#9db1cd;white-space:nowrap">{{ c.verdict }}</div>
+                </div>
+                <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:54px;letter-spacing:3px;line-height:1;color:{{ c.color }}">{{ c.name }}</div>
+                <div style="display:flex;align-items:baseline;gap:14px">
+                  <div style="font-family:JetBrains Mono,monospace;font-size:52px;font-weight:700;line-height:1;color:{{ c.color }}">{{ c.rate }}</div>
+                  <div style="font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#66799a;max-width:200px;line-height:1.35">{{ c.rateLabel }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:9px">
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">{{ c.rowsLabel }}</div>
+              <sc-for list="{{ c.rows }}" as="r" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:11px">
+                  <div style="font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:1.3px;color:#8fa4c4;width:142px;flex:0 0 auto">{{ r.name }}</div>
+                  <div style="flex:1 1 auto;height:11px;border-radius:6px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:6px;background:{{ c.barColor }};width:{{ r.w }}"></div></div>
+                  <div style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:#e9f1ff;width:52px;text-align:right;flex:0 0 auto">{{ r.pct }}</div>
+                  <div style="font-family:JetBrains Mono,monospace;font-size:11px;color:#6d80a0;width:56px;text-align:right;flex:0 0 auto">{{ r.count }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:7px">
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">TRAINED RUN · LEVEL BY LEVEL</div>
+              <div style="display:flex;gap:5px">
+                <sc-for list="{{ c.cells }}" as="cl" hint-placeholder-count="12">
+                  <div style="flex:1 1 0;min-width:0;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:8px;background:{{ cl.bg }};border:1px solid {{ cl.border }}">
+                    <div style="font-family:JetBrains Mono,monospace;font-size:15px;font-weight:700;line-height:1;color:{{ cl.color }}">{{ cl.mark }}</div>
+                    <div style="font-family:Oswald,sans-serif;font-size:8px;letter-spacing:.8px;line-height:1;color:{{ cl.color }}">{{ cl.num }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="flex:0 0 auto;height:1px;background:rgba(140,170,210,.14)"></div>
+
+            <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:9px">
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">{{ c.learnedLabel }}</div>
+              <sc-for list="{{ c.tactics }}" as="t" hint-placeholder-count="3">
+                <div style="display:flex;gap:10px;align-items:flex-start">
+                  <div style="width:5px;height:5px;border-radius:50%;background:{{ c.barColor }};margin-top:7px;flex:0 0 auto"></div>
+                  <div style="font-size:13.5px;line-height:1.45;color:#a9bcd8;text-wrap:pretty">{{ t.text }}</div>
+                </div>
+              </sc-for>
+              <div style="flex:1 1 auto;min-height:0"></div>
+              <div style="flex:0 0 auto;display:flex;gap:10px">
+                <sc-for list="{{ c.footStats }}" as="fs" hint-placeholder-count="3">
+                  <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:11px 14px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(130,160,200,.12)">
+                    <div style="font-family:JetBrains Mono,monospace;font-size:20px;font-weight:700;line-height:1;color:#e9f1ff">{{ fs.value }}</div>
+                    <div style="font-family:Oswald,sans-serif;font-size:9px;letter-spacing:1.1px;color:#66799a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fs.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="flex:0 0 auto;font-size:12.5px;line-height:1.4;color:#8fa4c4">{{ c.footNote }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="height:60px;flex:0 0 auto;display:flex;align-items:center;gap:14px">
+        <div onClick="{{ toMenu }}" style="flex:0 0 auto;cursor:pointer;height:50px;padding:0 24px;display:flex;align-items:center;border-radius:12px;border:1px solid rgba(130,160,200,.26);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:13px;letter-spacing:2px;color:#c9d8ee;white-space:nowrap">← BACK TO SCHOOLS</div>
+        <div onClick="{{ vd.rerun }}" style="flex:0 0 auto;cursor:pointer;height:50px;padding:0 24px;display:flex;align-items:center;border-radius:12px;border:1px solid rgba(130,160,200,.26);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:13px;letter-spacing:2px;color:#9db1cd;white-space:nowrap">RE-RUN THIS SCHOOL</div>
+        <div style="flex:1 1 auto;min-width:0;font-size:13.5px;color:#8fa4c4;text-align:center">Both policies are kept — the final takes the best cat and the best mouse of all three schools.</div>
+        <div onClick="{{ vd.next }}" style="flex:0 0 auto;cursor:pointer;height:50px;padding:0 28px;display:flex;align-items:center;border-radius:12px;background:rgba(124,188,255,.18);border:1px solid rgba(124,188,255,.45);font-family:Oswald,sans-serif;font-size:14px;letter-spacing:2.4px;color:#dceaff;white-space:nowrap">{{ vd.nextLabel }}</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isFinal }}">
+    <div style="position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px">
+
+      <div style="height:58px;flex:0 0 auto;display:flex;align-items:center;gap:18px;padding:0 20px;border-radius:14px;border:1px solid rgba(130,160,200,.18);background:linear-gradient(90deg,rgba(255,122,84,.12),rgba(10,14,22,.55) 38%,rgba(10,14,22,.55) 62%,rgba(110,226,255,.12))">
+        <div onClick="{{ toMenu }}" style="cursor:pointer;height:34px;padding:0 14px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.5px;color:#9db1cd">← SCHOOLS</div>
+        <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:26px;letter-spacing:3px;color:#f2f7ff;white-space:nowrap">GRAND FINAL</div>
+        <div style="font-size:12.5px;color:#8fa4c4;font-weight:500;white-space:nowrap">{{ fin.subtitle }}</div>
+        <div style="flex:1 1 auto"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <sc-for list="{{ fin.pips }}" as="pp" hint-placeholder-count="5">
+            <div style="width:40px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:10px;font-family:Oswald,sans-serif;font-size:16px;letter-spacing:.5px;background:{{ pp.bg }};border:1px solid {{ pp.border }};color:{{ pp.color }}">{{ pp.label }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-family:JetBrains Mono,monospace;font-size:30px;font-weight:700;line-height:1;color:#ff9a72">{{ fin.scoreCat }}</div>
+          <div style="font-family:Oswald,sans-serif;font-size:16px;color:#5f7392">:</div>
+          <div style="font-family:JetBrains Mono,monospace;font-size:30px;font-weight:700;line-height:1;color:#7ee0ff">{{ fin.scoreMouse }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <sc-for list="{{ speeds }}" as="sp" hint-placeholder-count="4">
+            <div onClick="{{ sp.on }}" style="cursor:pointer;min-width:40px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-family:JetBrains Mono,monospace;font-size:12.5px;font-weight:700;border:1px solid {{ sp.border }};background:{{ sp.bg }};color:{{ sp.color }}">{{ sp.label }}</div>
+          </sc-for>
+        </div>
+        <div onClick="{{ togglePlay }}" style="cursor:pointer;height:34px;padding:0 15px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(124,188,255,.4);background:rgba(30,60,100,.35);font-family:Oswald,sans-serif;font-size:11.5px;letter-spacing:1.4px;color:#cfe6ff">{{ playLabel }}</div>
+        <div onClick="{{ fin.reset }}" style="cursor:pointer;height:34px;padding:0 14px;display:flex;align-items:center;border-radius:9px;border:1px solid rgba(130,160,200,.24);background:rgba(255,255,255,.03);font-family:Oswald,sans-serif;font-size:11px;letter-spacing:1.4px;color:#9db1cd">RESET</div>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:0;display:flex;gap:16px;justify-content:center">
+
+        <div style="width:330px;flex:0 0 auto;display:flex;flex-direction:column;gap:13px;padding:18px 20px;border-radius:16px;border:1px solid rgba(255,138,92,.26);background:linear-gradient(180deg,rgba(42,20,14,.55),rgba(9,12,19,.6))">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:13px">
+            <div style="width:56px;height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:15px;background:{{ fin.catDeep }};border:1px solid {{ fin.catBorder }}">
+              <div style="width:34px;height:34px">
+                <dc-import name="AlgoEmblem" algo="{{ fin.catKey }}" color="{{ fin.catColor }}" hint-size="34px,34px"></dc-import>
+              </div>
+            </div>
+            <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px">
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.8px;color:#a5806f">CAT · TOM</div>
+              <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:28px;letter-spacing:1.6px;line-height:1;color:{{ fin.catColor }}">{{ fin.catShort }}</div>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;width:100%;height:154px;border-radius:13px;background:rgba(0,0,0,.25);border:1px solid rgba(255,138,92,.18);display:flex;align-items:center;justify-content:center;overflow:hidden">
+            <div ref="{{ finCatPortraitRef }}" style="width:128px;height:142px"></div>
+          </div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:2px">
+            <div style="font-family:JetBrains Mono,monospace;font-size:36px;font-weight:700;line-height:1;color:#ff9a72">{{ fin.catRate }}</div>
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.5px;color:#a5806f">CATCH RATE IN HIS SCHOOL</div>
+          </div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(255,138,92,.18)"></div>
+          <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">WHAT HE LEARNED</div>
+            <sc-for list="{{ fin.catTactics }}" as="t" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:flex-start">
+                <div style="width:5px;height:5px;border-radius:50%;background:#ff8a5c;margin-top:6px;flex:0 0 auto"></div>
+                <div style="font-size:12.5px;line-height:1.42;color:#a9bcd8;text-wrap:pretty">{{ t.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(255,138,92,.18)"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px">
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">RIGHT NOW</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.35;color:#ffbfa8;min-height:34px;text-wrap:pretty">{{ fin.catThought }}</div>
+          </div>
+        </div>
+
+        <div style="flex:0 0 auto;width:1188px;height:836px;align-self:center;position:relative;border-radius:14px;overflow:hidden;background:#0a0d13;border:1px solid rgba(130,160,200,.16)">
+          <div ref="{{ finalMapRef }}" style="position:absolute;left:0;top:0"></div>
+          <div ref="{{ finalFxRef }}" style="position:absolute;left:0;top:0"></div>
+          <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 50px rgba(3,5,9,.5)"></div>
+          <div style="position:absolute;left:12px;top:12px;display:flex;gap:8px">
+            <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:1.6px;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#c9d8ee;white-space:nowrap">{{ fin.round }}</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#9db1cd;white-space:nowrap">STEP {{ fin.steps }}</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;background:rgba(5,8,14,.85);border:1px solid rgba(130,160,200,.2);color:#9db1cd;white-space:nowrap">UNSEEN LEVEL</div>
+          </div>
+          <sc-if value="{{ fin.hasBanner }}">
+            <div style="position:absolute;left:50%;top:18px;transform:translateX(-50%);animation:bannerIn .24s ease-out;font-family:Oswald,sans-serif;font-size:22px;letter-spacing:3.4px;padding:11px 26px;border-radius:11px;background:rgba(4,7,12,.92);border:1px solid {{ fin.bannerColor }};color:{{ fin.bannerColor }};white-space:nowrap">{{ fin.bannerText }}</div>
+          </sc-if>
+          <sc-if value="{{ fin.showPlate }}">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,7,12,.86)">
+              <div style="width:760px;padding:38px 42px;border-radius:22px;border:1px solid rgba(130,160,200,.26);background:linear-gradient(180deg,rgba(18,26,42,.97),rgba(9,13,21,.97));display:flex;flex-direction:column;gap:16px;animation:bannerIn .3s ease-out">
+                <div style="font-family:Oswald,sans-serif;font-size:12px;letter-spacing:3.4px;color:#5f7392">FIVE ROUNDS · ONE UNSEEN LEVEL</div>
+                <div style="font-family:Oswald,sans-serif;font-weight:700;font-size:50px;letter-spacing:2.6px;line-height:1.02;color:{{ fin.plateColor }}">{{ fin.plateTitle }}</div>
+                <div style="font-size:16px;line-height:1.5;color:#a9bcd8;text-wrap:pretty">{{ fin.plateBody }}</div>
+                <div onClick="{{ fin.reset }}" style="cursor:pointer;height:54px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(124,188,255,.18);border:1px solid rgba(124,188,255,.45);font-family:Oswald,sans-serif;font-size:14px;letter-spacing:2.4px;color:#dceaff">RUN THE SERIES AGAIN</div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="width:330px;flex:0 0 auto;display:flex;flex-direction:column;gap:13px;padding:18px 20px;border-radius:16px;border:1px solid rgba(110,226,255,.24);background:linear-gradient(180deg,rgba(12,32,44,.55),rgba(9,12,19,.6))">
+          <div style="flex:0 0 auto;display:flex;align-items:center;gap:13px">
+            <div style="width:56px;height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;border-radius:15px;background:{{ fin.mouseDeep }};border:1px solid {{ fin.mouseBorder }}">
+              <div style="width:34px;height:34px">
+                <dc-import name="AlgoEmblem" algo="{{ fin.mouseKey }}" color="{{ fin.mouseColor }}" hint-size="34px,34px"></dc-import>
+              </div>
+            </div>
+            <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px">
+              <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.8px;color:#6d93a5">MOUSE · JERRY</div>
+              <div style="font-family:Oswald,sans-serif;font-weight:600;font-size:28px;letter-spacing:1.6px;line-height:1;color:{{ fin.mouseColor }}">{{ fin.mouseShort }}</div>
+            </div>
+          </div>
+          <div style="flex:0 0 auto;width:100%;height:154px;border-radius:13px;background:rgba(0,0,0,.25);border:1px solid rgba(110,226,255,.16);display:flex;align-items:center;justify-content:center;overflow:hidden">
+            <div ref="{{ finMousePortraitRef }}" style="width:128px;height:142px"></div>
+          </div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:2px">
+            <div style="font-family:JetBrains Mono,monospace;font-size:36px;font-weight:700;line-height:1;color:#7ee0ff">{{ fin.mouseRate }}</div>
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.5px;color:#6d93a5">ESCAPE RATE IN HER SCHOOL</div>
+          </div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(110,226,255,.18)"></div>
+          <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px">
+            <div style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:1.6px;color:#5f7392">WHAT SHE LEARNED</div>
+            <sc-for list="{{ fin.mouseTactics }}" as="t" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:flex-start">
+                <div style="width:5px;height:5px;border-radius:50%;background:#6ee2ff;margin-top:6px;flex:0 0 auto"></div>
+                <div style="font-size:12.5px;line-height:1.42;color:#a9bcd8;text-wrap:pretty">{{ t.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="flex:0 0 auto;height:1px;background:rgba(110,226,255,.18)"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px">
+            <div style="font-family:Oswald,sans-serif;font-size:9.5px;letter-spacing:1.4px;color:#5f7392">RIGHT NOW</div>
+            <div style="font-family:JetBrains Mono,monospace;font-size:11.5px;line-height:1.35;color:#a9e6ff;min-height:34px;text-wrap:pretty">{{ fin.mouseThought }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1920,&quot;height&quot;:1080},&quot;levelCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:12,&quot;min&quot;:4,&quot;max&quot;:16,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Tournament&quot;},&quot;stepsPerSecond&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:9,&quot;min&quot;:3,&quot;max&quot;:30,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pace&quot;},&quot;holdMs&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:900,&quot;min&quot;:200,&quot;max&quot;:2500,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Pace&quot;},&quot;backdrops&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Backdrops&quot;},&quot;backdropOpacity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:0.8,&quot;min&quot;:0,&quot;max&quot;:1,&quot;step&quot;:0.05,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Backdrops&quot;},&quot;showVision&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;},&quot;showHearing&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;},&quot;showScent&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sensors&quot;}}">
+class Component extends DCLogic {
+  state = { ready: false, screen: 'menu', playing: true, speed: 4, ui: 0, viewSchool: 'ppo' };
+
+  ORDER = ['ppo', 'ga', 'cmaes'];
+  /* Per-school competence targets at each checkpoint: [untrained, half, trained].
+     The gap between the two roles is what decides a school, so it is authored, not left
+     to chance: PPO grows a hunter, GA grows an escape artist, CMA-ES trains both. */
+  /* Targets are picked off a measured sweep of the placeholder learner, not guessed: its
+     competence scale is NOT monotone at the top end (both roles peak near 0.8 and get worse
+     at 0.95+, where the policy switches to a mode this benchmark punishes), so no target goes
+     above 0.8 and each school's triple was checked to rise on the exam. */
+  CP_SKILL = {
+    ppo: { cat: [0.05, 0.35, 0.65], mouse: [0.05, 0.35, 0.50] },
+    ga: { cat: [0.05, 0.35, 0.65], mouse: [0.05, 0.35, 0.80] },
+    cmaes: { cat: [0.05, 0.50, 0.80], mouse: [0.05, 0.30, 0.55] }
+  };
+  CP_NAME = ['UNTRAINED', 'HALF-TRAINED', 'TRAINED'];
+  SKEY = 'cm-academy-run-v5';
+  CS = 44;
+  CSP = 11;
+  acc = 0;
+  genSalt = 0;
+  levels = [];
+  progress = {};
+  _epCache = {};
+  schoolMapRef = React.createRef();
+  schoolFxRef = React.createRef();
+  finalMapRef = React.createRef();
+  finalFxRef = React.createRef();
+  vdCatRef = React.createRef();
+  vdMouseRef = React.createRef();
+  finCatRef = React.createRef();
+  finMouseRef = React.createRef();
+  levelRefs = Array.from({ length: 16 }, () => React.createRef());
+
+  componentDidMount() { this.setup(); }
+
+  /* Also called lazily from renderVals: a hot-reloaded logic class can be instantiated and
+     rendered without componentDidMount running again, and without this the whole run loop
+     would never start. Idempotent. */
+  setup() {
+    if (this._setupDone) return;
+    this._setupDone = true;
+    this.onKey = (e) => {
+      this.touch();
+      const k = (e.key || '').toLowerCase();
+      if (e.code === 'Space') { e.preventDefault(); this.setState(s => ({ playing: !s.playing })); return; }
+      if (k === 'escape' || k === 'backspace') { this.toMenu(); return; }
+      if (k === 'enter') { e.preventDefault(); this.primary(); return; }
+      if (k === '1' || k === '2' || k === '3') { this.enterSchool(this.ORDER[+k - 1]); return; }
+      if (k === 'f') this.startFinal();
+      if (k === 's') this.skipCp();
+      if (k === 'g') this.openGen();
+    };
+    window.addEventListener('keydown', this.onKey);
+    this.onVis = () => { this.tick = performance.now(); this.acc = 0; this.loop(); };
+    document.addEventListener('visibilitychange', this.onVis);
+    /* A hidden or throttled preview frame never fires requestAnimationFrame, so the run needs
+       a fallback clock. It lives on window and is re-pointed at the newest instance rather
+       than owned by one: an interval owned by an instance dies with it, and a hot-reloaded
+       class leaves the visible instance with no clock at all. */
+    window.__cmAcademyLive = this;
+    if (!window.__cmAcademyClock) {
+      window.__cmAcademyClock = setInterval(() => {
+        const inst = window.__cmAcademyLive;
+        if (inst) { try { inst.heartbeat(); } catch (e) { /* next tick tries again */ } }
+      }, 200);
+    }
+    this.waiter = setInterval(() => this.ensureBoot(), 30);
+    this.ensureBoot();
+  }
+
+  heartbeat() {
+    if (!this.ensureBoot()) return;
+    if (performance.now() - (this.tick || 0) < 300) return;
+    for (let k = 0; k < 3; k++) { this.tick = performance.now() - 84; this.frame(); }
+  }
+
+  componentWillUnmount() {
+    cancelAnimationFrame(this.raf); clearInterval(this.waiter);
+    window.removeEventListener('keydown', this.onKey);
+    document.removeEventListener('visibilitychange', this.onVis);
+  }
+
+  /* ---------- boot + persistence ---------- */
+
+  /* env.js and agents.js load as plain tags in the helmet, so they may land before or after
+     this class mounts, and a hot-reloaded class can start on an already-loaded page. Every
+     entry point funnels through here rather than trusting one poll to win the race. */
+  ensureBoot() {
+    if (this.E) return true;
+    if (!window.CatMouseEnv || !window.CatMouseAgents) return false;
+    clearInterval(this.waiter);
+    this.boot();
+    return true;
+  }
+
+  boot() {
+    this.E = window.CatMouseEnv; this.A = window.CatMouseAgents;
+    const saved = this.load();
+    if (saved && saved.seeds && saved.seeds.length) {
+      this.genSalt = saved.salt || 0;
+      this.levels = saved.seeds.map((sd, i) => this.mkLevel(sd, i));
+      this.progress = saved.progress || {};
+    }
+    this.setState({ ready: true });
+    this.tick = performance.now();
+    this.loop();
+    setTimeout(() => this.loop(), 0);
+  }
+
+  load() { try { const r = localStorage.getItem(this.SKEY); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
+
+  /* Persistence is gated on a real click or keypress. Headless probing (and any automated
+     capture) walks the same finishSchool() path, and an ungated save() there writes a
+     half-finished campaign into the shipped file — so the user opens a run they never made. */
+  touch() { this._live = true; }
+
+  save() {
+    if (!this._live) return;
+    try {
+      localStorage.setItem(this.SKEY, JSON.stringify({
+        salt: this.genSalt, seeds: this.levels.map(l => l.seed), progress: this.progress
+      }));
+    } catch (e) { /* storage is a nicety during a shoot */ }
+  }
+
+  /* The placeholder learner exposes competence only through an episode counter, so a
+     target skill is realised by looking up the episode that produces it. */
+  epFor(key, role, target) {
+    const ck = key + role + target;
+    if (this._epCache[ck] !== undefined) return this._epCache[ck];
+    let best = 0, bd = 9;
+    for (let e = 0; e <= 400; e++) {
+      const d = Math.abs(this.A.skillFor(key, role, e) - target);
+      if (d < bd) { bd = d; best = e; }
+    }
+    this._epCache[ck] = best;
+    return best;
+  }
+
+  cpEp(key, cp) {
+    const t = this.CP_SKILL[key];
+    return { cat: this.epFor(key, 'cat', t.cat[cp]), mouse: this.epFor(key, 'mouse', t.mouse[cp]) };
+  }
+
+  levelCount() { return Math.max(4, Math.min(16, this.props.levelCount ?? 12)); }
+  levelsReady() { return (this.levels || []).length >= this.levelCount(); }
+
+  mkLevel(seed, i) {
+    const map = this.E.genMap(seed >>> 0);
+    const on = {};
+    (map.route || []).forEach(p => { on[p[0] + ',' + p[1]] = 1; });
+    const onRoute = map.traps.filter(t => on[t[0] + ',' + t[1]]).length;
+    return { seed: seed >>> 0, idx: i, map, route: map.optimal, onRoute, painted: false };
+  }
+
+  /* ---------- navigation ---------- */
+
+  toMenu() { this.setState({ screen: 'menu' }); }
+
+  openGen() {
+    this.levels = []; this.genDone = false; this.lastGen = 0;
+    this.setState({ screen: 'gen', playing: true });
+  }
+
+  regenLevels() { this.genSalt = (Math.random() * 900000) | 0; this.progress = {}; this.save(); this.openGen(); }
+
+  resetRun() { this.progress = {}; this.school = null; this.finalRun = null; this.save(); this.setState({ screen: 'menu' }); }
+
+  unlocked(key) {
+    if (!this.levelsReady()) return false;
+    const i = this.ORDER.indexOf(key);
+    if (i <= 0) return true;
+    const prev = this.progress[this.ORDER[i - 1]];
+    return !!(prev && prev.done);
+  }
+
+  allGraduated() { return this.ORDER.every(k => this.progress[k] && this.progress[k].done); }
+
+  nextOpenSchool() {
+    for (const k of this.ORDER) if (!(this.progress[k] && this.progress[k].done)) return k;
+    return null;
+  }
+
+  enterSchool(key) {
+    if (!key || !this.A) return;
+    if (this.progress[key] && this.progress[key].done) { this.setState({ screen: 'verdict', viewSchool: key }); return; }
+    if (!this.levelsReady()) { this.openGen(); return; }
+    if (!this.unlocked(key)) return;
+    this.school = this.mkSchool(key);
+    this.acc = 0;
+    this.setState({ screen: 'school', playing: true });
+  }
+
+  rerunSchool(key) {
+    delete this.progress[key];
+    this.save();
+    this.school = this.mkSchool(key);
+    this.acc = 0;
+    this.setState({ screen: 'school', playing: true });
+  }
+
+  primary() {
+    const S = this.state;
+    if (S.screen === 'menu') {
+      if (!this.levelsReady()) this.openGen();
+      else if (this.allGraduated()) this.startFinal();
+      else this.enterSchool(this.nextOpenSchool());
+      return;
+    }
+    if (S.screen === 'gen') {
+      if (!this.levelsReady()) return;
+      const nx = this.nextOpenSchool();
+      if (nx) this.enterSchool(nx); else this.toMenu();
+      return;
+    }
+    if (S.screen === 'school') { if (this.school && this.school.phase === 'cpdone') this.nextCheckpoint(); return; }
+    if (S.screen === 'verdict') {
+      const nx = this.nextOpenSchool();
+      if (nx) this.enterSchool(nx); else this.startFinal();
+    }
+  }
+
+  /* ---------- school runs ---------- */
+
+  mkSchool(key) {
+    const A = this.A;
+    const sc = {
+      key, algo: A.ALGOS[key], cp: 0, levelIdx: 0, phase: 'run',
+      results: [[], [], []], exam: [null, null, null], skills: { cat: 0.05, mouse: 0.05 },
+      modes: { cat: 'patrol', mouse: 'dash' },
+      pol: { cat: A.makePolicy(key, 'cat'), mouse: A.makePolicy(key, 'mouse') },
+      ep: this.cpEp(key, 0),
+      s: null, view: null, prevView: null, alpha: 0, map: null, mapPainted: null,
+      banner: null, doneAt: 0, thought: '', thoughtCat: '', thoughtMouse: '',
+      thoughtRole: 'cat', thoughtSwap: 0, trapHits: 0
+    };
+    this.newLevelRun(sc);
+    return sc;
+  }
+
+  newLevelRun(sc) {
+    const lv = this.levels[sc.levelIdx];
+    sc.map = lv.map; sc.mapPainted = null; sc.level = lv;
+    sc.s = this.E.reset(lv.map, (lv.seed ^ (sc.cp * 7919) ^ 0x51ed) >>> 0);
+    sc.pol.cat.reset(); sc.pol.mouse.reset();
+    sc.banner = null; sc.doneAt = 0;
+    this.syncView(sc, true);
+  }
+
+  /* The head-to-head win rate measures the MATCHUP, not one student: both policies step up
+     together, so a rate can fall while both sides are getting better, and an episode ends the
+     moment either side succeeds. So each checkpoint is also graded the way RL evaluation
+     normally does it — against a FIXED benchmark opponent, the school's own trained policy:
+       cat exam   — cat@checkpoint vs the trained mouse
+       mouse exam — mouse@checkpoint vs the trained cat
+     Same 12 levels, same seeds. Beating one fixed opponent more often can only mean the
+     student got better, so this curve rises. Run headlessly when a checkpoint completes. */
+  examScore(key, cp) {
+    const E = this.E, A = this.A, n = this.levelCount();
+    const ep = {
+      myCat: this.epFor(key, 'cat', this.CP_SKILL[key].cat[cp]),
+      myMouse: this.epFor(key, 'mouse', this.CP_SKILL[key].mouse[cp]),
+      benchCat: this.epFor(key, 'cat', this.CP_SKILL[key].cat[2]),
+      benchMouse: this.epFor(key, 'mouse', this.CP_SKILL[key].mouse[2])
+    };
+    /* Graded, not pass/fail: against an expert benchmark a weak student scores 0 on every
+       level, which is a flat line with no signal. Partial credit — how close he got, how far
+       she got — separates "hopeless" from "nearly there" and makes the curve readable. */
+    const play = (epCat, epMouse) => {
+      let c = 0, m = 0, catScore = 0, mouseScore = 0;
+      this.levels.forEach(lv => {
+        const pol = { cat: A.makePolicy(key, 'cat'), mouse: A.makePolicy(key, 'mouse') };
+        const s = E.reset(lv.map, (lv.seed ^ (cp * 7919) ^ 0x51ed) >>> 0);
+        const n0 = Math.max(1, lv.map.nestField[E.idx(s.mouse.x, s.mouse.y)]);
+        let dMin = Math.abs(s.cat.x - s.mouse.x) + Math.abs(s.cat.y - s.mouse.y), nMin = n0, g = 0;
+        while (!s.done && g++ < 400) {
+          E.step(s, {
+            cat: pol.cat.act(s, E.observe(s, 'cat'), epCat).action,
+            mouse: pol.mouse.act(s, E.observe(s, 'mouse'), epMouse).action
+          });
+          const d = Math.abs(s.cat.x - s.mouse.x) + Math.abs(s.cat.y - s.mouse.y);
+          if (d < dMin) dMin = d;
+          const nn = lv.map.nestField[E.idx(s.mouse.x, s.mouse.y)];
+          if (nn >= 0 && nn < nMin) nMin = nn;
+        }
+        if (s.result === 'catch') { c++; catScore += 1; }
+        else catScore += Math.max(0, 1 - dMin / 7) * 0.75;
+        if (s.result === 'escape') { m++; mouseScore += 1; }
+        else mouseScore += Math.max(0, 1 - nMin / n0) * 0.75;
+      });
+      return { c, m, catScore: catScore / n, mouseScore: mouseScore / n };
+    };
+    const a = play(ep.myCat, ep.benchMouse);
+    const b = play(ep.benchCat, ep.myMouse);
+    return { cat: a.catScore, mouse: b.mouseScore, catWins: a.c, mouseWins: b.m };
+  }
+
+  nextCheckpoint() {
+    const sc = this.school; if (!sc) return;
+    if (sc.cp >= 2) { this.finishSchool(); return; }
+    sc.cp++; sc.levelIdx = 0; sc.phase = 'run';
+    sc.ep = this.cpEp(sc.key, sc.cp);
+    sc.pol = { cat: this.A.makePolicy(sc.key, 'cat'), mouse: this.A.makePolicy(sc.key, 'mouse') };
+    this.newLevelRun(sc);
+    this.acc = 0;
+    this.setState({ playing: true });
+  }
+
+  cpStats(arr) {
+    const n = this.levelCount();
+    let c = 0, m = 0, d = 0, played = 0;
+    for (let i = 0; i < n; i++) {
+      const r = arr[i];
+      if (!r) continue;
+      played++;
+      if (r === 'catch') c++; else if (r === 'escape') m++; else d++;
+    }
+    return { c, m, d, played, n, catRate: c / n, mouseRate: m / n, drawRate: d / n };
+  }
+
+  finishSchool() {
+    const sc = this.school;
+    const cps = [0, 1, 2].map(i => this.cpStats(sc.results[i]));
+    if (!sc.exam[2]) sc.exam[2] = this.examScore(sc.key, 2);
+    const t = cps[2];
+    this.progress[sc.key] = {
+      done: true, key: sc.key, cps, exam: sc.exam.slice(), results: sc.results[2].slice(),
+      catRate: t.catRate, mouseRate: t.mouseRate,
+      winner: t.catRate > t.mouseRate ? 'cat' : (t.mouseRate > t.catRate ? 'mouse' : 'draw')
+    };
+    this.save();
+    this.setState({ screen: 'verdict', viewSchool: sc.key });
+  }
+
+  skipCp() {
+    const sc = this.school;
+    if (this.state.screen !== 'school' || !sc || sc.phase !== 'run') return;
+    let guard = 0;
+    while (sc.phase === 'run' && guard++ < 40) {
+      let g2 = 0;
+      while (sc.s && !sc.s.done && g2++ < 400) this.simStep(sc);
+      sc.doneAt = 0;
+      this.advance(sc);
+    }
+    this.acc = 0;
+    this.setState({ ui: performance.now() | 0 });
+  }
+
+  /* ---------- final ---------- */
+
+  startFinal() {
+    if (!this.A || !this.allGraduated()) return;
+    const A = this.A, p = this.progress;
+    let ck = this.ORDER[0], mk = this.ORDER[0];
+    this.ORDER.forEach(k => {
+      if (p[k].catRate > p[ck].catRate) ck = k;
+      if (p[k].mouseRate > p[mk].mouseRate) mk = k;
+    });
+    const fa = {
+      isFinal: true, key: 'final', catKey: ck, mouseKey: mk,
+      catAlgo: A.ALGOS[ck], mouseAlgo: A.ALGOS[mk],
+      catRate: p[ck].catRate, mouseRate: p[mk].mouseRate,
+      pol: { cat: A.makePolicy(ck, 'cat'), mouse: A.makePolicy(mk, 'mouse') },
+      ep: { cat: this.epFor(ck, 'cat', this.CP_SKILL[ck].cat[2]), mouse: this.epFor(mk, 'mouse', this.CP_SKILL[mk].mouse[2]) },
+      skills: { cat: 0, mouse: 0 }, modes: { cat: 'patrol', mouse: 'dash' },
+      series: [], wins: { cat: 0, mouse: 0, draw: 0 }, round: 0, phase: 'run',
+      s: null, view: null, prevView: null, alpha: 0, mapPainted: null,
+      banner: null, doneAt: 0, thought: '', thoughtCat: '', thoughtMouse: '',
+      thoughtRole: 'cat', thoughtSwap: 0, trapHits: 0
+    };
+    fa.map = this.pickFinalMap(fa);
+    this.finalRun = fa;
+    this.newFinalRound(fa);
+    this.acc = 0;
+    this.setState({ screen: 'final', playing: true });
+  }
+
+  /* Two frozen expert policies on the wrong room can stall for five straight rounds — a
+     camper against a hider. Audition candidate arenas headlessly and take the one that
+     produces the most decided rounds, so the final is always worth watching. */
+  pickFinalMap(fa) {
+    const E = this.E, A = this.A;
+    let best = null, bestScore = -1;
+    for (let a = 0; a < 10; a++) {
+      const map = E.genMap((0x5eed21 + this.genSalt * 13 + a * 40961) >>> 0);
+      let decided = 0;
+      for (let r = 0; r < 5; r++) {
+        const pol = { cat: A.makePolicy(fa.catKey, 'cat'), mouse: A.makePolicy(fa.mouseKey, 'mouse') };
+        const s = E.reset(map, (0xf1a1 + r * 3301) >>> 0);
+        let g = 0;
+        while (!s.done && g++ < 200) {
+          E.step(s, {
+            cat: pol.cat.act(s, E.observe(s, 'cat'), fa.ep.cat).action,
+            mouse: pol.mouse.act(s, E.observe(s, 'mouse'), fa.ep.mouse).action
+          });
+        }
+        if (s.result === 'catch' || s.result === 'escape') decided++;
+      }
+      if (decided > bestScore) { bestScore = decided; best = map; }
+      if (decided >= 5) break;
+    }
+    return best;
+  }
+
+  newFinalRound(fa) {
+    fa.s = this.E.reset(fa.map, (0xf1a1 + fa.round * 3301) >>> 0);
+    fa.pol.cat.reset(); fa.pol.mouse.reset();
+    fa.banner = null; fa.doneAt = 0;
+    this.syncView(fa, true);
+  }
+
+  /* ---------- simulation ---------- */
+
+  syncView(run, init) {
+    const E = this.E, s = run.s;
+    const cc = E.castCone(s.grid, s.cat.x, s.cat.y, s.cat.facing);
+    const cm = E.castCone(s.grid, s.mouse.x, s.mouse.y, s.mouse.facing);
+    const scent = [];
+    for (let y = 1; y < E.H - 1; y++) for (let x = 1; x < E.W - 1; x++) {
+      const v = s.scent[E.idx(x, y)];
+      if (v > 0.08) scent.push([x, y, v]);
+    }
+    const v = {
+      step: s.step, result: s.result,
+      cat: { x: s.cat.x, y: s.cat.y, facing: s.cat.facing, frozen: s.cat.frozen, cone: cc.poly, sees: s.sawMouse },
+      mouse: {
+        x: s.mouse.x, y: s.mouse.y, facing: s.mouse.facing, frozen: s.mouse.frozen, cone: cm.poly, sees: s.sawCat,
+        heard: s.heard ? { x: s.heard.x, y: s.heard.y, conf: s.heard.conf, radius: s.heard.radius } : null
+      },
+      scent
+    };
+    run.prevView = init ? v : (run.view || v);
+    run.view = v;
+  }
+
+  simStep(run) {
+    const E = this.E, s = run.s;
+    const oc = E.observe(s, 'cat'), om = E.observe(s, 'mouse');
+    const rc = run.pol.cat.act(s, oc, run.ep.cat), rm = run.pol.mouse.act(s, om, run.ep.mouse);
+    run.skills.cat = rc.skill; run.skills.mouse = rm.skill;
+    run.modes.cat = rc.mode || 'patrol'; run.modes.mouse = rm.mode || 'dash';
+    const ev = E.step(s, { cat: rc.action, mouse: rm.action });
+    if (ev.trapCat || ev.trapMouse) run.trapHits++;
+    this.syncView(run);
+    this.updateThought(run);
+    if (s.done) { run.doneAt = performance.now(); this.record(run); }
+  }
+
+  record(run) {
+    const r = run.s.result;
+    if (run.isFinal) {
+      run.series.push(r);
+      if (r === 'catch') run.wins.cat++; else if (r === 'escape') run.wins.mouse++; else run.wins.draw++;
+      run.banner = r === 'catch' ? { t: 'TOM TAKES THE ROUND', c: '#ff8a5c' }
+        : r === 'escape' ? { t: 'JERRY IS HOME', c: '#ffd166' } : { t: 'TIME OUT', c: '#8fa4c4' };
+      if (run.series.length >= 5) run.phase = 'done';
+    } else {
+      run.results[run.cp][run.levelIdx] = r;
+      run.banner = r === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
+        : r === 'escape' ? { t: 'JERRY GOT HOME', c: '#ffd166' } : { t: 'TIME OUT', c: '#8fa4c4' };
+    }
+  }
+
+  advance(run) {
+    if (run.isFinal) {
+      if (run.series.length >= 5) { run.phase = 'done'; return; }
+      run.round++;
+      this.newFinalRound(run);
+      return;
+    }
+    if (run.levelIdx < this.levelCount() - 1) { run.levelIdx++; this.newLevelRun(run); }
+    else {
+      run.phase = 'cpdone';
+      if (!run.exam[run.cp]) run.exam[run.cp] = this.examScore(run.key, run.cp);
+    }
+  }
+
+  updateThought(run) {
+    const E = this.E, s = run.s;
+    const dm = Math.abs(s.cat.x - s.mouse.x) + Math.abs(s.cat.y - s.mouse.y);
+    const dn = run.map.nestField[E.idx(s.mouse.x, s.mouse.y)];
+    const cat = {
+      intercept: 'she is in sight — cutting across her line to the hole',
+      chase: 'open pursuit, ' + dm + ' cells out',
+      scent: 'the trail is fresh, following the scent',
+      memory: 'lost visual — checking her last known cell',
+      camp: 'sitting on the hole; she has to come to me',
+      patrol: 'sweeping the sector, the cone is empty'
+    };
+    const mouse = {
+      evade: 'cat in my cone — breaking line of sight behind cover',
+      listen: 'footsteps ~' + dm + ' cells out, going round the other way',
+      dash: 'route reads clean, ' + (dn >= 0 ? dn : '?') + ' cells to the hole'
+    };
+    const t = performance.now();
+    if (!run.thoughtSwap || t - run.thoughtSwap > 2400) {
+      run.thoughtSwap = t;
+      run.thoughtRole = run.thoughtRole === 'cat' ? 'mouse' : 'cat';
+    }
+    run.thoughtCat = s.cat.frozen > 0 ? ('snapped into a trap — frozen ' + s.cat.frozen + ' steps') : (cat[run.modes.cat] || '…');
+    run.thoughtMouse = s.mouse.frozen > 0 ? ('caught in a trap, ' + s.mouse.frozen + ' steps stuck') : (mouse[run.modes.mouse] || '…');
+    if (s.cat.frozen > 0) run.thoughtRole = 'cat';
+    else if (s.mouse.frozen > 0) run.thoughtRole = 'mouse';
+    run.thought = run.thoughtRole === 'cat' ? run.thoughtCat : run.thoughtMouse;
+  }
+
+  /* ---------- loop ---------- */
+
+  loop() {
+    this.raf = requestAnimationFrame(() => this.loop());
+    try { this.frame(); } catch (e) {
+      if (!this._logged) { this._logged = 1; console.error('Academy frame error:', e); }
+    }
+  }
+
+  frame() {
+    if (!this.ensureBoot()) return;
+    const now = performance.now();
+    const dt = Math.min(90, now - (this.tick || now)); this.tick = now;
+    const S = this.state;
+
+    if (S.screen === 'gen') this.genTick(now);
+
+    const run = S.screen === 'school' ? this.school : (S.screen === 'final' ? this.finalRun : null);
+    if (run && run.s && S.playing && run.phase === 'run') {
+      const sps = Math.max(1, this.props.stepsPerSecond ?? 9) * S.speed;
+      this.acc += dt / 1000 * sps;
+      let guard = 0;
+      while (this.acc >= 1 && guard++ < 160) {
+        if (run.s.done) {
+          this.acc = 0;
+          const hold = (this.props.holdMs ?? 900) / Math.max(1, S.speed * 0.55);
+          if (now - run.doneAt > hold) this.advance(run);
+          break;
+        }
+        this.acc -= 1;
+        this.simStep(run);
+      }
+      run.alpha = run.s.done ? 1 : Math.min(1, this.acc);
+    }
+
+    if (run && run.map) {
+      const mr = run.isFinal ? this.finalMapRef : this.schoolMapRef;
+      const fr = run.isFinal ? this.finalFxRef : this.schoolFxRef;
+      if (mr.current && (run.mapPainted !== run.map || !mr.current.firstChild)) {
+        run.mapPainted = run.map; mr.current.innerHTML = this.mapSvg(run.map, this.CS);
+      }
+      if (fr.current) fr.current.innerHTML = this.fxSvg(run, this.CS, now);
+    }
+
+    if (S.screen === 'gen') {
+      this.levels.forEach((lv, i) => {
+        const ref = this.levelRefs[i], h = ref && ref.current;
+        if (h && (!lv.painted || !h.firstChild)) { lv.painted = true; h.innerHTML = this.mapSvg(lv.map, this.CSP); }
+      });
+    }
+
+    if (S.screen === 'verdict') {
+      const p = this.progress[S.viewSchool];
+      if (p && this.A) {
+        const algo = this.A.ALGOS[p.key];
+        this.paintPortrait(this.vdCatRef.current, 'cat', algo, p.key);
+        this.paintPortrait(this.vdMouseRef.current, 'mouse', algo, p.key);
+      }
+    }
+    if (S.screen === 'final' && this.finalRun) {
+      const fa = this.finalRun;
+      this.paintPortrait(this.finCatRef.current, 'cat', fa.catAlgo, fa.catKey);
+      this.paintPortrait(this.finMouseRef.current, 'mouse', fa.mouseAlgo, fa.mouseKey);
+    }
+
+    if (now - (this.lastUi || 0) > 110) { this.lastUi = now; this.setState({ ui: now | 0 }); }
+  }
+
+  genTick(now) {
+    const n = this.levelCount();
+    if (this.levels.length >= n) { if (!this.genDone) { this.genDone = true; this.save(); } return; }
+    if (now - (this.lastGen || 0) < 320) return;
+    this.lastGen = now;
+    const i = this.levels.length;
+    this.levels.push(this.mkLevel(20260826 + i * 911 + this.genSalt * 7, i));
+  }
+
+  paintPortrait(host, role, algo, key) {
+    if (!host) return;
+    const stamp = role + ':' + key;
+    if (host.getAttribute('data-k') === stamp && host.firstChild) return;
+    host.setAttribute('data-k', stamp);
+    const S = 130, st = { facing: 2, frozen: 0, sees: false };
+    if (role === 'cat') {
+      host.innerHTML = '<svg width="100%" height="100%" viewBox="' + (-0.34 * S) + ' ' + (-0.56 * S) + ' ' + (1.68 * S) + ' ' + (1.72 * S) + '" style="display:block">' +
+        this.catSvg(0, 0, S, algo, st) + '</svg>';
+    } else {
+      host.innerHTML = '<svg width="100%" height="100%" viewBox="' + (-0.16 * S) + ' ' + (-0.34 * S) + ' ' + (1.32 * S) + ' ' + (1.35 * S) + '" style="display:block">' +
+        this.mouseSvg(0, 0, S, algo, st) + '</svg>';
+    }
+  }
+
+  /* ---------- map painting ---------- */
+
+  mapSvg(map, CS) {
+    const E = this.E, W = E.W, H = E.H, g = map.grid, w = W * CS, h = H * CS, p = [];
+    const f = (v) => (+v).toFixed(1);
+    p.push('<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">');
+    p.push('<rect width="' + w + '" height="' + h + '" fill="#0b0f16"/>');
+    let tile = '';
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      if (g[E.idx(x, y)] === E.WALL) continue;
+      if ((x + y) % 2) continue;
+      tile += 'M' + (x * CS) + ' ' + (y * CS) + 'h' + CS + 'v' + CS + 'h-' + CS + 'Z';
+    }
+    p.push('<path d="' + tile + '" fill="rgba(150,185,235,.022)"/>');
+    let dots = '';
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      if (g[E.idx(x, y)] === E.WALL) continue;
+      dots += 'M' + f(x * CS + CS / 2) + ' ' + f(y * CS + CS / 2) + 'h0.5';
+    }
+    p.push('<path d="' + dots + '" stroke="rgba(130,170,225,.16)" stroke-width="' + f(CS / 14) + '" stroke-linecap="round"/>');
+
+    const b = CS;
+    p.push('<g fill="#111a2a">');
+    p.push('<rect x="0" y="0" width="' + w + '" height="' + b + '"/>');
+    p.push('<rect x="0" y="' + (h - b) + '" width="' + w + '" height="' + b + '"/>');
+    p.push('<rect x="0" y="' + b + '" width="' + b + '" height="' + (h - 2 * b) + '"/>');
+    p.push('<rect x="' + (w - b) + '" y="' + b + '" width="' + b + '" height="' + (h - 2 * b) + '"/>');
+    p.push('</g>');
+    p.push('<rect x="' + (b - 0.5) + '" y="' + (b - 0.5) + '" width="' + (w - 2 * b + 1) + '" height="' + (h - 2 * b + 1) + '" fill="none" stroke="rgba(135,175,230,.2)" stroke-width="1.2"/>');
+
+    const r = Math.max(3, CS * 0.24);
+    map.blocks.forEach(bl => {
+      const x = bl.x * CS + 1, y = bl.y * CS + 1, bw = bl.w * CS - 2, bh = bl.h * CS - 2;
+      p.push('<rect x="' + f(x) + '" y="' + f(y) + '" width="' + f(bw) + '" height="' + f(bh) + '" rx="' + f(r) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
+      p.push('<rect x="' + f(x + CS * 0.22) + '" y="' + f(y + CS * 0.22) + '" width="' + f(bw - CS * 0.44) + '" height="' + f(bh - CS * 0.44) + '" rx="' + f(r * 0.6) + '" fill="none" stroke="rgba(120,160,215,.1)" stroke-width="1"/>');
+    });
+    map.pillars.forEach(pp => {
+      const cx = (pp[0] + 0.5) * CS, cy = (pp[1] + 0.5) * CS;
+      p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.34) + '" fill="#1b2740" stroke="rgba(138,180,235,.28)" stroke-width="1.1"/>');
+      p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.17) + '" fill="none" stroke="rgba(175,215,255,.16)" stroke-width="1"/>');
+    });
+
+    const n = map.nest, nx = (n[0] + 0.5) * CS, ny = (n[1] + 0.5) * CS;
+    const hw = CS * 0.62, hh = CS * 0.72;
+    p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,.06)"/>');
+    p.push('<path d="M' + f(nx - hw / 2) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw / 2) + ' ' + f(ny - hh * 0.05) + 'A' + f(hw / 2) + ' ' + f(hw / 2) + ' 0 0 1 ' + f(nx + hw / 2) + ' ' + f(ny - hh * 0.05) + 'L' + f(nx + hw / 2) + ' ' + f(ny + hh / 2) + 'Z" fill="#05080c" stroke="#ffd166" stroke-width="' + f(Math.max(1.6, CS * 0.085)) + '"/>');
+    p.push('<path d="M' + f(nx - hw * 0.28) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'A' + f(hw * 0.28) + ' ' + f(hw * 0.28) + ' 0 0 1 ' + f(nx + hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'L' + f(nx + hw * 0.28) + ' ' + f(ny + hh / 2) + 'Z" fill="rgba(255,209,102,.16)"/>');
+
+    if (CS < 20) {
+      map.traps.forEach(t => {
+        const cx = (t[0] + 0.5) * CS, cy = (t[1] + 0.5) * CS;
+        p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.3) + '" fill="none" stroke="#b9cade" stroke-width="' + f(CS * 0.09) + '"/>');
+        p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.13) + '" fill="#f2b544"/>');
+      });
+      const cs = map.catSpawn, ms = map.mouseSpawn;
+      p.push('<circle cx="' + f((cs[0] + 0.5) * CS) + '" cy="' + f((cs[1] + 0.5) * CS) + '" r="' + f(CS * 0.34) + '" fill="rgba(255,138,92,.85)"/>');
+      p.push('<circle cx="' + f((ms[0] + 0.5) * CS) + '" cy="' + f((ms[1] + 0.5) * CS) + '" r="' + f(CS * 0.26) + '" fill="rgba(110,226,255,.85)"/>');
+    }
+    p.push('</svg>');
+    return p.join('');
+  }
+
+  /* ---------- effects + characters ---------- */
+
+  fxSvg(run, CS, now) {
+    const E = this.E, v = run.view;
+    if (!v) return '';
+    const pv = run.prevView || v, a = run.alpha, key = run.key || 'x';
+    const P = this.props;
+    const showV = P.showVision !== false, showH = P.showHearing !== false, showS = P.showScent !== false;
+    const w = E.W * CS, h = E.H * CS, p = [];
+    const f = (x) => (+x).toFixed(1);
+    const lp = (x0, x1) => x0 + (x1 - x0) * a;
+    const cx = lp(pv.cat.x, v.cat.x), cy = lp(pv.cat.y, v.cat.y);
+    const mx = lp(pv.mouse.x, v.mouse.x), my = lp(pv.mouse.y, v.mouse.y);
+    const range = (E.CFG.vision.range + 0.6) * CS;
+    p.push('<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">');
+
+    if (showV) {
+      const grad = (id, col, cxp, cyp, boost) =>
+        '<radialGradient id="' + id + '" gradientUnits="userSpaceOnUse" cx="' + f(cxp) + '" cy="' + f(cyp) + '" r="' + f(range) + '">' +
+        '<stop offset="0" stop-color="' + col + '" stop-opacity="' + (0.34 * boost).toFixed(2) + '"/>' +
+        '<stop offset="0.5" stop-color="' + col + '" stop-opacity="' + (0.15 * boost).toFixed(2) + '"/>' +
+        '<stop offset="1" stop-color="' + col + '" stop-opacity="0"/></radialGradient>';
+      p.push('<defs>' +
+        grad('acm-' + key, '#6ee2ff', (mx + 0.5) * CS, (my + 0.5) * CS, v.mouse.sees ? 1.7 : 1) +
+        grad('ack-' + key, '#ff7a54', (cx + 0.5) * CS, (cy + 0.5) * CS, v.cat.sees ? 1.9 : 1) +
+        '</defs>');
+    }
+
+    p.push(this.trapsSvg(run, CS));
+
+    if (showS && v.scent && v.scent.length) {
+      let g = '<g>';
+      for (const c of v.scent) {
+        const rr = CS * (0.07 + 0.14 * c[2]);
+        g += '<circle cx="' + f((c[0] + 0.5) * CS) + '" cy="' + f((c[1] + 0.5) * CS) + '" r="' + f(rr) + '" fill="rgba(126,232,255,' + (0.04 + 0.19 * c[2]).toFixed(3) + ')"/>';
+      }
+      p.push(g + '</g>');
+    }
+
+    const poly = (pts, dx, dy) => pts.map(q => f((q[0] + dx) * CS) + ',' + f((q[1] + dy) * CS)).join(' ');
+    if (showV) {
+      if (v.mouse.cone) p.push('<polygon points="' + poly(v.mouse.cone, mx - v.mouse.x, my - v.mouse.y) + '" fill="url(#acm-' + key + ')" stroke="rgba(150,235,255,' + (v.mouse.sees ? 0.5 : 0.22) + ')" stroke-width="1"/>');
+      if (v.cat.cone) p.push('<polygon points="' + poly(v.cat.cone, cx - v.cat.x, cy - v.cat.y) + '" fill="url(#ack-' + key + ')" stroke="rgba(255,155,115,' + (v.cat.sees ? 0.66 : 0.28) + ')" stroke-width="1"/>');
+    }
+
+    if (showH && v.mouse.heard) {
+      const hd = v.mouse.heard, hx = (hd.x + 0.5) * CS, hy = (hd.y + 0.5) * CS;
+      const R = Math.max(CS * 0.9, (hd.radius || 2) * CS * 0.7);
+      for (let k = 0; k < 3; k++) {
+        const ph = ((now / 950) + k / 3) % 1;
+        p.push('<circle cx="' + f(hx) + '" cy="' + f(hy) + '" r="' + f(R * ph) + '" fill="none" stroke="rgba(196,240,255,' + (0.36 * (1 - ph) * hd.conf).toFixed(3) + ')" stroke-width="1.4"/>');
+      }
+      p.push('<circle cx="' + f(hx) + '" cy="' + f(hy) + '" r="' + f(R) + '" fill="none" stroke="rgba(196,240,255,' + (0.2 * hd.conf).toFixed(3) + ')" stroke-width="1" stroke-dasharray="' + f(CS * 0.2) + ' ' + f(CS * 0.22) + '"/>');
+      p.push('<line x1="' + f((mx + 0.5) * CS) + '" y1="' + f((my + 0.5) * CS) + '" x2="' + f(hx) + '" y2="' + f(hy) + '" stroke="rgba(196,240,255,' + (0.15 * hd.conf).toFixed(3) + ')" stroke-width="1" stroke-dasharray="2 4"/>');
+      const q = CS * 0.13;
+      p.push('<path d="M' + f(hx - q) + ' ' + f(hy - q) + 'L' + f(hx + q) + ' ' + f(hy + q) + 'M' + f(hx + q) + ' ' + f(hy - q) + 'L' + f(hx - q) + ' ' + f(hy + q) + '" stroke="rgba(196,240,255,' + (0.55 * hd.conf).toFixed(3) + ')" stroke-width="1.5" stroke-linecap="round"/>');
+    }
+
+    p.push(this.mouseSvg(mx, my, CS, run.mouseAlgo || run.algo, v.mouse));
+    p.push(this.catSvg(cx, cy, CS, run.catAlgo || run.algo, v.cat));
+    p.push('</svg>');
+    return p.join('');
+  }
+
+  trapSvg(cx, cy, S, snapped, frozen) {
+    const n = (v) => (S * v).toFixed(2);
+    const steel = snapped ? '#f2f9ff' : '#b9cade', dark = '#0f151d';
+    const o = ['<g transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ')">'];
+    o.push('<circle cx="0" cy="0" r="' + n(0.64) + '" fill="rgba(242,181,68,' + (snapped ? 0.22 : 0.09) + ')"/>');
+    o.push('<ellipse cx="0" cy="' + n(0.4) + '" rx="' + n(0.42) + '" ry="' + n(0.1) + '" fill="rgba(0,0,0,.42)"/>');
+    o.push('<path d="M' + n(0.36) + ' ' + n(0.26) + 'L' + n(0.6) + ' ' + n(0.42) + '" stroke="#6b7d92" stroke-width="' + n(0.05) + '" stroke-linecap="round"/>');
+    o.push('<circle cx="' + n(0.62) + '" cy="' + n(0.44) + '" r="' + n(0.07) + '" fill="none" stroke="#6b7d92" stroke-width="' + n(0.04) + '"/>');
+    o.push('<circle cx="' + n(-0.42) + '" cy="0" r="' + n(0.1) + '" fill="' + dark + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '"/>');
+    o.push('<circle cx="' + n(0.42) + '" cy="0" r="' + n(0.1) + '" fill="' + dark + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '"/>');
+    if (!snapped) {
+      o.push('<circle cx="0" cy="0" r="' + n(0.34) + '" fill="rgba(12,18,26,.55)"/>');
+      o.push('<path d="M0 ' + n(-0.38) + 'A' + n(0.38) + ' ' + n(0.38) + ' 0 0 0 0 ' + n(0.38) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.1) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.38) + 'A' + n(0.38) + ' ' + n(0.38) + ' 0 0 1 0 ' + n(0.38) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.1) + '" stroke-linecap="round"/>');
+      let teeth = '';
+      for (const pair of [[122, 238], [-58, 58]]) {
+        for (let k = 0; k < 4; k++) {
+          const ang = (pair[0] + (pair[1] - pair[0]) * (k + 0.5) / 4) * Math.PI / 180;
+          teeth += 'M' + n(Math.cos(ang) * 0.32) + ' ' + n(Math.sin(ang) * 0.32) +
+            'L' + n(Math.cos(ang) * 0.19) + ' ' + n(Math.sin(ang) * 0.19);
+        }
+      }
+      o.push('<path d="' + teeth + '" stroke="' + steel + '" stroke-width="' + n(0.045) + '" stroke-linecap="round" opacity=".9"/>');
+      o.push('<circle cx="0" cy="0" r="' + n(0.15) + '" fill="#f2b544" stroke="' + dark + '" stroke-width="' + n(0.035) + '"/>');
+    } else {
+      const t = Math.max(0, Math.min(1, frozen / 5));
+      o.push('<path d="M' + n(-0.42) + ' 0H' + n(-0.06) + 'M' + n(0.42) + ' 0H' + n(0.06) + '" stroke="' + steel + '" stroke-width="' + n(0.075) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.4) + 'Q' + n(-0.15) + ' 0 0 ' + n(0.4) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+      o.push('<path d="M0 ' + n(-0.4) + 'Q' + n(0.15) + ' 0 0 ' + n(0.4) + '" fill="none" stroke="' + steel + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+      o.push('<path d="M' + n(-0.1) + ' ' + n(-0.2) + 'h' + n(0.2) + 'M' + n(-0.12) + ' 0h' + n(0.24) + 'M' + n(-0.1) + ' ' + n(0.2) + 'h' + n(0.2) + '" stroke="' + dark + '" stroke-width="' + n(0.04) + '" stroke-linecap="round"/>');
+      o.push('<path d="M' + n(-0.56) + ' ' + n(-0.34) + 'l' + n(-0.16) + ' ' + n(-0.12) + 'M' + n(0.56) + ' ' + n(-0.34) + 'l' + n(0.16) + ' ' + n(-0.12) + 'M0 ' + n(-0.52) + 'v' + n(-0.18) + '" stroke="rgba(255,240,200,' + (0.85 * t).toFixed(2) + ')" stroke-width="' + n(0.055) + '" stroke-linecap="round"/>');
+      o.push('<circle cx="0" cy="0" r="' + n(0.46 + 0.36 * (1 - t)) + '" fill="none" stroke="rgba(255,236,190,' + (0.6 * t).toFixed(2) + ')" stroke-width="' + n(0.055) + '"/>');
+    }
+    o.push('</g>');
+    return o.join('');
+  }
+
+  trapsSvg(run, CS) {
+    const v = run.view, out = [], busy = {};
+    for (const a of [v.cat, v.mouse]) {
+      if (a && a.frozen > 0) busy[Math.round(a.x) + ',' + Math.round(a.y)] = a.frozen;
+    }
+    for (const t of run.map.traps) {
+      const fr = busy[t[0] + ',' + t[1]] || 0;
+      out.push(this.trapSvg((t[0] + 0.5) * CS, (t[1] + 0.5) * CS, CS, fr > 0, fr));
+    }
+    return out.join('');
+  }
+
+  eyesSvg(S, cfg) {
+    const n = (v) => (S * v).toFixed(2);
+    const dx = cfg.dx, ry = cfg.ry, rx = cfg.rx, pr = cfg.pr, ox = cfg.ox, oy = cfg.oy;
+    const o = [];
+    for (const side of [-1, 1]) {
+      const ex = side * dx;
+      if (cfg.frozen) {
+        const q = rx * 0.85;
+        o.push('<path d="M' + n(ex - q) + ' ' + n(-q) + 'L' + n(ex + q) + ' ' + n(q) + 'M' + n(ex + q) + ' ' + n(-q) + 'L' + n(ex - q) + ' ' + n(q) + '" stroke="#1b232e" stroke-width="' + n(0.032) + '" stroke-linecap="round"/>');
+        continue;
+      }
+      if (cfg.dark) {
+        o.push('<ellipse cx="' + n(ex) + '" cy="0" rx="' + n(rx) + '" ry="' + n(ry) + '" fill="#141c26"/>');
+        o.push('<circle cx="' + n(ex - rx * 0.3) + '" cy="' + n(-ry * 0.34) + '" r="' + n(rx * 0.34) + '" fill="rgba(255,255,255,.9)"/>');
+      } else {
+        o.push('<ellipse cx="' + n(ex) + '" cy="0" rx="' + n(rx) + '" ry="' + n(cfg.alert ? ry * 1.12 : ry) + '" fill="#fdfefe"/>');
+        o.push('<circle cx="' + n(ex + ox) + '" cy="' + n(oy) + '" r="' + n(cfg.alert ? pr * 0.78 : pr) + '" fill="#141c26"/>');
+        o.push('<circle cx="' + n(ex + ox - pr * 0.34) + '" cy="' + n(oy - pr * 0.4) + '" r="' + n(pr * 0.3) + '" fill="rgba(255,255,255,.85)"/>');
+      }
+    }
+    return o.join('');
+  }
+
+  frostSvg(S) {
+    const n = (v) => (S * v).toFixed(2);
+    return '<circle cx="0" cy="' + n(-0.1) + '" r="' + n(0.62) + '" fill="none" stroke="rgba(168,232,255,.75)" stroke-width="' + n(0.05) + '" stroke-dasharray="' + n(0.14) + ' ' + n(0.1) + '"/>' +
+      '<path d="M' + n(-0.7) + ' ' + n(-0.62) + 'l' + n(0.1) + ' ' + n(0.1) + 'M' + n(-0.6) + ' ' + n(-0.62) + 'l' + n(-0.1) + ' ' + n(0.1) + 'M' + n(0.62) + ' ' + n(0.2) + 'l' + n(0.1) + ' ' + n(0.1) + 'M' + n(0.72) + ' ' + n(0.2) + 'l' + n(-0.1) + ' ' + n(0.1) + '" stroke="rgba(200,244,255,.7)" stroke-width="' + n(0.035) + '" stroke-linecap="round"/>';
+  }
+
+  catSvg(cx, cy, S, algo, st) {
+    const n = (v) => (S * v).toFixed(2);
+    const f = st.facing, flip = f === 3 ? -1 : 1, back = f === 0;
+    const fur = '#7e90ad', dk = '#55647e', lt = '#9fb1cb', cream = '#f2e8d5';
+    const accent = (algo && algo.color) || '#8fb6e6';
+    const o2 = [];
+    o2.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ',' + ((cy + 0.5) * S).toFixed(1) + ')">');
+    o2.push('<ellipse cx="0" cy="' + n(0.44) + '" rx="' + n(0.38) + '" ry="' + n(0.13) + '" fill="rgba(0,0,0,.5)"/>');
+    o2.push('<g transform="scale(' + flip + ',1)">');
+    o2.push('<path d="M' + n(-0.22) + ' ' + n(0.3) + 'C' + n(-0.62) + ' ' + n(0.34) + ' ' + n(-0.72) + ' ' + n(-0.06) + ' ' + n(-0.5) + ' ' + n(-0.16) + '" fill="none" stroke="' + dk + '" stroke-width="' + n(0.13) + '" stroke-linecap="round"/>');
+    o2.push('<path d="M' + n(-0.56) + ' ' + n(-0.14) + 'C' + n(-0.66) + ' ' + n(-0.16) + ' ' + n(-0.66) + ' ' + n(-0.02) + ' ' + n(-0.56) + ' ' + n(-0.02) + '" fill="none" stroke="' + cream + '" stroke-width="' + n(0.11) + '" stroke-linecap="round"/>');
+    o2.push('<path d="M' + n(-0.3) + ' ' + n(0.42) + 'C' + n(-0.44) + ' ' + n(0.12) + ' ' + n(-0.36) + ' ' + n(-0.14) + ' 0 ' + n(-0.18) + 'C' + n(0.36) + ' ' + n(-0.14) + ' ' + n(0.44) + ' ' + n(0.12) + ' ' + n(0.3) + ' ' + n(0.42) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '"/>');
+    o2.push('<ellipse cx="0" cy="' + n(0.22) + '" rx="' + n(0.19) + '" ry="' + n(0.19) + '" fill="' + cream + '" opacity="' + (back ? 0 : 0.95) + '"/>');
+    o2.push('<ellipse cx="' + n(-0.17) + '" cy="' + n(0.42) + '" rx="' + n(0.1) + '" ry="' + n(0.07) + '" fill="' + lt + '"/>');
+    o2.push('<ellipse cx="' + n(0.17) + '" cy="' + n(0.42) + '" rx="' + n(0.1) + '" ry="' + n(0.07) + '" fill="' + lt + '"/>');
+    o2.push('<path d="M' + n(-0.2) + ' ' + n(-0.12) + 'Q0 ' + n(0.0) + ' ' + n(0.2) + ' ' + n(-0.12) + '" fill="none" stroke="' + accent + '" stroke-width="' + n(0.085) + '" stroke-linecap="round"/>');
+    o2.push('<circle cx="0" cy="' + n(-0.03) + '" r="' + n(0.05) + '" fill="' + accent + '" stroke="rgba(255,255,255,.5)" stroke-width="' + n(0.018) + '"/>');
+    o2.push('<g transform="translate(0,' + n(-0.42) + ')">');
+    o2.push('<path d="M' + n(-0.3) + ' ' + n(-0.12) + 'L' + n(-0.42) + ' ' + n(-0.52) + 'L' + n(-0.06) + ' ' + n(-0.3) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o2.push('<path d="M' + n(0.3) + ' ' + n(-0.12) + 'L' + n(0.42) + ' ' + n(-0.52) + 'L' + n(0.06) + ' ' + n(-0.3) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o2.push('<path d="M' + n(-0.27) + ' ' + n(-0.18) + 'L' + n(-0.35) + ' ' + n(-0.44) + 'L' + n(-0.13) + ' ' + n(-0.29) + 'Z" fill="' + accent + '" opacity=".75"/>');
+    o2.push('<path d="M' + n(0.27) + ' ' + n(-0.18) + 'L' + n(0.35) + ' ' + n(-0.44) + 'L' + n(0.13) + ' ' + n(-0.29) + 'Z" fill="' + accent + '" opacity=".75"/>');
+    o2.push('<ellipse cx="0" cy="0" rx="' + n(0.36) + '" ry="' + n(0.32) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '"/>');
+    o2.push('<ellipse cx="' + n(-0.24) + '" cy="' + n(0.02) + '" rx="' + n(0.11) + '" ry="' + n(0.09) + '" fill="' + lt + '" opacity=".5"/>');
+    o2.push('<ellipse cx="' + n(0.24) + '" cy="' + n(0.02) + '" rx="' + n(0.11) + '" ry="' + n(0.09) + '" fill="' + lt + '" opacity=".5"/>');
+    if (!back) {
+      o2.push('<ellipse cx="0" cy="' + n(0.13) + '" rx="' + n(0.19) + '" ry="' + n(0.13) + '" fill="' + cream + '"/>');
+      o2.push('<g transform="translate(0,' + n(-0.05) + ')">' + this.eyesSvg(S, {
+        dx: 0.14, rx: 0.115, ry: 0.13, pr: 0.055,
+        ox: (this.E.DIRS[f] || [0, 1])[0] * 0.035, oy: (this.E.DIRS[f] || [0, 1])[1] * 0.03,
+        dark: false, frozen: st.frozen > 0, alert: st.sees
+      }) + '</g>');
+      const brow = st.sees ? 0.055 : 0.02;
+      o2.push('<path d="M' + n(-0.23) + ' ' + n(-0.21 + brow) + 'L' + n(-0.08) + ' ' + n(-0.25) + 'M' + n(0.23) + ' ' + n(-0.21 + brow) + 'L' + n(0.08) + ' ' + n(-0.25) + '" stroke="' + dk + '" stroke-width="' + n(0.035) + '" stroke-linecap="round"/>');
+      o2.push('<path d="M0 ' + n(0.07) + 'l' + n(-0.05) + ' ' + n(0.05) + 'l' + n(0.05) + ' ' + n(0.04) + 'l' + n(0.05) + ' ' + n(-0.04) + 'Z" fill="#f2a3ad"/>');
+      o2.push('<path d="M0 ' + n(0.16) + 'q' + n(-0.06) + ' ' + n(0.05) + ' ' + n(-0.1) + ' 0M0 ' + n(0.16) + 'q' + n(0.06) + ' ' + n(0.05) + ' ' + n(0.1) + ' 0" fill="none" stroke="' + dk + '" stroke-width="' + n(0.028) + '" stroke-linecap="round"/>');
+      o2.push('<path d="M' + n(-0.19) + ' ' + n(0.1) + 'H' + n(-0.42) + 'M' + n(-0.19) + ' ' + n(0.16) + 'l' + n(-0.22) + ' ' + n(0.06) + 'M' + n(0.19) + ' ' + n(0.1) + 'H' + n(0.42) + 'M' + n(0.19) + ' ' + n(0.16) + 'l' + n(0.22) + ' ' + n(0.06) + '" stroke="rgba(240,248,255,.55)" stroke-width="' + n(0.022) + '" stroke-linecap="round"/>');
+    } else {
+      o2.push('<path d="M' + n(-0.14) + ' ' + n(0.02) + 'q' + n(0.14) + ' ' + n(0.1) + ' ' + n(0.28) + ' 0" fill="none" stroke="' + dk + '" stroke-width="' + n(0.03) + '" stroke-linecap="round" opacity=".5"/>');
+    }
+    o2.push('</g>');
+    o2.push('</g>');
+    if (st.frozen > 0) o2.push(this.frostSvg(S));
+    if (st.sees) o2.push('<g transform="translate(0,' + n(-1.02) + ')"><path d="M0 0v' + n(0.16) + '" stroke="#ff8a5c" stroke-width="' + n(0.1) + '" stroke-linecap="round"/><circle cx="0" cy="' + n(0.29) + '" r="' + n(0.055) + '" fill="#ff8a5c"/></g>');
+    o2.push('</g>');
+    return o2.join('');
+  }
+
+  mouseSvg(cx, cy, S, algo, st) {
+    const n = (v) => (S * v).toFixed(2);
+    const f = st.facing, flip = f === 3 ? -1 : 1, back = f === 0;
+    const fur = '#d09b6a', dk = '#a16c3a', lt = '#e8c39a', cream = '#f8ecd9', pink = '#f2a3ad';
+    const accent = (algo && algo.color) || '#8fb6e6', o = [];
+    o.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ',' + ((cy + 0.5) * S).toFixed(1) + ')">');
+    o.push('<ellipse cx="0" cy="' + n(0.34) + '" rx="' + n(0.26) + '" ry="' + n(0.09) + '" fill="rgba(0,0,0,.45)"/>');
+    o.push('<g transform="scale(' + flip + ',1)">');
+    o.push('<path d="M' + n(-0.16) + ' ' + n(0.24) + 'C' + n(-0.5) + ' ' + n(0.3) + ' ' + n(-0.58) + ' ' + n(-0.04) + ' ' + n(-0.38) + ' ' + n(-0.12) + '" fill="none" stroke="' + pink + '" stroke-width="' + n(0.06) + '" stroke-linecap="round" opacity=".85"/>');
+    o.push('<path d="M' + n(-0.21) + ' ' + n(0.32) + 'C' + n(-0.31) + ' ' + n(0.08) + ' ' + n(-0.25) + ' ' + n(-0.1) + ' 0 ' + n(-0.13) + 'C' + n(0.25) + ' ' + n(-0.1) + ' ' + n(0.31) + ' ' + n(0.08) + ' ' + n(0.21) + ' ' + n(0.32) + 'Z" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o.push('<ellipse cx="0" cy="' + n(0.17) + '" rx="' + n(0.13) + '" ry="' + n(0.14) + '" fill="' + cream + '" opacity="' + (back ? 0 : 0.95) + '"/>');
+    o.push('<ellipse cx="' + n(-0.12) + '" cy="' + n(0.33) + '" rx="' + n(0.075) + '" ry="' + n(0.05) + '" fill="' + pink + '"/>');
+    o.push('<ellipse cx="' + n(0.12) + '" cy="' + n(0.33) + '" rx="' + n(0.075) + '" ry="' + n(0.05) + '" fill="' + pink + '"/>');
+    o.push('<path d="M' + n(-0.15) + ' ' + n(-0.08) + 'Q0 ' + n(0.02) + ' ' + n(0.15) + ' ' + n(-0.08) + '" fill="none" stroke="' + accent + '" stroke-width="' + n(0.075) + '" stroke-linecap="round"/>');
+    o.push('<path d="M' + n(0.13) + ' ' + n(-0.05) + 'l' + n(0.12) + ' ' + n(0.12) + 'l' + n(-0.07) + ' ' + n(0.03) + 'Z" fill="' + accent + '"/>');
+    o.push('<g transform="translate(0,' + n(-0.3) + ')">');
+    o.push('<circle cx="' + n(-0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.17) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.028) + '"/>');
+    o.push('<circle cx="' + n(0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.17) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.028) + '"/>');
+    o.push('<circle cx="' + n(-0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.1) + '" fill="' + pink + '" opacity=".8"/>');
+    o.push('<circle cx="' + n(0.24) + '" cy="' + n(-0.14) + '" r="' + n(0.1) + '" fill="' + pink + '" opacity=".8"/>');
+    o.push('<ellipse cx="0" cy="0" rx="' + n(0.26) + '" ry="' + n(0.24) + '" fill="' + fur + '" stroke="' + dk + '" stroke-width="' + n(0.03) + '"/>');
+    o.push('<ellipse cx="' + n(-0.17) + '" cy="' + n(0.04) + '" rx="' + n(0.08) + '" ry="' + n(0.065) + '" fill="' + lt + '" opacity=".55"/>');
+    o.push('<ellipse cx="' + n(0.17) + '" cy="' + n(0.04) + '" rx="' + n(0.08) + '" ry="' + n(0.065) + '" fill="' + lt + '" opacity=".55"/>');
+    if (!back) {
+      o.push('<ellipse cx="0" cy="' + n(0.11) + '" rx="' + n(0.145) + '" ry="' + n(0.105) + '" fill="' + cream + '"/>');
+      o.push('<g transform="translate(0,' + n(-0.04) + ')">' + this.eyesSvg(S, {
+        dx: 0.105, rx: 0.078, ry: 0.092, pr: 0.04,
+        ox: (this.E.DIRS[f] || [0, 1])[0] * 0.02, oy: (this.E.DIRS[f] || [0, 1])[1] * 0.02,
+        dark: true, frozen: st.frozen > 0, alert: st.sees
+      }) + '</g>');
+      o.push('<circle cx="0" cy="' + n(0.13) + '" r="' + n(0.042) + '" fill="' + pink + '"/>');
+      o.push('<path d="M' + n(-0.15) + ' ' + n(0.09) + 'H' + n(-0.33) + 'M' + n(-0.15) + ' ' + n(0.15) + 'l' + n(-0.17) + ' ' + n(0.05) + 'M' + n(0.15) + ' ' + n(0.09) + 'H' + n(0.33) + 'M' + n(0.15) + ' ' + n(0.15) + 'l' + n(0.17) + ' ' + n(0.05) + '" stroke="rgba(255,250,242,.6)" stroke-width="' + n(0.02) + '" stroke-linecap="round"/>');
+    }
+    o.push('</g>');
+    o.push('</g>');
+    if (st.frozen > 0) o.push(this.frostSvg(S));
+    if (st.sees) o.push('<g transform="translate(0,' + n(-0.86) + ')"><path d="M0 0v' + n(0.15) + '" stroke="#6ee2ff" stroke-width="' + n(0.09) + '" stroke-linecap="round"/><circle cx="0" cy="' + n(0.27) + '" r="' + n(0.05) + '" fill="#6ee2ff"/></g>');
+    o.push('</g>');
+    return o.join('');
+  }
+
+  /* ---------- copy tables ---------- */
+
+  rgba(hex, a) {
+    const h = (hex || '#8fb6e6').replace('#', '');
+    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' + parseInt(h.slice(4, 6), 16) + ',' + a + ')';
+  }
+
+  blurb(key) {
+    return {
+      ppo: 'Gradient school. Both students keep a clipped trust region, so every update is a small, safe step — slow off the mark, very hard to destabilise.',
+      ga: 'No gradients at all. Forty-eight random brains per generation, and only the ones that survived the room get to breed.',
+      cmaes: 'Fits a Gaussian over strategies and moves the whole distribution towards whatever worked, widening σ whenever it gets stuck.'
+    }[key];
+  }
+
+  specs(key) {
+    const T = {
+      ppo: [['OPTIMISER', 'policy gradient, clipped'], ['BATCH', '8 episodes per update'], ['SIGNATURE', 'steady, low-variance climb']],
+      ga: [['POPULATION', '48 individuals'], ['OPERATORS', 'elitism + mutation 0.08'], ['SIGNATURE', 'plateaus, then generational leaps']],
+      cmaes: [['LAMBDA', '16 samples per generation'], ['UPDATE', 'σ-adaptation, rank-μ'], ['SIGNATURE', 'fast early climb, noisy bursts']]
+    };
+    return T[key].map((r, i) => ({ key: key + i, label: r[0], value: r[1] }));
+  }
+
+  watchList(key, cp) {
+    const generic = [
+      ['Nothing is trained yet — both of them walk almost at random.', 'Traps snap constantly: caution has to be learned, it is not a rule.', 'Whoever wins here wins by luck, and that is the baseline.'],
+      ['Tom starts leading her instead of running in her footprints.', 'Jerry starts using her ears — going round the noise, not into it.', 'Trap hits fall away; that curve is the learning story.'],
+      ['Both policies are frozen for the tournament — this is their best play.', 'He camps the hole when the trail goes cold; she waits behind cover instead of bolting.', 'No retries: the numbers here decide the school.']
+    ][cp];
+    const algo = {
+      ppo: ['Every update was a small clipped step, so nothing here is a fluke.', 'Watch the sameness — PPO plays the same plan on every level.', 'Low variance is the whole point of the clipped objective.'],
+      ga: ['This sits between generational leaps — expect a plateau, then a jump.', 'Selection keeps crude but vicious strategies: camp, wait, pounce.', 'Anything that stepped on a trap did not survive to breed.'],
+      cmaes: ['CMA-ES climbs first and fastest — it is already ahead of the others here.', 'σ is still wide, so it will gamble on a shortcut now and then.', 'Converged covariance: cover, pause, sprint, over and over.']
+    }[key][cp];
+    const dots = ['#ff8a5c', '#6ee2ff', '#8fa4c4'];
+    return generic.concat([algo]).map((t, i) => ({
+      key: 'w' + i, text: t, dot: i === 3 ? this.A.ALGOS[key].color : dots[i]
+    }));
+  }
+
+  cpBlurb(cp, n) {
+    return [
+      'Fresh weights, zero experience. One episode on each of the ' + n + ' levels — this is the control group.',
+      'Halfway through training. The same ' + n + ' levels, the same rules, noticeably less stumbling.',
+      'Training is over and both policies are frozen. This run is the one that decides the school.'
+    ][cp];
+  }
+
+  tactics(key, role) {
+    const T = {
+      ppo: {
+        cat: ['Keeps the clipped step: no lunging into a greedy chase, just a steady squeeze on the angle.',
+          'Learned to lead her — cutting to her route to the hole instead of running in her footprints.',
+          'Reads traps confidently; the −0.05 penalty reached the advantage estimate fast.'],
+        mouse: ['Builds distance smoothly — the policy shifts in small steps and never panics.',
+          'Treats the hole as a safe route rather than the nearest point on the grid.',
+          'Refuses any corridor where the cat is audible within four cells.']
+      },
+      ga: {
+        cat: ['Generations selected one crude but vicious strategy: sit on the hole and wait.',
+          'Mutation found ambush cells where the cone covers both approaches at once.',
+          'Weak spot: once the trail goes cold he loses her after she breaks line of sight.'],
+        mouse: ['Selection produced the counter-intuitive move: freeze behind cover instead of running.',
+          'The population kept detours 20–30% longer than optimal — and far safer.',
+          'Traps became a hard taboo; individuals that stepped in them did not survive.']
+      },
+      cmaes: {
+        cat: ['Narrowed the covariance around interception fast — barely spends steps scouting.',
+          'Uses scent as the primary sensor: follows the fresh trail rather than memory.',
+          'On σ spikes he still gambles on shortcuts straight through trap country.'],
+        mouse: ['Covariance converged on a tight loop: cover → pause → sprint.',
+          'Works her hearing aggressively, switching flanks on every noisy step he takes.',
+          'Occasionally over-explores and loses tempo — the price of those σ spikes.']
+      }
+    };
+    return ((T[key] && T[key][role]) || []).map((t, i) => ({ key: 'tt' + i, text: t }));
+  }
+
+  /* ---------- view model ---------- */
+
+  renderVals() {
+    if (!this._setupDone) setTimeout(() => this.setup(), 0);
+    else if (!this.E) setTimeout(() => this.ensureBoot(), 0);
+    const S = this.state, A = this.A, pct = (v) => Math.round(v * 100) + '%';
+    const ui = (fn) => () => { this.touch(); fn(); };
+    const n = this.levelCount();
+    const ready = this.levelsReady();
+
+    const speeds = [1, 2, 4, 10].map(v => ({
+      key: 'sp' + v, label: v + '×', on: ui(() => this.setState({ speed: v })),
+      bg: S.speed === v ? 'rgba(124,188,255,.18)' : 'rgba(255,255,255,.03)',
+      color: S.speed === v ? '#cfe6ff' : '#7d90ad',
+      border: S.speed === v ? 'rgba(124,188,255,.45)' : 'rgba(130,160,200,.16)'
+    }));
+
+    const schools = (A ? this.ORDER : []).map((k, i) => {
+      const al = A.ALGOS[k], p = this.progress[k];
+      const prev = i > 0 ? this.progress[this.ORDER[i - 1]] : null;
+      const open = i === 0 || !!(prev && prev.done);
+      const grad = !!(p && p.done);
+      const winner = grad ? (p.winner === 'cat' ? 'TOM' : p.winner === 'mouse' ? 'JERRY' : 'SPLIT') : '';
+      let note = 'Twelve levels, three checkpoints, one verdict.';
+      let noteColor = '#8fa4c4';
+      if (grad) {
+        note = winner === 'SPLIT' ? 'The school ended level — both took the same share.' : winner + ' came out on top of this school.';
+        noteColor = p.winner === 'cat' ? '#ffb094' : (p.winner === 'mouse' ? '#8fdcff' : '#c9d8ee');
+      } else if (!ready) note = 'Generate the level set first — every school trains on the same rooms.';
+      else if (!open) note = 'Graduate ' + A.ALGOS[this.ORDER[i - 1]].short + ' first.';
+      else note = n + ' levels, three checkpoints, one verdict.';
+      return {
+        key: k, num: String(i + 1).padStart(2, '0'), short: al.short, full: al.full,
+        color: al.color, deep: al.deep,
+        border: grad ? this.rgba(al.color, 0.5) : (open ? this.rgba(al.color, 0.3) : 'rgba(130,160,200,.14)'),
+        bar: open || grad ? al.color : 'rgba(130,160,200,.25)',
+        bg: 'linear-gradient(180deg,rgba(16,24,38,.78),rgba(8,12,20,.62))',
+        opacity: open || grad ? '1' : '0.5',
+        blurb: this.blurb(k), specs: this.specs(k),
+        img: 'url(assets/school-' + k + '.png)',
+        glow: 'radial-gradient(70% 78% at 50% 46%,' + this.rgba(al.color, 0.22) + ' 0%,' + this.rgba(al.color, 0.06) + ' 45%,rgba(0,0,0,0) 78%)',
+        status: grad ? 'GRADUATED' : (open ? (ready ? 'OPEN' : 'START HERE') : 'LOCKED'),
+        chipBg: grad ? 'rgba(61,220,132,.1)' : (open ? this.rgba(al.color, 0.12) : 'rgba(255,255,255,.04)'),
+        chipBorder: grad ? 'rgba(61,220,132,.32)' : (open ? this.rgba(al.color, 0.32) : 'rgba(130,160,200,.18)'),
+        chipColor: grad ? '#9af0be' : (open ? al.light : '#66799a'),
+        catRate: grad ? pct(p.catRate) : '—',
+        mouseRate: grad ? pct(p.mouseRate) : '—',
+        note, noteColor,
+        cta: grad ? 'VIEW THE VERDICT →' : (open ? (ready ? 'ENTER THE SCHOOL →' : 'GENERATE THE LEVELS FIRST →') : 'LOCKED'),
+        ctaBg: open || grad ? 'rgba(124,188,255,.16)' : 'rgba(255,255,255,.02)',
+        ctaBorder: open || grad ? 'rgba(124,188,255,.4)' : 'rgba(130,160,200,.14)',
+        ctaColor: open || grad ? '#dceaff' : '#5f7392',
+        on: ui(() => this.enterSchool(k))
+      };
+    });
+
+    const levelChips = [];
+    for (let i = 0; i < n; i++) {
+      const lv = this.levels[i];
+      levelChips.push({
+        key: 'lc' + i, num: String(i + 1).padStart(2, '0'),
+        sub: lv ? 'RT ' + lv.route : '—',
+        bg: lv ? 'rgba(78,168,255,.07)' : 'rgba(255,255,255,.02)',
+        border: lv ? 'rgba(78,168,255,.22)' : 'rgba(130,160,200,.12)',
+        color: lv ? '#a6d3ff' : '#4f6280'
+      });
+    }
+
+    const allDone = A ? this.allGraduated() : false;
+    let bestCatLine = '—', bestMouseLine = '—';
+    if (allDone) {
+      let ck = this.ORDER[0], mk = this.ORDER[0];
+      this.ORDER.forEach(k => {
+        if (this.progress[k].catRate > this.progress[ck].catRate) ck = k;
+        if (this.progress[k].mouseRate > this.progress[mk].mouseRate) mk = k;
+      });
+      bestCatLine = A.ALGOS[ck].short + ' · ' + pct(this.progress[ck].catRate);
+      bestMouseLine = A.ALGOS[mk].short + ' · ' + pct(this.progress[mk].mouseRate);
+    }
+
+    const genSlots = [];
+    for (let i = 0; i < n; i++) {
+      const lv = this.levels[i], seeding = !lv && i === this.levels.length && S.screen === 'gen';
+      genSlots.push({
+        key: 'gs' + i, ref: this.levelRefs[i],
+        num: 'LEVEL ' + String(i + 1).padStart(2, '0'),
+        numColor: lv ? '#c9d8ee' : (seeding ? '#7ee0ff' : '#4f6280'),
+        seed: lv ? '#' + (lv.seed % 100000) : (seeding ? 'seeding' : 'queued'),
+        border: lv ? 'rgba(130,160,200,.18)' : (seeding ? 'rgba(126,232,255,.4)' : 'rgba(130,160,200,.1)'),
+        bg: lv ? 'linear-gradient(180deg,rgba(16,24,38,.7),rgba(8,12,20,.6))' : 'rgba(255,255,255,.02)',
+        opacity: lv || seeding ? '1' : '0.45',
+        scanOpacity: seeding ? '1' : '0',
+        waitOpacity: lv ? '0' : '1',
+        waitLabel: seeding ? 'SEEDING' : 'QUEUED',
+        metaA: lv ? 'route ' + lv.route + ' cells' : '',
+        metaB: lv ? lv.onRoute + ' traps on route' : ''
+      });
+    }
+
+    const genRules = [
+      { key: 'g1', title: 'ONE ROOM, MANY SHAPES', text: 'Seven cover blocks and ten pillars, reseeded until 94% of the floor is one connected region.' },
+      { key: 'g2', title: 'TWO WAYS HOME', text: 'The hole always has two independent approaches, so camping it can never be unbeatable.' },
+      { key: 'g3', title: 'TRAPS ON THE WALKED PATH', text: 'Three of six traps sit on her shortest route and two flank it — a hazard off the path is never learned.' },
+      { key: 'g4', title: 'A REAL CHANCE FOR BOTH', text: 'She spawns 21–32 cells from home; he spawns at least 10 cells from her and within 17 of the hole.' },
+      { key: 'g5', title: 'SHARED BY ALL THREE SCHOOLS', text: 'The same seeds train PPO, GA and CMA-ES — nobody gets to memorise one room.' }
+    ];
+
+    const nx = A ? this.nextOpenSchool() : null;
+    const genStatus = ready
+      ? 'Level set complete: ' + n + ' arenas, ' + this.levels.reduce((a, l) => a + l.onRoute, 0) + ' traps sitting on a walked route. Ready to train.'
+      : 'Building arena ' + Math.min(n, this.levels.length + 1) + ' of ' + n + ' — seeding walls, placing the hole, then dropping traps onto her route.';
+
+    const sc = this.school;
+    const cur = sc ? this.cpStats(sc.results[sc.cp]) : null;
+    const sch = sc ? {
+      key: sc.key, title: sc.algo.short + ' SCHOOL', line: sc.algo.line,
+      color: sc.algo.color, light: sc.algo.light, deep: sc.algo.deep, border: this.rgba(sc.algo.color, 0.32),
+      cpLabel: (sc.cp + 1) + ' / 3', cpName: this.CP_NAME[sc.cp], cpBlurb: this.cpBlurb(sc.cp, n),
+      levelLabel: 'LEVEL ' + String(sc.levelIdx + 1).padStart(2, '0') + ' / ' + n,
+      step: String(sc.view ? sc.view.step : 0),
+      route: String(sc.level ? sc.level.route : 0),
+      catSkill: pct(sc.skills.cat), mouseSkill: pct(sc.skills.mouse),
+      catSkillW: Math.round(sc.skills.cat * 100) + '%', mouseSkillW: Math.round(sc.skills.mouse * 100) + '%',
+      watch: this.watchList(sc.key, sc.cp),
+      thought: sc.thought || '…',
+      thoughtLabel: sc.thoughtRole === 'cat' ? 'TOM' : 'JERRY',
+      thoughtColor: sc.thoughtRole === 'cat' ? '#ff9a72' : '#7ee0ff',
+      catPct: cur.played ? Math.round(cur.c / cur.played * 100) + '%' : '—',
+      mousePct: cur.played ? Math.round(cur.m / cur.played * 100) + '%' : '—',
+      catCount: cur.c + ' / ' + n, mouseCount: cur.m + ' / ' + n,
+      hasBanner: !!sc.banner && sc.phase === 'run',
+      bannerText: sc.banner ? sc.banner.t : '',
+      bannerColor: sc.banner ? sc.banner.c : '#e9f1ff',
+      showOverlay: sc.phase === 'cpdone'
+    } : {
+      key: 'ppo', title: '—', line: '', color: '#4ea8ff', light: '#a6d3ff', deep: '#0a2544', border: 'rgba(78,168,255,.3)',
+      cpLabel: '1 / 3', cpName: 'UNTRAINED', cpBlurb: '', levelLabel: 'LEVEL 01 / ' + n, step: '0', route: '0',
+      catSkill: '—', mouseSkill: '—', catSkillW: '0%', mouseSkillW: '0%', watch: [],
+      thought: '', thoughtLabel: 'TOM', thoughtColor: '#ff9a72',
+      catPct: '—', mousePct: '—', catCount: '0 / ' + n, mouseCount: '0 / ' + n,
+      hasBanner: false, bannerText: '', bannerColor: '#e9f1ff', showOverlay: false
+    };
+
+    const cpPills = [0, 1, 2].map(i => {
+      const on = sc && sc.cp === i, past = sc && sc.cp > i;
+      return {
+        key: 'cp' + i, num: String(i + 1), name: this.CP_NAME[i],
+        bg: on ? 'rgba(124,188,255,.18)' : (past ? 'rgba(61,220,132,.08)' : 'rgba(255,255,255,.03)'),
+        border: on ? 'rgba(124,188,255,.45)' : (past ? 'rgba(61,220,132,.24)' : 'rgba(130,160,200,.14)'),
+        color: on ? '#dceaff' : (past ? '#9af0be' : '#5f7392')
+      };
+    });
+
+    const strip = [];
+    for (let i = 0; i < n; i++) {
+      const r = sc ? sc.results[sc.cp][i] : null;
+      const live = sc && sc.levelIdx === i && sc.phase === 'run';
+      strip.push({
+        key: 'st' + i, label: 'LV ' + String(i + 1).padStart(2, '0'),
+        mark: r === 'catch' ? 'T' : r === 'escape' ? 'J' : r ? '–' : (live ? '▸' : '·'),
+        color: r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : r ? '#8fa4c4' : (live ? '#f2f7ff' : '#3d4a60'),
+        bg: r === 'catch' ? 'rgba(255,122,84,.14)' : r === 'escape' ? 'rgba(110,226,255,.12)' : r ? 'rgba(255,255,255,.04)' : (live ? 'rgba(124,188,255,.16)' : 'rgba(255,255,255,.02)'),
+        border: r === 'catch' ? 'rgba(255,138,92,.36)' : r === 'escape' ? 'rgba(126,224,255,.32)' : r ? 'rgba(130,160,200,.16)' : (live ? 'rgba(124,188,255,.5)' : 'rgba(130,160,200,.1)')
+      });
+    }
+
+    const progRows = [0, 1, 2].map(i => {
+      const ex = sc && sc.exam[i];
+      return {
+        key: 'pg' + i, num: String(i + 1), name: this.CP_NAME[i],
+        cat: ex ? Math.round(ex.cat * 100) + '%' : '—',
+        mouse: ex ? Math.round(ex.mouse * 100) + '%' : '—',
+        catW: ex ? Math.round(ex.cat * 100) + '%' : '0%',
+        mouseW: ex ? Math.round(ex.mouse * 100) + '%' : '0%',
+        opacity: ex ? '1' : '0.4'
+      };
+    });
+
+    const ovStats = sc ? this.cpStats(sc.results[sc.cp]) : { c: 0, m: 0, d: 0 };
+    const lastCp = !!(sc && sc.cp >= 2);
+    const ov = {
+      kicker: sc ? 'CHECKPOINT ' + (sc.cp + 1) + ' OF 3 · ' + this.CP_NAME[sc.cp] : '',
+      title: sc ? (lastCp ? 'Training is over' : 'Checkpoint ' + (sc.cp + 1) + ' complete') : '',
+      body: sc ? (lastCp
+        ? n + ' levels played with frozen policies. Time to name the champion of the ' + sc.algo.short + ' school.'
+        : 'Same ' + n + ' levels, next checkpoint — the policies step up and we run the whole set again.') : '',
+      catValue: ovStats.c + ' / ' + n, mouseValue: ovStats.m + ' / ' + n, drawValue: ovStats.d + ' / ' + n,
+      cta: lastCp ? 'SEE THE VERDICT →' : 'NEXT CHECKPOINT →',
+      on: ui(() => this.nextCheckpoint())
+    };
+
+    const vp = this.progress[S.viewSchool];
+    const vAlgo = A && vp ? A.ALGOS[vp.key] : null;
+    let vd;
+    if (vp && vAlgo) {
+      const catWon = vp.winner === 'cat', mouseWon = vp.winner === 'mouse';
+      const mkCard = (role) => {
+        const won = role === 'cat' ? catWon : mouseWon;
+        const rate = role === 'cat' ? vp.catRate : vp.mouseRate;
+        return {
+          key: role, role: role === 'cat' ? 'CAT · PREDATOR' : 'MOUSE · PREY',
+          name: role === 'cat' ? 'TOM' : 'JERRY',
+          color: role === 'cat' ? '#ff9a72' : '#7ee0ff',
+          barColor: role === 'cat' ? '#ff8a5c' : '#6ee2ff',
+          border: won ? (role === 'cat' ? 'rgba(255,138,92,.5)' : 'rgba(110,226,255,.45)') : 'rgba(130,160,200,.16)',
+          bg: won
+            ? (role === 'cat' ? 'linear-gradient(180deg,rgba(52,24,16,.7),rgba(9,12,19,.62))' : 'linear-gradient(180deg,rgba(12,38,52,.7),rgba(9,12,19,.62))')
+            : 'linear-gradient(180deg,rgba(16,24,38,.6),rgba(8,12,20,.6))',
+          opacity: won || vp.winner === 'draw' ? '1' : '0.74',
+          tagBg: role === 'cat' ? 'rgba(255,122,84,.14)' : 'rgba(110,226,255,.12)',
+          tagBorder: role === 'cat' ? 'rgba(255,138,92,.34)' : 'rgba(126,224,255,.3)',
+          tagColor: role === 'cat' ? '#ffb094' : '#8fdcff',
+          verdict: won ? 'CHAMPION' : (vp.winner === 'draw' ? 'LEVEL' : 'RUNNER-UP'),
+          rate: pct(rate),
+          rateLabel: role === 'cat'
+            ? 'CAUGHT HER ON ' + vp.cps[2].c + ' OF ' + n + ' LEVELS'
+            : 'GOT HOME ON ' + vp.cps[2].m + ' OF ' + n + ' LEVELS',
+          ref: role === 'cat' ? this.vdCatRef : this.vdMouseRef,
+          rowsLabel: role === 'cat'
+            ? 'EXAM · CAUGHT THE TRAINED MOUSE, PER CHECKPOINT'
+            : 'EXAM · ESCAPED THE TRAINED CAT, PER CHECKPOINT',
+          rows: [0, 1, 2].map(i => {
+            const ex = (vp.exam && vp.exam[i]) || { cat: 0, mouse: 0, catWins: 0, mouseWins: 0 };
+            const v = role === 'cat' ? ex.cat : ex.mouse;
+            return {
+              key: 'r' + i, name: (i + 1) + ' · ' + this.CP_NAME[i], pct: Math.round(v * 100) + '%',
+              w: Math.round(v * 100) + '%',
+              count: (role === 'cat' ? ex.catWins : ex.mouseWins) + ' / ' + n
+            };
+          }),
+          cells: (() => {
+            const src = vp.results || [], mine = role === 'cat' ? 'catch' : 'escape';
+            const out = [];
+            for (let x = 0; x < n; x++) {
+              const won = src[x] === mine, played = !!src[x];
+              out.push({
+                key: 'cl' + x, num: String(x + 1).padStart(2, '0'),
+                mark: src[x] === 'catch' ? 'T' : src[x] === 'escape' ? 'J' : played ? '–' : '·',
+                color: won ? '#08111c' : (played ? '#5f7392' : '#3d4a60'),
+                bg: won ? (role === 'cat' ? '#ff8a5c' : '#6ee2ff') : 'rgba(255,255,255,.03)',
+                border: won ? 'transparent' : 'rgba(130,160,200,.14)'
+              });
+            }
+            return out;
+          })(),
+          learnedLabel: role === 'cat' ? 'WHAT HE LEARNED IN THIS SCHOOL' : 'WHAT SHE LEARNED IN THIS SCHOOL',
+          tactics: this.tactics(vp.key, role),
+          footStats: [
+            { key: 'f1', label: 'POLICY LEVEL, TRAINED', value: Math.round(this.CP_SKILL[vp.key][role][2] * 100) + '%' },
+            { key: 'f2', label: 'ROUNDS THAT TIMED OUT', value: vp.cps[2].d + ' / ' + n },
+            { key: 'f3', label: 'EXAM GAINED OVER TRAINING', value: (() => {
+              const at = (x) => {
+                const e = (vp.exam && vp.exam[x]) || { cat: 0, mouse: 0 };
+                return role === 'cat' ? e.cat : e.mouse;
+              };
+              const d = Math.round((at(2) - at(0)) * 100);
+              return (d >= 0 ? '+' : '') + d + ' pts';
+            })() }
+          ],
+          footNote: won
+            ? 'Champion of this school, and a candidate for the grand final.'
+            : 'Beaten here, but still a candidate — the final takes the best of all three schools.'
+        };
+      };
+      const diff = Math.abs(vp.catRate - vp.mouseRate);
+      vd = {
+        key: vp.key, title: vAlgo.short + ' SCHOOL', color: vAlgo.color, deep: vAlgo.deep,
+        border: this.rgba(vAlgo.color, 0.32),
+        subline: vAlgo.full + ' · ' + n + ' levels × 3 checkpoints',
+        champLine: vp.winner === 'draw' ? 'THE SCHOOL IS SPLIT'
+          : (catWon ? 'TOM TAKES THE ' + vAlgo.short + ' SCHOOL' : 'JERRY TAKES THE ' + vAlgo.short + ' SCHOOL'),
+        champColor: vp.winner === 'draw' ? '#f2f7ff' : (catWon ? '#ff9a72' : '#7ee0ff'),
+        champNote: vp.winner === 'draw'
+          ? 'Both sides took the same share of the ' + n + ' trained levels — this school produced no favourite.'
+          : (catWon
+            ? 'He caught her on ' + vp.cps[2].c + ' of ' + n + ' trained levels, ' + Math.round(diff * 100) + ' points clear of her escapes.'
+            : 'She got home on ' + vp.cps[2].m + ' of ' + n + ' trained levels, ' + Math.round(diff * 100) + ' points clear of his catches.'),
+        plateBorder: vp.winner === 'draw' ? 'rgba(130,160,200,.24)' : (catWon ? 'rgba(255,138,92,.42)' : 'rgba(110,226,255,.4)'),
+        plateBg: catWon
+          ? 'linear-gradient(90deg,rgba(255,122,84,.18),rgba(10,14,22,.5) 60%)'
+          : (mouseWon ? 'linear-gradient(90deg,rgba(110,226,255,.16),rgba(10,14,22,.5) 60%)' : 'rgba(255,255,255,.03)'),
+        cards: [mkCard('cat'), mkCard('mouse')],
+        rerun: ui(() => this.rerunSchool(vp.key)),
+        next: ui(() => this.primary()),
+        nextLabel: nx ? 'NEXT: ' + A.ALGOS[nx].short + ' SCHOOL →' : 'OPEN THE GRAND FINAL →'
+      };
+    } else {
+      vd = {
+        key: 'ppo', title: '—', color: '#4ea8ff', deep: '#0a2544', border: 'rgba(78,168,255,.3)', subline: '',
+        champLine: '—', champColor: '#f2f7ff', champNote: '', plateBorder: 'rgba(130,160,200,.24)', plateBg: 'rgba(255,255,255,.03)',
+        cards: [], rerun: () => { }, next: () => { }, nextLabel: '—'
+      };
+    }
+
+    const fa = this.finalRun;
+    const fin = fa ? {
+      subtitle: fa.catAlgo.short + ' cat vs ' + fa.mouseAlgo.short + ' mouse · frozen policies',
+      catKey: fa.catKey, catShort: fa.catAlgo.short, catColor: fa.catAlgo.color, catDeep: fa.catAlgo.deep,
+      catBorder: this.rgba(fa.catAlgo.color, 0.32), catRate: pct(fa.catRate), catTactics: this.tactics(fa.catKey, 'cat'),
+      catThought: fa.thoughtCat || 'stepping onto the floor',
+      mouseKey: fa.mouseKey, mouseShort: fa.mouseAlgo.short, mouseColor: fa.mouseAlgo.color, mouseDeep: fa.mouseAlgo.deep,
+      mouseBorder: this.rgba(fa.mouseAlgo.color, 0.32), mouseRate: pct(fa.mouseRate), mouseTactics: this.tactics(fa.mouseKey, 'mouse'),
+      mouseThought: fa.thoughtMouse || 'looking for a route to the hole',
+      scoreCat: String(fa.wins.cat), scoreMouse: String(fa.wins.mouse),
+      steps: String(fa.view ? fa.view.step : 0),
+      round: 'ROUND ' + Math.min(5, fa.series.length + 1) + ' / 5',
+      pips: [0, 1, 2, 3, 4].map(i => {
+        const r = fa.series[i];
+        return {
+          key: 'pip' + i,
+          label: r === 'catch' ? 'T' : r === 'escape' ? 'J' : r ? '–' : '·',
+          color: r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : r ? '#8fa4c4' : '#3d4a60',
+          bg: r ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.02)',
+          border: r === 'catch' ? 'rgba(255,138,92,.45)' : r === 'escape' ? 'rgba(110,226,255,.45)' : 'rgba(130,160,200,.16)'
+        };
+      }),
+      hasBanner: !!fa.banner && fa.phase === 'run',
+      bannerText: fa.banner ? fa.banner.t : '',
+      bannerColor: fa.banner ? fa.banner.c : '#f2f7ff',
+      showPlate: fa.phase === 'done',
+      plateTitle: fa.wins.cat > fa.wins.mouse ? 'TOM WINS THE ACADEMY' : (fa.wins.mouse > fa.wins.cat ? 'JERRY WINS THE ACADEMY' : 'THE SERIES IS DRAWN'),
+      plateColor: fa.wins.cat > fa.wins.mouse ? '#ff9a72' : (fa.wins.mouse > fa.wins.cat ? '#7ee0ff' : '#f2f7ff'),
+      plateBody: fa.wins.cat + ' catches, ' + fa.wins.mouse + ' escapes, ' + fa.wins.draw + ' timed out — the ' +
+        fa.catAlgo.short + ' cat against the ' + fa.mouseAlgo.short + ' mouse on a level neither of them trained on.',
+      reset: ui(() => { this.finalRun = null; this.startFinal(); })
+    } : {
+      subtitle: '', catKey: 'ppo', catShort: '—', catColor: '#4ea8ff', catDeep: '#0a2544', catBorder: 'rgba(78,168,255,.3)',
+      catRate: '—', catTactics: [], catThought: '',
+      mouseKey: 'ga', mouseShort: '—', mouseColor: '#3ddc84', mouseDeep: '#08331f', mouseBorder: 'rgba(61,220,132,.3)',
+      mouseRate: '—', mouseTactics: [], mouseThought: '',
+      scoreCat: '0', scoreMouse: '0', steps: '0', round: 'ROUND 1 / 5', pips: [],
+      hasBanner: false, bannerText: '', bannerColor: '#f2f7ff',
+      showPlate: false, plateTitle: '', plateColor: '#f2f7ff', plateBody: '', reset: () => { }
+    };
+
+    /* Optional generated backdrops. Off until the art exists: drop
+       assets/bg-academy.png, bg-ppo.png, bg-ga.png, bg-cmaes.png, bg-final.png
+       in place and switch the Backdrops tweak on. */
+    const bdOn = this.props.backdrops !== false;
+    const bdKey = S.screen === 'school' ? (sc ? sc.key : 'academy')
+      : S.screen === 'verdict' ? (vp ? vp.key : 'academy')
+        : S.screen === 'final' ? 'final' : 'academy';
+
+    return {
+      backdropImg: bdOn ? 'url(assets/bg-' + bdKey + '.png)' : 'none',
+      backdropOpacity: bdOn ? String(this.props.backdropOpacity ?? 0.8) : '0',
+      backdropVeil: bdOn ? '1' : '0',
+      isMenu: S.screen === 'menu', isGen: S.screen === 'gen', isSchool: S.screen === 'school',
+      isVerdict: S.screen === 'verdict', isFinal: S.screen === 'final',
+      playLabel: S.playing ? '❚❚ SPACE' : '▶ SPACE',
+      togglePlay: ui(() => this.setState(s => ({ playing: !s.playing }))),
+      toMenu: ui(() => this.toMenu()),
+      openGen: ui(() => this.openGen()),
+      regenLevels: ui(() => this.regenLevels()),
+      resetRun: ui(() => this.resetRun()),
+      openFinal: ui(() => this.startFinal()),
+      skipCp: ui(() => this.skipCp()),
+      speeds, schools, levelChips, genSlots, genRules, genStatus,
+      genPrimary: ui(() => this.primary()),
+      genPrimaryLabel: ready ? (nx ? 'ENTER THE ' + A.ALGOS[nx].short + ' SCHOOL →' : 'BACK TO SCHOOLS') : 'GENERATING…',
+      genPrimaryBg: ready ? 'rgba(124,188,255,.18)' : 'rgba(255,255,255,.03)',
+      genPrimaryBorder: ready ? 'rgba(124,188,255,.45)' : 'rgba(130,160,200,.16)',
+      genPrimaryColor: ready ? '#dceaff' : '#5f7392',
+      genCount: String(this.levels.length).padStart(2, '0') + ' / ' + n,
+      levelSetLine: ready ? n + ' arenas ready' : (this.levels.length ? this.levels.length + ' of ' + n + ' built' : 'not generated yet'),
+      genCta: ready ? 'VIEW / REGENERATE' : 'GENERATE LEVELS →',
+      genCtaBg: ready ? 'rgba(255,255,255,.04)' : 'rgba(124,188,255,.18)',
+      genCtaBorder: ready ? 'rgba(130,160,200,.22)' : 'rgba(124,188,255,.45)',
+      genCtaColor: ready ? '#9db1cd' : '#dceaff',
+      levelCountLabel: String(n),
+      finalStatus: allDone ? 'READY' : 'LOCKED · FINISH ALL THREE',
+      finalCardBorder: allDone ? 'rgba(255,209,102,.4)' : 'rgba(130,160,200,.14)',
+      finalCardBg: allDone ? 'linear-gradient(180deg,rgba(38,30,12,.6),rgba(8,12,20,.62))' : 'linear-gradient(180deg,rgba(16,24,38,.6),rgba(8,12,20,.6))',
+      finalCardOpacity: allDone ? '1' : '0.5',
+      bestCatLine, bestMouseLine,
+      sch, cpPills, strip, progRows, ov, vd, fin,
+      schoolMapRef: this.schoolMapRef, schoolFxRef: this.schoolFxRef,
+      finalMapRef: this.finalMapRef, finalFxRef: this.finalFxRef,
+      finCatPortraitRef: this.finCatRef, finMousePortraitRef: this.finMouseRef
+    };
+  }
+}
+
+</script>
+</body>
+</html>

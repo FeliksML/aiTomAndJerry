@@ -157,6 +157,31 @@ frame. If a take stalls or a run goes wrong, replay it exactly:
 .venv/bin/python trainer/scripts/serve.py --replay runs/journals/2026-08-27T16-27-49.jsonl
 ```
 
+## About the hardware
+
+You asked for the M2 Max to be leveraged. It is — just not where you would expect, and
+the measurement is worth keeping because it is counter-intuitive.
+
+**MPS loses here, and it is not close.** A bare `forward_flat` benchmark says the GPU wins
+by 8x. The call training actually makes — upload observations, forward, softmax, sample,
+download actions — says the opposite:
+
+| | CPU | MPS |
+|---|---:|---:|
+| actor round trip, 48 policies x 12 envs | **0.67 ms** | 1.71 ms |
+| PPO end to end, 45 s budget | **126k env-steps/s** | 62k |
+
+At 2,533 parameters the run is bound by how many GPU kernels get launched, not by their
+arithmetic. `nets.pick_device("auto")` therefore benchmarks the *whole call* and picks CPU;
+benchmarking the matmul alone picks wrong. MPS would win back with a network an order of
+magnitude larger — but a larger network is exactly what makes evolution unusable, so the
+comparison would break.
+
+Where the machine does get used: **the environment is vectorised into lookup tables**
+(533k env-steps/s at batch 2048), and **all three schools train at once in separate
+processes** — which is both a 3x speedup and the fairness protocol, since they then share
+one wall-clock under one load.
+
 ## Verification
 
 The environment is the contract, so it is tested rather than trusted.

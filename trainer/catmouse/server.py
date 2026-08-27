@@ -81,6 +81,7 @@ class Session:
         self.tournament = self._load_json("tournament.json")
         self.progression = self._load_json("progression.json")
         self.budgets = self._load_json("budgets.json")
+        self.highlights = self._load_json("highlights.json")
 
         self.mode = "idle"
         self.speed = 4.0
@@ -120,6 +121,7 @@ class Session:
             "tournament": self.tournament,
             "progression": self.progression,
             "budgets": self.budgets,
+            "highlights": self.highlights,
             "runDir": str(self.run_dir),
         }
 

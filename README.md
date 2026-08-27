@@ -35,7 +35,7 @@ Then open <http://localhost:8778>.
 
 **Keys.** `1 2 3` schools · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
-`t` train live on camera · **`r` reveal the next school**, `shift+R` re-seal one.
+`h` highlight reel · `t` train live on camera · **`r` reveal the next school**, `shift+R` re-seal one.
 
 ## The reveal
 
@@ -120,6 +120,24 @@ Note: the optimiser is **separable (diagonal) CMA-ES**. A full covariance over 2
 weights is 6.4M numbers with an eigendecomposition per update, and giving CMA-ES a smaller
 network than the other two would break the comparison. The ellipse on screen is honest
 regardless: it is measured from the real sample cloud.
+
+## Finding the good bits
+
+```bash
+.venv/bin/python trainer/scripts/highlights.py --run runs/v2 --episodes 400
+```
+
+Plays the champions across hundreds of episodes and scores each for drama: a **nail-biter**
+(she reaches the hole with him inside two cells), a **heartbreak** (caught within a cell or
+two of home), **the snap** (a trap fires and turns the episode), **the long one** (several
+separate near-misses), **the shutout**. It writes the winners to `highlights.json`, one per
+room, and `h` in the app replays exactly those — the environment is deterministic given
+(arena, seed), so what you watch is the episode that was scored.
+
+On the first run it found 102 dramatic episodes in 240, including sixteen where she dives
+into the hole on the *same step* he lands on her. Those exist because reaching the hole is
+checked before the catch — the rule is in the spec, and it turns out to be the single best
+shot in the game.
 
 ## Recording
 

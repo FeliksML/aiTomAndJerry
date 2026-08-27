@@ -67,7 +67,7 @@
     results: [], runState: null,
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
-    banner: null, bannerAt: 0,
+    banner: null, bannerAt: 0, highlights: null,
     trainInfo: null,
     net: null
   };
@@ -246,6 +246,7 @@
 
     var f = App.frame;
     var mode = f ? (f.cat.mode + ' · ' + f.mouse.mode) : '—';
+    var hl = App.highlights && App.highlights[st.level || 0];
 
     return '<div class="screen">' + backdrop('bg-' + (v.sealed ? 'academy' : App.school), .32)
       + '<div style="position:relative;display:flex;align-items:center;gap:18px">'
@@ -284,7 +285,9 @@
       + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
       + '<div class="btn ghost" data-act="skip">SKIP EPISODE · S</div>'
       + '<div class="btn ghost" data-act="train">TRAIN LIVE · T</div>'
-      + '<div class="dim" style="margin-left:auto;font-size:12px">'
+      + '<div class="dim" style="margin-left:auto;font-size:12px;text-align:right">'
+      + (hl ? '<span class="mono" style="color:var(--gold);letter-spacing:2px">' + esc(hl.kind.toUpperCase())
+              + '</span> &nbsp;·&nbsp; ' + esc(hl.why) + '<br>' : '')
       + (App.trainInfo ? esc(App.trainInfo) : 'Frames are streaming from the trained policy — nothing here is scripted.')
       + '</div></div></div>';
   }
@@ -716,9 +719,30 @@
     App.frame = App.prev = null;
     App.trainInfo = null;
     App.mode = 'play';
+    App.highlights = null;
     App.screen = 'school';
     render();
     App.net.send({ cmd: 'play', school: key, checkpoint: App.checkpoint });
+  }
+
+  /* The arenas the highlight scan picked, in its order. The environment is
+     deterministic given (arena, seed), so these replay as the same episodes that were
+     scored — no hunting for the good one on camera. */
+  function playHighlights() {
+    var H = App.cat && App.cat.highlights;
+    if (!H || !H.highlights || !H.highlights.length) return;
+    App.school = H.catSchool || App.school;
+    App.checkpoint = 'trained';
+    App.results = [];
+    App.frame = App.prev = null;
+    App.mode = 'play';
+    App.trainInfo = H.found + ' dramatic episodes found in ' + H.episodes
+      + ' — playing the best ' + H.highlights.length + ', one per room';
+    App.highlights = H.highlights;
+    App.screen = 'school';
+    render();
+    App.net.send({ cmd: 'play', school: App.school, checkpoint: 'trained',
+                   levels: H.highlights.map(function (h) { return h.arena; }) });
   }
 
   function trainLive() {
@@ -742,6 +766,7 @@
       else if (a === 'pause') { App.playing = !App.playing; App.net.send({ cmd: App.playing ? 'resume' : 'pause' }); render(); }
       else if (a === 'skip') App.net.send({ cmd: 'skip' });
       else if (a === 'train') trainLive();
+      else if (a === 'highlights') playHighlights();
       else if (a === 'school') { App.screen = 'school'; render(); }
     });
 
@@ -751,6 +776,7 @@
       else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
       else if (k === 'g') go('gen');
       else if (k === 'b') go('board');
+      else if (k === 'h') playHighlights();
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();

@@ -198,18 +198,27 @@
       p.push('</g>');
     }
 
-    // Crossover: a handful of children traced back to their two parents.
+    // Crossover: a few of this generation's pairings, drawn between the two parents
+    // with the child on the arc between them.
+    //
+    // The child is deliberately NOT drawn in a grid slot. The strips show the CURRENT
+    // population ranked by fitness; the children belong to the next one and have no
+    // slot yet, and next generation the whole grid is re-ranked anyway. Pointing at a
+    // slot would name a genome that is not the child — so the child is drawn where it
+    // actually is conceptually: between its parents.
     if (this.pairs.length) {
       var shown = Math.min(4, this.pairs.length);
       for (var q = 0; q < shown; q++) {
-        var childSlot = this.elites.length + q;
-        var childGi = order.indexOf ? order[childSlot] : childSlot;
-        var c = pos[childGi], a = pos[this.pairs[q][0]], b2 = pos[this.pairs[q][1]];
-        if (!c || !a || !b2) continue;
-        p.push('<path d="M' + f(a.x) + ' ' + f(a.y) + 'Q' + f((a.x + c.x) / 2) + ' ' + f((a.y + c.y) / 2 - 12) + ' ' + f(c.x) + ' ' + f(c.y)
-          + '" fill="none" stroke="' + accent + '" stroke-width="1" opacity="' + (0.35 * this.flash).toFixed(2) + '"/>');
-        p.push('<path d="M' + f(b2.x) + ' ' + f(b2.y) + 'Q' + f((b2.x + c.x) / 2) + ' ' + f((b2.y + c.y) / 2 + 12) + ' ' + f(c.x) + ' ' + f(c.y)
-          + '" fill="none" stroke="' + accent + '" stroke-width="1" opacity="' + (0.35 * this.flash).toFixed(2) + '"/>');
+        var a = pos[this.pairs[q][0]], b2 = pos[this.pairs[q][1]];
+        if (!a || !b2) continue;
+        var midx = (a.x + b2.x) / 2, midy = (a.y + b2.y) / 2 - 10;
+        var op = (0.5 * this.flash).toFixed(2);
+        p.push('<path d="M' + f(a.x) + ' ' + f(a.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
+          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + accent + '" stroke-width="1.1" opacity="' + op + '"/>');
+        p.push('<path d="M' + f(b2.x) + ' ' + f(b2.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
+          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + accent + '" stroke-width="1.1" opacity="' + op + '"/>');
+        p.push('<circle cx="' + f(midx) + '" cy="' + f(midy) + '" r="3" fill="' + accent
+          + '" opacity="' + (0.85 * this.flash).toFixed(2) + '"/>');
       }
     }
 
@@ -217,8 +226,8 @@
     p.push('<text x="16" y="' + (h - 26) + '" fill="#c9d8ee" font-size="11" font-family="JetBrains Mono,monospace">generation '
       + this.gen + '   sigma ' + fmt(st.sigma, 4) + '   diversity ' + fmt(st.diversity, 4) + '</text>');
     p.push('<text x="16" y="' + (h - 9) + '" fill="#7d90ad" font-size="10.5">'
-      + 'Left bar = fitness. Lit borders are the elites, carried over untouched. '
-      + 'Curves show a child and the two parents it was mixed from.</text>');
+      + 'Bottom bar = fitness. Lit borders are the elites, carried over untouched. '
+      + 'Each pair of curves is two parents meeting at the child they just made.</text>');
     p.push('</svg>');
     return p.join('');
   };

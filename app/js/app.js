@@ -329,6 +329,81 @@
       + '<div class="faint" style="text-align:center;font-size:10px;letter-spacing:2px">ROUNDS WON</div></div>';
   }
 
+  /* A full-screen version of the same explainer, for talking over on camera. The panel
+     is identical — only bigger — so what is being explained is exactly what was on
+     screen a moment ago beside the arena, rather than a separate illustration. */
+  var LESSON = {
+    ppo: {
+      head: 'It takes a step, then refuses to take a big one',
+      body: 'PPO collects a batch of episodes, works out which moves did better than '
+        + 'expected, and nudges the policy toward them. The trick is the leash: the new '
+        + 'policy is scored against the old one, and any move that would change too much '
+        + 'is clipped back. The histogram is that leash — almost everything piles up '
+        + 'inside the band, because that is the only place the update is allowed to go.',
+      watch: ['The bars barely move between updates. That is the point, not a fault.',
+              'Anything outside the dashed lines got clipped and contributed nothing.',
+              'Entropy falling means it is running out of doubt about what to do.']
+    },
+    ga: {
+      head: 'Forty-eight brains, and only the good ones get children',
+      body: 'No gradients, no derivatives, nothing that knows which direction is better. '
+        + 'Each generation plays all forty-eight networks, ranks them, keeps the best few '
+        + 'untouched, and fills the rest with children: pick two parents, flip a coin per '
+        + 'weight to decide which parent it comes from, then nudge a tenth of the weights '
+        + 'at random. Repeat a few thousand times.',
+      watch: ['Lit borders are the elites — they survive to the next generation unchanged.',
+              'Each strip is a fingerprint of one brain. Children look like their parents.',
+              'Sigma hunts up and down: it grows while children keep beating parents.']
+    },
+    cmaes: {
+      head: 'It does not just search — it learns the shape of the search',
+      body: 'CMA-ES keeps a Gaussian over strategies. Every generation it draws thirty-two '
+        + 'brains from it, keeps the better half, and moves the centre toward them — then '
+        + 'reshapes the cloud itself, stretching along directions that keep paying off and '
+        + 'narrowing where they do not. The ellipse is that shape, measured from the real '
+        + 'samples on screen.',
+      watch: ['Filled dots are the half that gets kept and recombined.',
+              'The gold marker is where the centre moved to this generation.',
+              'Sigma shrinking means it has stopped exploring and started converging.']
+    }
+  };
+
+  function renderLesson() {
+    var v = view(App.school);
+    var L = LESSON[App.school];
+    if (v.sealed) {
+      return '<div class="screen">' + backdrop('bg-academy', .4)
+        + '<div style="position:relative;flex:1;display:grid;place-items:center">'
+        + '<div style="text-align:center"><div class="sealed-tag">METHOD CLASSIFIED</div>'
+        + '<div class="dim" style="margin-top:18px;font-size:15px">This school has not been introduced yet.</div>'
+        + '<div class="btn ghost" style="margin-top:26px" data-act="menu">ESC · ACADEMY</div></div></div></div>';
+    }
+    return '<div class="screen">' + backdrop('bg-' + App.school, .3)
+      + '<div style="position:relative;display:flex;align-items:center;gap:18px">'
+      + '<div style="width:54px;height:54px">' + P.emblem(v.emblem, v.color) + '</div>'
+      + '<div><div class="kicker">How it learns</div>'
+      + '<div class="title" style="font-size:44px;margin-top:4px;color:' + v.color + '">' + esc(v.short) + '</div></div>'
+      + '<div style="margin-left:auto;display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
+      + '<div style="position:relative;display:flex;gap:22px;margin-top:18px;flex:1;min-height:0">'
+      + '<div class="card" style="flex:1;padding:10px"><div id="panel" style="width:100%;height:100%"></div></div>'
+      + '<div style="width:520px;display:flex;flex-direction:column;gap:16px">'
+      + '<div class="card" style="padding:24px">'
+      + '<div class="title" style="font-size:26px;line-height:1.25">' + esc(L.head) + '</div>'
+      + '<div class="dim" style="font-size:14.5px;line-height:1.65;margin-top:14px">' + esc(L.body) + '</div></div>'
+      + '<div class="card" style="padding:22px 24px;flex:1">'
+      + '<div class="mono faint" style="font-size:10.5px;letter-spacing:1.6px">WHAT TO WATCH</div>'
+      + L.watch.map(function (t) {
+          return '<div style="display:flex;gap:12px;margin-top:14px"><div style="width:7px;height:7px;border-radius:50%;background:'
+            + v.color + ';margin-top:6px;flex:0 0 auto"></div><div class="dim" style="font-size:13.5px;line-height:1.55">'
+            + esc(t) + '</div></div>';
+        }).join('')
+      + '</div></div></div>'
+      + '<div style="position:relative;display:flex;gap:10px;margin-top:14px">'
+      + '<div class="btn" data-act="school">BACK TO THE ARENA · L</div>'
+      + '<div class="btn ghost" data-act="train">TRAIN LIVE · T</div>'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div></div></div>';
+  }
+
   function renderVerdict() {
     var v = view(App.school);
     var n = App.cat ? App.cat.levels.length : 12;
@@ -542,7 +617,7 @@
   /* ---------------- render + hot loop ---------------- */
 
   function render() {
-    var html = { menu: renderMenu, gen: renderGen, school: renderSchool,
+    var html = { menu: renderMenu, gen: renderGen, school: renderSchool, lesson: renderLesson,
                  verdict: renderVerdict, final: renderFinal, board: renderBoard }[App.screen]();
     el('root').innerHTML = html;
     App.mapKey = null;                 // force a repaint into the new DOM
@@ -584,9 +659,13 @@
   function paintPanel() {
     var host = el('panel');
     if (!host) return;
-    var p = App.mode === 'train' ? App.panels[App.school] : App.livePanel;
+    var lesson = App.screen === 'lesson';
+    // The lesson always shows the algorithm, even during playback: it is a explanation
+    // of the method, not a readout of the current episode.
+    var p = (lesson || App.mode === 'train') ? App.panels[App.school] : App.livePanel;
     if (!p || !p.draw) return;
-    host.innerHTML = p.draw(700, 420, view(App.school).color);
+    host.innerHTML = lesson ? p.draw(1180, 700, view(App.school).color)
+                            : p.draw(700, 420, view(App.school).color);
   }
 
   var last = 0;
@@ -597,6 +676,7 @@
     // Interpolate between the last two frames so movement is smooth at any speed.
     App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
     if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
+    else if (App.screen === 'lesson') paintPanel();
   }
 
   function genTick(now) {
@@ -662,6 +742,7 @@
       else if (a === 'pause') { App.playing = !App.playing; App.net.send({ cmd: App.playing ? 'resume' : 'pause' }); render(); }
       else if (a === 'skip') App.net.send({ cmd: 'skip' });
       else if (a === 'train') trainLive();
+      else if (a === 'school') { App.screen = 'school'; render(); }
     });
 
     window.addEventListener('keydown', function (e) {
@@ -673,6 +754,7 @@
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();
+      else if (k === 'l') { App.screen = App.screen === 'lesson' ? 'school' : 'lesson'; render(); }
       else if (k === 's') App.net.send({ cmd: 'skip' });
       else if (e.code === 'Space') {
         e.preventDefault();

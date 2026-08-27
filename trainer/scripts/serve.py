@@ -50,7 +50,7 @@ async def pump(session, send, stop: asyncio.Event) -> None:
         while not session._train_events.empty():
             await send(session._train_events.get_nowait())
 
-        if session.mode not in ("play", "final") or not session.playing:
+        if session.mode not in ("play", "final", "train") or not session.playing:
             continue
         env = session.env
         if env is None:
@@ -115,13 +115,18 @@ async def handler(ws, session, journal):
                 session.playing = cmd == "resume"
                 await send({"type": "state", **session.state()})
             elif cmd == "skip":
+                # Run the episode out silently, then send only its final frame and its
+                # result. The result message is emitted by the tick that ENDS the
+                # episode, so that tick's output is what has to be forwarded — a fresh
+                # tick afterwards finds the result already recorded and stays quiet.
                 env = session.env
                 if env is not None:
+                    tail: list[dict] = []
                     guard = 0
                     while not env.done[0] and guard < 400:
                         guard += 1
-                        session.tick()
-                    for msg in session.tick():
+                        tail = session.tick()
+                    for msg in (tail or session.tick()):
                         await send(msg)
             elif cmd == "next":
                 end = session.advance()

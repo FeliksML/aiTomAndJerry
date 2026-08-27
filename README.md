@@ -34,7 +34,7 @@ python3 -m http.server 8778 --directory app
 Then open <http://localhost:8778>.
 
 **Keys.** `1 2 3` schools · `g` level generator · `f` grand final · `b` leaderboard ·
-`v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
+`l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
 `t` train live on camera · **`r` reveal the next school**, `shift+R` re-seal one.
 
 ## The reveal

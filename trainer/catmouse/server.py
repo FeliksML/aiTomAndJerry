@@ -96,6 +96,8 @@ class Session:
         self._map_sent = None
         self._train_task = None
         self._train_events: asyncio.Queue = asyncio.Queue(maxsize=512)
+        self.train_school = None
+        self._shadow_at = 0
 
     def _load_json(self, name: str):
         p = self.run_dir / name
@@ -173,6 +175,18 @@ class Session:
         if self.bot:
             self.bot.reset()
         self._map_sent = None
+        self._refresh_shadow()
+
+    def _refresh_shadow(self) -> None:
+        """Re-read the policies at the start of each shadow episode, so the arena shows
+        this minute's brain rather than the one training started with."""
+        sch = self.train_school
+        if sch is None:
+            return
+        try:
+            self.actors = {r: FlatActor(sch.params(r), self.device) for r in ("cat", "mouse")}
+        except Exception:
+            pass                    # mid-update; the previous episode's actors will do
 
     def _actions(self):
         e = self.env
@@ -221,6 +235,13 @@ class Session:
 
     def advance(self) -> dict | None:
         """Move to the next arena, or finish the run."""
+        if self.mode == "train":
+            # Training has no end of run — the shadow keeps cycling the arenas with
+            # whatever the optimiser has produced by now.
+            self.level = (self.level + 1) % max(1, len(self.level_order))
+            self.results = []
+            self._begin_episode()
+            return None
         if self.level + 1 >= len(self.level_order):
             self.mode = "done"
             return {"type": "runEnd", **self.state()}
@@ -251,6 +272,19 @@ class Session:
             return {"type": "error", "message": "training already running"}
         self.mode = "train"
         self.ctx = {"school": school, "minutes": minutes}
+        self.train_school = None
+        # A shadow episode, replayed from the policy as it currently stands. Training
+        # itself runs thousands of episodes a second across a batch; showing one of them
+        # raw would be a blur. This plays a single episode at a watchable pace with
+        # whatever the optimiser has produced by now, so the arena visibly improves
+        # while the panel shows why.
+        self.env = VecEnv(self.maps, 1, seed=4242)
+        self.bot = ScriptedPair(self.env, EXAMINER_SKILL, seed=13)
+        self.level_order = list(range(len(self.maps)))
+        self.level = 0
+        self.results = []
+        self.actors = {"cat": None, "mouse": None}
+        self._begin_episode()
         loop = asyncio.get_running_loop()
         self._train_task = loop.run_in_executor(
             None, self._train_blocking, school, minutes, seed, loop)
@@ -270,7 +304,10 @@ class Session:
 
         s = cls(self.maps, MapSet(arena.EVAL_SEEDS[:8]), self.device,
                 Budget(seconds=minutes * 60), seed=seed, on_event=on_event)
+        s.setup()
+        self.train_school = s
         s.train(eval_every=0.02)
+        self.train_school = None
         on_event({"kind": "trainDone", "school": school})
 
 

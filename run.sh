@@ -11,7 +11,14 @@ cd "$(dirname "$0")"
 PY=.venv/bin/python
 TAG_DEFAULT=v4
 
-train() { $PY trainer/scripts/train.py --minutes "${1:-45}" --tag "${2:-$TAG_DEFAULT}"; }
+# Extra flags after [minutes] [tag] are forwarded, so the --nests in the README is the
+# --nests that runs. They used to be dropped silently, which is the worst way to be wrong
+# about a command you typed on camera.
+train() {
+  local mins="${1:-45}" tag="${2:-$TAG_DEFAULT}"
+  shift 2 2>/dev/null || shift $# 
+  $PY trainer/scripts/train.py --minutes "$mins" --tag "$tag" "$@"
+}
 
 score() {
   local tag="${1:-$TAG_DEFAULT}"
@@ -52,10 +59,10 @@ verify() {
 }
 
 case "${1:-serve}" in
-  train)  train "${2:-45}" "${3:-$TAG_DEFAULT}" ;;
+  train)  shift; train "$@" ;;
   score)  score "${2:-$TAG_DEFAULT}" ;;
   serve)  serve "${2:-$TAG_DEFAULT}" ;;
   verify) verify ;;
-  all)    train "${2:-45}" "${3:-$TAG_DEFAULT}"; score "${3:-$TAG_DEFAULT}"; serve "${3:-$TAG_DEFAULT}" ;;
+  all)    shift; train "$@"; score "${2:-$TAG_DEFAULT}"; serve "${2:-$TAG_DEFAULT}" ;;
   *)      sed -n '2,9p' "$0" >&2; exit 1 ;;
 esac

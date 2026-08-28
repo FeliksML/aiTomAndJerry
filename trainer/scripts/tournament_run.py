@@ -54,7 +54,7 @@ def main() -> None:
 
     lab = t["labels"]
     W1, W2 = 13, 16
-    print("\ncross-play — a cat's score is its mean catch rate against ALL THREE mice")
+    print("\ncross-play — SCORE is the mean against the OTHER TWO schools; self-play does not vote")
     print("".ljust(W1) + "".join((lab[m] + " mouse").rjust(W2) for m in t["schools"])
           + "SCORE".rjust(W2) + "vs EXAMINER".rjust(14))
     for c in t["schools"]:

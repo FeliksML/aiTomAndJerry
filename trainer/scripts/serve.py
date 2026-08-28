@@ -7,6 +7,8 @@ Commands the app sends:
 
     {"cmd":"hello"}                                     catalogue: schools, checkpoints,
                                                         level set, tournament, budgets
+    {"cmd":"play","school":"ppo","checkpoint":"trained","mouseSchool":"ga",
+     "levels":[3,1],"seeds":[20263559,20261737]}   a reproducible pairing, arena by arena
     {"cmd":"play","school":"ppo","checkpoint":"trained",
      "opponent":"self|examiner-mouse|examiner-cat"}     run the shared level set
     {"cmd":"final"}                                     champion vs champion, 5 rounds
@@ -98,17 +100,22 @@ async def _pump(session, send, stop: asyncio.Event) -> None:
             acc = 0.0
 
 
-async def handler(ws, session, journal):
-    stop = asyncio.Event()
+async def handler(ws, session, journal, clients, send):
+    """One connection. The clock is NOT started here.
 
-    async def send(msg: dict) -> None:
-        if journal:
-            journal.write(msg)
-        await ws.send(json.dumps(msg, default=lambda o: o.tolist()))
-
-    task = asyncio.create_task(pump(session, send, stop))
+    There is one Session, so there must be exactly one pump driving it. A pump per
+    connection meant a second window — a stale tab, a reload that left a zombie socket,
+    a preview on another monitor — silently stole half the work: the simulation advanced
+    once per pump, so it ran at N times the pace the speed chip claimed, and each window
+    received only its own share of the frames and results. On screen that reads as
+    episodes flying past and gaps in the level strip, with nothing to point at. Clients
+    now share one clock, and every one of them sees every message.
+    """
+    clients.add(ws)
     try:
-        await send(session.hello())
+        # The greeting is the only per-connection message: it is a snapshot of the run,
+        # and a joining window needs it without interrupting anybody else's.
+        await ws.send(json.dumps(session.hello(), default=lambda o: o.tolist()))
         async for raw in ws:
             try:
                 m = json.loads(raw)
@@ -116,12 +123,14 @@ async def handler(ws, session, journal):
                 continue
             cmd = m.get("cmd")
             if cmd == "hello":
-                await send(session.hello())
+                await ws.send(json.dumps(session.hello(), default=lambda o: o.tolist()))
             elif cmd == "play":
                 await send(session.start_play(m.get("school", "ppo"),
                                               m.get("checkpoint", "trained"),
                                               m.get("opponent", "self"),
-                                              m.get("levels")))
+                                              m.get("levels"),
+                                              m.get("mouseSchool"),
+                                              m.get("seeds")))
             elif cmd == "race":
                 await send(session.start_race(m.get("checkpoint", "trained"), m.get("levels")))
             elif cmd == "final":
@@ -157,8 +166,7 @@ async def handler(ws, session, journal):
                 session.mode = "idle"
                 await send({"type": "state", **session.state()})
     finally:
-        stop.set()
-        task.cancel()
+        clients.discard(ws)
 
 
 def main() -> None:
@@ -197,9 +205,32 @@ def main() -> None:
         if journal:
             print(f"journalling to runs/journals/{stamp}.jsonl", flush=True)
 
-        async with websockets.serve(lambda ws: handler(ws, session, journal),
-                                    "127.0.0.1", a.port, max_size=None, compression=None):
-            await asyncio.Future()
+        clients: set = set()
+
+        async def broadcast(msg: dict) -> None:
+            """Journal once, then fan out. A window that has gone away is dropped rather
+            than left to stall the clock everyone else is on."""
+            if journal:
+                journal.write(msg)
+            if not clients:
+                return
+            data = json.dumps(msg, default=lambda o: o.tolist())
+            for sock in list(clients):
+                try:
+                    await sock.send(data)
+                except Exception:
+                    clients.discard(sock)
+
+        stop = asyncio.Event()
+        clock = asyncio.create_task(pump(session, broadcast, stop))
+        try:
+            async with websockets.serve(
+                    lambda ws: handler(ws, session, journal, clients, broadcast),
+                    "127.0.0.1", a.port, max_size=None, compression=None):
+                await asyncio.Future()
+        finally:
+            stop.set()
+            clock.cancel()
 
     asyncio.run(run())
 

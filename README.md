@@ -83,9 +83,11 @@ Controls that make the comparison mean something:
 - **Error bars.** Wilson 95% intervals on every rate, and the leaderboard says out loud
   when the top two overlap.
 
-## Three things the data forced
+## Four things the data forced
 
-These are not design preferences. Each replaced something that measurably did not work.
+These are not design preferences. Each replaced something that measurably did not work,
+and each is worth saying out loud on camera because the failure is more interesting than
+the fix.
 
 **1 · Pure self-play does not climb.** Over 432 CMA-ES generations the cat reached a 74%
 win rate against its own archive while scoring 8% against a fixed opponent; the mouse
@@ -95,11 +97,20 @@ scripted opponents at five difficulties, one quarter self-play against a hall of
 
 **2 · A fixed curriculum punishes the slower learner.** Hardening the ladder on a clock
 means the last third of the budget is spent losing every episode. A school is now
-**promoted a year** when it sustains a 40% win rate against its current year — and only
+**promoted a year** when it sustains a win rate against its current year — measured only
 against the scripted slots, so it cannot promote itself by beating its own weak opponent.
 How fast each school gets promoted is itself worth putting on screen.
 
-**3 · The mouse was better off hiding.** With the spec's shaping coefficients, a timeout
+**3 · One promotion bar is not one bar.** The first full 45-minute run promoted both
+population schools' *mice* to year three within 50M steps and left their *cats* in year
+one for the entire run, plateauing just under a flat 40%. Catching is simply harder than
+escaping here: measured on the year-one ladder, the scripted controller at that year's
+top skill catches 58% and escapes 69%. So the bar is now **60% of whatever the scripted
+controller itself manages on the same ladder** — computed in 1.6s at setup, per role, per
+year. Year one comes out at 34% for the cat and 41% for the mouse. Same rule for every
+school; no constant that happens to suit one role.
+
+**4 · The mouse was better off hiding.** With the spec's shaping coefficients, a timeout
 scores 0 and being caught scores −1, while running the whole way home earns only +0.25 of
 shaping. The mouse duly learned to hide behind cover until the step limit and never
 escaped once in 400 generations. Training now uses potential-based shaping (Ng, Harada &

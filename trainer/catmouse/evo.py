@@ -29,7 +29,7 @@ import numpy as np
 
 from . import env as S
 from .arena import HallOfFame
-from .league import Promotion, ladder_for, scripted_share, strided_archive
+from .league import Promotion, calibrated_bars, ladder_for, scripted_share, strided_archive
 from .nets import FlatActor, init_flat
 from .school import School
 from .scripted import ScriptedPair
@@ -53,7 +53,7 @@ class EvoSchool(School):
         for r in ("cat", "mouse"):
             self.hof[r].add(self.best[r])
         self.gen = 0
-        self.promo = {r: Promotion() for r in ("cat", "mouse")}
+        self.promo = {r: Promotion(calibrated_bars(self.maps, r)) for r in ("cat", "mouse")}
         self._eval_env = None
         self.setup_optimiser()
 

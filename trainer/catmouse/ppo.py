@@ -28,7 +28,7 @@ import torch.nn.functional as F
 
 from . import arena
 from .nets import Critic, FlatActor, PolicyNet, init_flat
-from .league import Promotion, ladder_for, scripted_share
+from .league import Promotion, calibrated_bars, ladder_for, scripted_share
 from .school import School
 from .scripted import ScriptedPair
 from .vec import VecEnv
@@ -91,7 +91,7 @@ class PPOSchool(School):
                            "mouse": np.flatnonzero(self.grp == 1)}
         self.probe: dict[str, torch.Tensor] = {}
         self.bot = ScriptedPair(self.env, 0.5, seed=self.seed + 77)
-        self.promo = {r: Promotion() for r in ("cat", "mouse")}
+        self.promo = {r: Promotion(calibrated_bars(self.maps, r)) for r in ("cat", "mouse")}
 
     def params(self, role: str) -> np.ndarray:
         return self.net[role].flat()

@@ -48,8 +48,50 @@ _PHASE_ARR = np.asarray(PHASES, np.float64)
 
 
 N_PHASES = _PHASE_ARR.shape[0]
-PROMOTE_AT = 0.40        # win rate against the current year's ladder
 PROMOTE_WINDOW = 15      # generations of evidence before a promotion
+PROMOTE_FRACTION = 0.60  # of what the scripted controller itself manages, see below
+_CALIBRATION: dict = {}
+
+
+def reference_rate(maps, role: str, phase: int, reps: int = 40, seed: int = 3) -> float:
+    """What the scripted controller ITSELF scores against this year's ladder.
+
+    A flat "promote at 40%" is not one bar, it is two. Catching is harder than escaping
+    in this environment: measured against the year-1 ladder, the scripted controller at
+    that year's top skill catches 58% but escapes 69%. A single number therefore asks
+    more of the cat than of the mouse, and the first 45-minute run showed exactly that —
+    both population schools promoted their mouse to year three and left their cat in
+    year one for the entire run.
+
+    So the bar is expressed as a fraction of what the scripted controller manages on the
+    same ladder. Same rule for every school and both roles, and no magic constant that
+    happens to suit one of them.
+    """
+    key = (id(maps), role, phase)
+    if key in _CALIBRATION:
+        return _CALIBRATION[key]
+    from . import env as S
+    from .scripted import ScriptedPair
+    from .vec import VecEnv
+
+    n = len(maps) * reps
+    e = VecEnv(maps, n, seed=seed)
+    e.noise_tile = reps
+    slot = np.arange(n) % reps
+    e.reset(map_idx=slot % len(maps))
+    learner = ScriptedPair(e, max(PHASES[phase]), seed=seed + 1)
+    opponent = ScriptedPair(e, ladder_for(slot, phase), seed=seed + 2)
+    for _ in range(S.MAX_STEPS + 1):
+        if e.done.all():
+            break
+        if role == "cat":
+            e.step(learner.cat_act(), opponent.mouse_act())
+        else:
+            e.step(opponent.cat_act(), learner.mouse_act())
+    want = 1 if role == "cat" else 2
+    rate = float((e.result == want).mean())
+    _CALIBRATION[key] = rate
+    return rate
 
 
 def ladder_for(slot: np.ndarray, phase: int = N_PHASES - 1) -> np.ndarray:
@@ -76,12 +118,18 @@ class Promotion:
     is itself worth putting on screen.
     """
 
-    def __init__(self, threshold: float = PROMOTE_AT, window: int = PROMOTE_WINDOW):
+    def __init__(self, bars: list[float] | None = None, window: int = PROMOTE_WINDOW):
         self.phase = 0
-        self.threshold = threshold
+        #: One bar per year, each a fraction of what the scripted controller itself
+        #: scores on that year's ladder. Falls back to a flat 40% only if uncalibrated.
+        self.bars = bars or [0.40] * N_PHASES
         self.window = window
         self.hist: list[float] = []
         self.promoted_at: list[int] = []
+
+    @property
+    def threshold(self) -> float:
+        return self.bars[min(self.phase, len(self.bars) - 1)]
 
     def update(self, win_rate: float, step: int) -> bool:
         self.hist.append(float(win_rate))
@@ -127,3 +175,9 @@ def strided_archive(items: list[np.ndarray], k: int) -> list[np.ndarray]:
         return []
     idx = np.linspace(0, len(items) - 1, k).round().astype(int)
     return [items[i] for i in idx]
+
+
+def calibrated_bars(maps, role: str) -> list[float]:
+    """The promotion bar for each year, for one role, on these arenas."""
+    return [round(PROMOTE_FRACTION * reference_rate(maps, role, p), 4)
+            for p in range(N_PHASES)]

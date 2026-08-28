@@ -91,8 +91,8 @@ school simply solved it.
 ## Fairness — the part that makes this an experiment
 
 Self-play alone proves nothing across schools. A GA mouse escaping 80% of the time may
-just mean the GA cat is bad. This run shows exactly that: **CMA-ES's cat catches 52% of
-its own mouse and 23% of PPO's** — the same policy, a 29-point spread that depends
+just mean the GA cat is bad. This run shows exactly that: **CMA-ES's cat catches 50% of
+its own mouse and 17% of PPO's** — the same policy, a 33-point spread that depends
 entirely on who is being chased.
 
 So the championship is decided by **cross-play**: every cat plays every mouse, on eight
@@ -137,9 +137,12 @@ population schools' *mice* to year three within 50M steps and left their *cats* 
 one for the entire run, plateauing just under a flat 40%. Catching is simply harder than
 escaping here: measured on the year-one ladder, the scripted controller at that year's
 top skill catches 58% and escapes 69%. So the bar is now **60% of whatever the scripted
-controller itself manages on the same ladder** — computed in 1.6s at setup, per role, per
-year. Year one comes out at 34% for the cat and 41% for the mouse. Same rule for every
-school; no constant that happens to suit one role.
+controller itself manages on the same ladder** — computed in 1.5s at setup, per role, per
+year, on the arenas and hole count this run will actually use. On the shipped two-hole
+default that is 25% for the cat and 49% for the mouse in year one; on one hole it is 36%
+and 38%. The gap between those two pairs is the whole argument: a constant would have been
+wrong for at least one of them. Same rule for every school; no number that happens to suit
+one role.
 
 **4 · The mouse was better off hiding.** With the spec's shaping coefficients, a timeout
 scores 0 and being caught scores −1, while running the whole way home earns only +0.25 of
@@ -159,9 +162,15 @@ eight held-out rooms, 320 episodes a pairing:
 
 | | Tom, 1 hole | Tom, 2 holes | Jerry, 1 hole | Jerry, 2 holes |
 |---|---:|---:|---:|---:|
-| **PPO** | **82.3%** ±3.0 | **74.4%** ±3.4 | **41.4%** ±3.8 | **51.9%** ±3.9 |
-| GA | 54.1% ±3.8 | 21.9% ±3.2 | 23.9% ±3.3 | 41.9% ±3.8 |
-| CMA-ES | 40.6% ±3.8 | 28.1% ±3.5 | 13.6% ±2.7 | 38.0% ±3.7 |
+| **PPO** | **82.3%** ±3.0 | **73.8%** ±3.4 | **41.4%** ±3.8 | **56.6%** ±3.8 |
+| GA | 54.1% ±3.8 | 20.8% ±3.1 | 23.9% ±3.3 | 38.4% ±3.8 |
+| CMA-ES | 40.6% ±3.8 | 27.3% ±3.4 | 13.6% ±2.7 | 37.2% ±3.7 |
+
+The two hole counts are two different runs, and — worth saying because the table invites
+reading across — **two different networks**. The one-hole runs predate the configurable
+hole count and carry a 40-number observation, 2,533 weights; the two-hole run carries the
+`MAX_NESTS` hole slots and 2,853. Within a column all three schools are identical, which
+is the comparison the leaderboard makes. Across columns, read the direction, not the gap.
 
 SCORE here is the mean against the **other two** schools. A school's own mouse is left
 out of its cat's score and vice versa, because averaging it back in is precisely the
@@ -169,35 +178,37 @@ route by which a weak sparring partner at home flatters a score — the thing th
 tournament exists to rule out. The diagonal is still on the leaderboard, and the gap
 between it and the rest is the interesting part; it simply does not vote.
 
-That exclusion is not cosmetic. With the diagonal counted, the two-hole board crowned
-GA's mouse at 49.3% — on the strength of 64.1% against GA's *own* cat, the worst cat in
-the field at 21.9%. Off the diagonal, PPO's mouse leads at 51.9% against GA's 41.9%, and
-the intervals no longer touch.
+That exclusion is not cosmetic. With the diagonal counted, the two-hole board crowns GA's
+mouse at 47.7% over PPO's 47.2% — on the strength of 66.2% against GA's *own* cat, the
+worst cat in the field at 20.8%. Off the diagonal, PPO's mouse leads 56.6% to 38.4% and
+the intervals are nowhere near each other. One cell in nine decided the headline.
 
 **PPO wins both roles at both hole counts.** Adding the second hole did not change who
 wins, but it changed everything about the margins:
 
 - Every cat got worse and every mouse got better, which is the point of the change — with
   one exit, standing on it was most of the job.
-- **GA's mouse gained the most** — 23.9% to 41.9%, from last place to within a stride of
-  PPO — and on the fixed anchor it actually leads (41.6% vs 38.4%). Breeding whole brains
-  is a good way to learn "run for whichever door he is not covering".
-- **GA's cat collapsed** to 21.9% and never got past year two. The same method is a poor
+- **GA's mouse gained the most** — 23.9% to 38.4%, from a distant last to level with
+  CMA-ES — and on the fixed anchor it actually leads the field (41.6% against PPO's
+  38.4%). Breeding whole brains is a good way to learn "run for whichever door he is not
+  covering", and the two measures disagreeing is itself the point: the anchor is one
+  opponent, cross-play is three.
+- **GA's cat collapsed** to 20.8% and never got past year two. The same method is a poor
   way to learn "cover two doors at once".
 
 So the split is not in who wins but in how much: **PPO raises the best hunter and the
-best escape artist, but the second hole turns GA from the worst Jerry into the closest
-challenger.** That fell out of a rules change, not out of tuning.
+best escape artist at both hole counts, but the second hole halves its cat's margin and
+doubles GA's mouse.** That fell out of a rules change, not out of tuning.
 
 Three things worth pointing at on camera:
 
-- **The diagonal is the lie, and it is not in the score.** PPO's cat catches 70–79% of
-  the other schools' mice and only 56% of its own — because its own mouse is the hardest
-  opponent its cat ever meets, and the best mouse in the field besides. Read the other
-  two rows the other way round: a school that raised a weak sparring partner looks
+- **The diagonal is the lie, and it is not in the score.** PPO's cat catches 71% and 77%
+  of the other schools' mice and only 56% of its own — because its own mouse is the
+  hardest opponent its cat ever meets, and the best mouse in the field besides. Read the
+  other two rows the other way round: a school that raised a weak sparring partner looks
   dominant at home. That is why SCORE averages the off-diagonal only.
-- **CMA-ES's cat catches 52% of its own mouse and 23% of PPO's.** The same policy, a
-  29-point spread. Any single matchup would have been a meaningless ranking.
+- **CMA-ES's cat catches 50% of its own mouse and 17% of PPO's.** The same policy, a
+  33-point spread. Any single matchup would have been a meaningless ranking.
 - **Beating the benchmark is not being good.** Compare any school's `vs EXAMINER` column
   against its cross-play score. On the two-hole board the Examiner is the *harder*
   opponent for every cat — PPO's catches 74% of the learned mice and 42% of the scripted
@@ -325,7 +336,8 @@ The environment is the contract, so it is tested rather than trusted.
 | `trainer/scripts/parity.py` | `env.py` reproduces `env.js` exactly — 150 maps at each hole count, identical maps, identical trajectories, rewards to 1e-9 |
 | `trainer/scripts/vec_parity.py` | the batched trainer environment matches the reference step for step |
 | `trainer/scripts/balance.py` vs `js_balance.js` | the scripted Examiner behaves like the JS original across the whole skill sweep |
-| `trainer/scripts/check_arenas.py` | the training, evaluation and tournament rooms are disjoint — the claim the leaderboard rests on |
+| `trainer/scripts/check_arenas.py` | the training, evaluation and tournament rooms are disjoint, at each hole count — the claim the leaderboard rests on |
+| `tournament_run.py`, run twice | the board is reproducible. Pairing seeds derive from a SHA-1 of the two school names, not `hash()`, which Python randomises per process — the same checkpoints used to score differently every time they were re-scored |
 | `tools/check_render.js` | replays a recorded session through the real painter: no body and no vision cone is ever drawn inside a wall |
 | `trainer/scripts/train.py --minutes 3` | end-to-end smoke: three schools, checkpoints, telemetry |
 

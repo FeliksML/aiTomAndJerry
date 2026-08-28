@@ -124,10 +124,10 @@ catch, which is a rule in the spec and turns out to be the best shot in the game
 
 1. **The diagonal is the lie, which is why it is not in the score.** A school playing
    itself is the number that flatters whoever raised a weak sparring partner. Point at a
-   school whose home number is far above its away numbers — CMA-ES catches 52% of its own
-   mouse and 23% of PPO's. SCORE is the mean of the other two cells only.
+   school whose home number is far above its away numbers — CMA-ES catches 50% of its own
+   mouse and 17% of PPO's. SCORE is the mean of the other two cells only.
 2. **The champion's own mouse is its hardest opponent.** PPO's cat eats the other two
-   schools' mice (70% and 79%) and manages only 56% against its own — because its own is
+   schools' mice (71% and 77%) and manages only 56% against its own — because its own is
    the best mouse in the field. That cell is on the diagonal, so it is drawn but does not
    count towards SCORE; say that out loud while pointing at it.
 3. **Beating the benchmark is not the same as being good.** Compare a school's

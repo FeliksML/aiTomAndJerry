@@ -69,8 +69,15 @@
       p.push('<rect x="' + f(bx) + '" y="' + f(by) + '" width="' + f(bw) + '" height="' + f(bh) + '" rx="' + f(r) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
       p.push('<rect x="' + f(bx + CS * 0.22) + '" y="' + f(by + CS * 0.22) + '" width="' + f(bw - CS * 0.44) + '" height="' + f(bh - CS * 0.44) + '" rx="' + f(r * 0.6) + '" fill="none" stroke="rgba(120,160,215,.1)" stroke-width="1"/>');
     });
+    // A pillar blocks its whole cell, and the vision cone is cast against that whole
+    // cell — so drawing a 0.68-cell disc left the light stopping in what looked like open
+    // floor beside it, and made every corridor read wider than it is. The cell footprint
+    // is drawn first, at the same weight as the cover blocks, with the disc on top.
     (map.pillars || []).forEach(function (pp) {
+      var px = pp[0] * CS + 1, py = pp[1] * CS + 1, ps = CS - 2;
       var cx = (pp[0] + 0.5) * CS, cy = (pp[1] + 0.5) * CS;
+      p.push('<rect x="' + f(px) + '" y="' + f(py) + '" width="' + f(ps) + '" height="' + f(ps)
+        + '" rx="' + f(Math.max(3, CS * 0.24)) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.34) + '" fill="#1b2740" stroke="rgba(138,180,235,.28)" stroke-width="1.1"/>');
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.17) + '" fill="none" stroke="rgba(175,215,255,.16)" stroke-width="1"/>');
     });

@@ -27,6 +27,7 @@ three-point gap is noise, and the scoreboard says so instead of crowning someone
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,12 +80,20 @@ def run_tournament(run_dir: Path, device: torch.device, reps: int = 40,
     present = [s for s in SCHOOLS if s in pols]
     maps = MapSet(arena.FINAL_SEEDS, nests)   # never trained on, never evaluated on before
 
+    # Per-pairing seed offset. NOT `hash()`: Python randomises string hashing per process,
+    # so the same checkpoints re-scored on the same machine produced a different board
+    # every time — PPO's mouse moved four points between two runs of this function. A
+    # leaderboard that does not survive being recomputed is not a measurement.
+    def pair_seed(ck: str, mk: str) -> int:
+        d = hashlib.sha1(f"{ck}:{mk}".encode()).digest()
+        return seed + int.from_bytes(d[:4], "big") % 1000
+
     cross: dict[str, dict[str, dict]] = {}
     for ck in present:
         cross[ck] = {}
         for mk in present:
             o = arena.head_to_head(maps, pols[ck]["cat"], pols[mk]["mouse"], device,
-                                   seed=seed + hash((ck, mk)) % 1000, reps=reps)
+                                   seed=pair_seed(ck, mk), reps=reps)
             cross[ck][mk] = o.as_dict()
 
     anchor: dict[str, dict] = {}
@@ -139,21 +148,32 @@ def run_tournament(run_dir: Path, device: torch.device, reps: int = 40,
     }
 
 
-def progression(run_dir: Path, device: torch.device, reps: int = 16,
-                nests=arena.DEFAULT_NESTS) -> dict:
-    """The same anchor score at all three checkpoints — the rising bars on screen."""
+def progression(run_dir: Path, device: torch.device, reps: int = 40,
+                nests=arena.DEFAULT_NESTS, seed: int = 4242) -> dict:
+    """The same anchor score at all three checkpoints — the rising bars on screen.
+
+    Deliberately the SAME measurement as the leaderboard's `vs EXAMINER` column: same
+    arenas, same Examiner, same seeds, same repeat count. It used to run its own seeds at
+    a smaller sample, so the verdict screen said 37% where the leaderboard two screens
+    later said 42% for what a viewer reads — correctly — as one number. Now the TRAINED
+    row *is* that number, and the intervals ride along so the bars can show them.
+    """
     maps = MapSet(arena.FINAL_SEEDS, nests)
     out: dict[str, dict] = {}
     for name in ("untrained", "half", "trained"):
         pols = load_run(run_dir, name)
         out[name] = {}
         for s, p in pols.items():
-            c = arena.examiner_score(maps, p["cat"], "cat", device, seed=77, reps=reps,
-                                     skill=EXAMINER_SKILL)
-            m = arena.examiner_score(maps, p["mouse"], "mouse", device, seed=79, reps=reps,
-                                     skill=EXAMINER_SKILL)
-            out[name][s] = {"cat": c.catch_rate, "mouse": m.escape_rate,
-                            "catTraps": c.trap_hits, "mouseTraps": m.trap_hits}
+            c = arena.examiner_score(maps, p["cat"], "cat", device, seed=seed + 11,
+                                     reps=reps, skill=EXAMINER_SKILL)
+            m = arena.examiner_score(maps, p["mouse"], "mouse", device, seed=seed + 13,
+                                     reps=reps, skill=EXAMINER_SKILL)
+            cd, md = c.as_dict(), m.as_dict()
+            out[name][s] = {
+                "cat": c.catch_rate, "catLo": cd["catchLo"], "catHi": cd["catchHi"],
+                "mouse": m.escape_rate, "mouseLo": md["escapeLo"], "mouseHi": md["escapeHi"],
+                "n": cd["n"], "catTraps": c.trap_hits, "mouseTraps": m.trap_hits,
+            }
     return out
 
 

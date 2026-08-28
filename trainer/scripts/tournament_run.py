@@ -51,21 +51,22 @@ def main() -> None:
     (run_dir / "budgets.json").write_text(json.dumps(tournament.budgets(run_dir), indent=2))
 
     lab = t["labels"]
+    W1, W2 = 13, 16
     print("\ncross-play — a cat's score is its mean catch rate against ALL THREE mice")
-    print(f"{'':>10}" + "".join(f"{lab[m] + ' mouse':>16}" for m in t["schools"])
-          + f"{'SCORE':>18}{'vs EXAMINER':>14}")
+    print("".ljust(W1) + "".join((lab[m] + " mouse").rjust(W2) for m in t["schools"])
+          + "SCORE".rjust(W2) + "vs EXAMINER".rjust(14))
     for c in t["schools"]:
-        row = "".join(f"{t['cross'][c][m]['catch']:>15.1%} " for m in t["schools"])
-        s = t["catScore"][c]
-        print(f"{lab[c] + ' cat':>10}{row}"
-              f"{s['rate']:>11.1%} ±{(s['hi'] - s['lo']) / 2:>4.1%}"
-              f"{t['anchor'][c]['cat']['catch']:>14.1%}")
+        cells = "".join(f"{t['cross'][c][m]['catch']:.1%}".rjust(W2) for m in t["schools"])
+        sc = t["catScore"][c]
+        print((lab[c] + " cat").rjust(W1) + cells
+              + f"{sc['rate']:.1%} ±{(sc['hi'] - sc['lo']) / 2:.1%}".rjust(W2)
+              + f"{t['anchor'][c]['cat']['catch']:.1%}".rjust(14))
     for m in t["schools"]:
-        row = "".join(f"{t['cross'][c][m]['escape']:>15.1%} " for c in t["schools"])
-        s = t["mouseScore"][m]
-        print(f"{lab[m] + ' mouse':>10}{row}"
-              f"{s['rate']:>11.1%} ±{(s['hi'] - s['lo']) / 2:>4.1%}"
-              f"{t['anchor'][m]['mouse']['escape']:>14.1%}")
+        cells = "".join(f"{t['cross'][c][m]['escape']:.1%}".rjust(W2) for c in t["schools"])
+        sc = t["mouseScore"][m]
+        print((lab[m] + " mouse").rjust(W1) + cells
+              + f"{sc['rate']:.1%} ±{(sc['hi'] - sc['lo']) / 2:.1%}".rjust(W2)
+              + f"{t['anchor'][m]['mouse']['escape']:.1%}".rjust(14))
 
     print(f"\nBEST TOM   {lab[t['champion']['cat']]}"
           + (f"   (too close to call vs {', '.join(lab[s] for s in t['contested']['cat'])})"

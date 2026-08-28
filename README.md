@@ -31,7 +31,8 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch nu
 python3 -m http.server 8778 --directory app
 ```
 
-Then open <http://localhost:8778>.
+Then open <http://localhost:8778>. **[SHOOT.md](SHOOT.md) is the run of show** — a
+suggested recording order tied to the keys, with the data beats worth pointing at.
 
 **Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·

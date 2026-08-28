@@ -1,0 +1,20 @@
+{
+  "frameSize": 352,
+  "fps": 8,
+  "charHeight": 0.5818181818181819,
+  "groundY": 0.7,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "up.png",
+    "left": "left.png",
+    "down-left": "down-left.png",
+    "up-left": "up-left.png"
+  },
+  "scale": {},
+  "idle": {},
+  "split": {},
+  "pivot": "ground",
+  "_note": "The character is pinned to the trap, so the trap is the fixed point and the anchor: pivot \"ground\" centres each frame on whatever is standing on the floor. Anchoring on the torso, which is right for a walk, swings the trap 40px either way here and reads as the mouse dragging the trap around rather than being held.",
+  "_sizeNote": "Bigger, emptier frame than the walk sheet on purpose. Measured off the strips, a trapped pose reaches 160px either side of the trap and 230px above it; at the walk sheet's 256px frame that clipped 14 of the 32 frames. The character itself is scaled identically to the walk sheet \u2014 metadata carries charHeight so the renderer sizes by the character rather than by the frame."
+}

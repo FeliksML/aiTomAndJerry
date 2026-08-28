@@ -1,0 +1,20 @@
+{
+  "frameSize": 448,
+  "fps": 8,
+  "charHeight": 0.4571428571428572,
+  "groundY": 0.7,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "up.png",
+    "left": "left.png",
+    "down-left": "down-left.png",
+    "up-left": "up-left.png"
+  },
+  "scale": {},
+  "idle": {},
+  "split": {},
+  "pivot": "ground",
+  "_note": "Same reasoning as the mouse: pivot \"ground\" because the trap, not the body, is the fixed point; and a roomier frame than the walk sheet because a pose with both arms thrown up does not fit in 256px. charHeight in the written metadata lets the renderer size by the character, so Tom does not change size the moment he steps in a trap.",
+  "_sizeNote": "Frame 416 and charHeight 0.492 together mean the same 205px cat as the walk sheet, in a frame big enough to hold him. Measured off the strips he reaches 185px either side of the trap and 264px above it \u2014 lankier than the mouse, who fits in 352. The renderer sizes by charHeight, not by the frame, so the two sheets draw the same cat despite the different padding."
+}

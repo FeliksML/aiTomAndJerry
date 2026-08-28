@@ -1,0 +1,68 @@
+{
+  "image": "tom-walk.png",
+  "frameWidth": 256,
+  "frameHeight": 256,
+  "columns": 4,
+  "rows": 8,
+  "framesPerDirection": 4,
+  "directions": {
+    "down": 0,
+    "downLeft": 1,
+    "left": 2,
+    "upLeft": 3,
+    "up": 4,
+    "upRight": 5,
+    "right": 6,
+    "downRight": 7
+  },
+  "directionOrder": [
+    "down",
+    "down-left",
+    "left",
+    "up-left",
+    "up",
+    "up-right",
+    "right",
+    "down-right"
+  ],
+  "defaultFPS": 8,
+  "anchor": {
+    "x": 0.5,
+    "y": 0.9
+  },
+  "charHeight": 0.7969,
+  "renderScale": 1.0,
+  "idleFrame": {
+    "down": 0,
+    "downLeft": 0,
+    "left": 0,
+    "upLeft": 0,
+    "up": 0,
+    "upRight": 0,
+    "right": 0,
+    "downRight": 0
+  },
+  "mirrored": {
+    "right": "left",
+    "downRight": "downLeft",
+    "upRight": "upLeft"
+  },
+  "phases": [
+    "contactA",
+    "passingA",
+    "contactB",
+    "passingB"
+  ],
+  "oneShotFrames": 0,
+  "framesDir": "walk",
+  "source": {
+    "videos": {
+      "down": "down.mp4",
+      "up": "up.mp4",
+      "left": "left.mp4",
+      "down-left": "down-left.mp4",
+      "up-left": "up-left.mp4"
+    },
+    "config": "cat-walk.config.json"
+  }
+}

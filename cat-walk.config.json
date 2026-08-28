@@ -1,0 +1,272 @@
+{
+  "_note": "Written by tools/build_cat_sprites.py --analyze, then safe to hand-edit. \"frames\" are the source frame indices actually used; \"timestamps\" are the same instants in seconds and are what the build prints for review. F1 contact A, F2 passing A, F3 contact B, F4 passing B.",
+  "frameSize": 256,
+  "fps": 8,
+  "charHeight": 0.8,
+  "groundY": 0.9,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.mp4",
+    "up": "up.mp4",
+    "left": "left.mp4",
+    "down-left": "down-left.mp4",
+    "up-left": "up-left.mp4"
+  },
+  "strideOverride": {
+    "left": 14,
+    "downLeft": 18
+  },
+  "poseOverride": {
+    "down": [
+      15,
+      17,
+      20,
+      22
+    ],
+    "up": [
+      16,
+      20,
+      24,
+      28
+    ],
+    "left": [
+      10,
+      13,
+      17,
+      20
+    ],
+    "downLeft": [
+      16,
+      21,
+      25,
+      30
+    ],
+    "upLeft": [
+      11,
+      14,
+      18,
+      21
+    ]
+  },
+  "stride": {
+    "down": 9,
+    "up": 16,
+    "left": 14,
+    "downLeft": 18,
+    "upLeft": 13
+  },
+  "frames": {
+    "down": [
+      47,
+      51,
+      61,
+      67
+    ],
+    "up": [
+      50,
+      62,
+      74,
+      86
+    ],
+    "left": [
+      31,
+      41,
+      51,
+      62
+    ],
+    "downLeft": [
+      49,
+      64,
+      76,
+      92
+    ],
+    "upLeft": [
+      35,
+      43,
+      55,
+      64
+    ]
+  },
+  "timestamps": {
+    "down": [
+      1.958,
+      2.125,
+      2.542,
+      2.792
+    ],
+    "up": [
+      2.083,
+      2.583,
+      3.083,
+      3.583
+    ],
+    "left": [
+      1.292,
+      1.708,
+      2.125,
+      2.583
+    ],
+    "downLeft": [
+      2.042,
+      2.667,
+      3.167,
+      3.833
+    ],
+    "upLeft": [
+      1.458,
+      1.792,
+      2.292,
+      2.667
+    ]
+  },
+  "scale": {
+    "down": 1.0,
+    "up": 1.0,
+    "left": 1.0,
+    "downLeft": 1.0,
+    "upLeft": 1.0
+  },
+  "idle": {
+    "down": 0,
+    "downLeft": 0,
+    "left": 0,
+    "upLeft": 0,
+    "up": 0,
+    "upRight": 0,
+    "right": 0,
+    "downRight": 0
+  },
+  "measured": {
+    "down": {
+      "videoFrames": 97,
+      "drawnPoses": 33,
+      "holdFrames": 3,
+      "poses": [
+        15,
+        17,
+        20,
+        22
+      ],
+      "strideSeconds": 1.125,
+      "spread": [
+        0.291,
+        0.138,
+        0.294,
+        0.137
+      ],
+      "quality": [
+        0.383,
+        0.736,
+        0.227,
+        0.442
+      ],
+      "heightDriftPct": 4.13,
+      "medianHeightPx": 661.4
+    },
+    "up": {
+      "videoFrames": 121,
+      "drawnPoses": 41,
+      "holdFrames": 3,
+      "poses": [
+        16,
+        20,
+        24,
+        28
+      ],
+      "strideSeconds": 2.0,
+      "spread": [
+        0.294,
+        0.142,
+        0.293,
+        0.139
+      ],
+      "quality": [
+        0.0,
+        0.47,
+        0.486,
+        0.482
+      ],
+      "heightDriftPct": 0.85,
+      "medianHeightPx": 665.0
+    },
+    "left": {
+      "videoFrames": 121,
+      "drawnPoses": 41,
+      "holdFrames": 3,
+      "poses": [
+        10,
+        13,
+        17,
+        20
+      ],
+      "strideSeconds": 1.75,
+      "spread": [
+        0.405,
+        0.175,
+        0.384,
+        0.183
+      ],
+      "quality": [
+        0.843,
+        0.137,
+        0.344,
+        0.428
+      ],
+      "heightDriftPct": 0.04,
+      "medianHeightPx": 689.6
+    },
+    "downLeft": {
+      "videoFrames": 121,
+      "drawnPoses": 41,
+      "holdFrames": 3,
+      "poses": [
+        16,
+        21,
+        25,
+        30
+      ],
+      "strideSeconds": 2.25,
+      "spread": [
+        0.47,
+        0.228,
+        0.17,
+        0.142
+      ],
+      "quality": [
+        0.484,
+        0.848,
+        0.801,
+        0.695
+      ],
+      "heightDriftPct": -0.12,
+      "medianHeightPx": 758.3
+    },
+    "upLeft": {
+      "videoFrames": 121,
+      "drawnPoses": 41,
+      "holdFrames": 3,
+      "poses": [
+        11,
+        14,
+        18,
+        21
+      ],
+      "strideSeconds": 1.625,
+      "spread": [
+        0.325,
+        0.263,
+        0.158,
+        0.258
+      ],
+      "quality": [
+        0.503,
+        0.527,
+        0.708,
+        0.759
+      ],
+      "heightDriftPct": -0.93,
+      "medianHeightPx": 779.1
+    }
+  },
+  "_idleNote": "Inspected, not assumed: F1 is the only phase in all five clips where both feet are flat on the ground. F2 and F4 are passing poses with a foot in the air, which frozen reads as a bug, and F3 is a wider split stance."
+}

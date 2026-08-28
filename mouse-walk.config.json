@@ -1,0 +1,27 @@
+{
+  "frameSize": 256,
+  "fps": 8,
+  "charHeight": 0.8,
+  "groundY": 0.9,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "up.png",
+    "left": "left.png",
+    "down-left": "down-left.png",
+    "up-left": "up-left.png"
+  },
+  "scale": {},
+  "idle": {
+    "down": 1,
+    "downLeft": 1,
+    "left": 1,
+    "upLeft": 1,
+    "up": 1,
+    "upRight": 1,
+    "right": 1,
+    "downRight": 1
+  },
+  "split": {},
+  "_idleNote": "Inspected, not assumed, and the answer differs from the cat. Mechanically F1 is the planted contact in both characters, but Jerry was generated with a deliberately exaggerated stride: his contact stance measures 115px across on a 205px character, twice the cat's, which frozen reads as mid-walk rather than standing. F2 keeps the feet together and still carries most of its weight on the ground, so it is the better stationary pose here."
+}

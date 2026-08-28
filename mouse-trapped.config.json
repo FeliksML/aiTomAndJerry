@@ -1,0 +1,23 @@
+{
+  "frameSize": 448,
+  "fps": 8,
+  "charHeight": 0.4571428571428572,
+  "groundY": 0.7,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "up.png",
+    "left": "left.png",
+    "down-left": "down-left.png",
+    "up-left": "up-left.png"
+  },
+  "scale": {},
+  "idle": {},
+  "split": {},
+  "pivot": "ground",
+  "_note": "The character is pinned to the trap, so the trap is the fixed point and the anchor: pivot \"ground\" centres each frame on whatever is standing on the floor. Anchoring on the torso, which is right for a walk, swings the trap 40px either way here and reads as the mouse dragging the trap around rather than being held.",
+  "_sizeNote": "Bigger, emptier frame than the walk sheet on purpose. Measured off the strips, a trapped pose reaches 160px either side of the trap and 230px above it; at the walk sheet's 256px frame that clipped 14 of the 32 frames. The character itself is scaled identically to the walk sheet \u2014 metadata carries charHeight so the renderer sizes by the character rather than by the frame.",
+  "renderScale": 0.986,
+  "_renderScaleNote": "Same as the cat. renderScale comes from head width, not silhouette height.",
+  "_trapNote": "The trap in these strips was regenerated larger. The first set drew it at 12-14px at the game cell size, under paint.js's own 22px rule for a hazard and a third of the 37px vector trap, so a sprung trap looked smaller than the ones you walked past. It now measures 26-36px. The instruction that produced it states the base plate as a fraction of the character's height \u2014 0.55 for the cat, 0.85 for the mouse \u2014 because \"bigger\" on its own moved it only a third of the way."
+}

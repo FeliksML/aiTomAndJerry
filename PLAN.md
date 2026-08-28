@@ -17,10 +17,13 @@ real: real policies, real training, real numbers.
 ## Repository
 
 ```
-viz/       the imported Claude Design project — reference art + the original Academy flow
-app/       the recording app (plain HTML/JS, no build step, no CDN at record time)
-trainer/   Python: environment, three algorithms, tournament, WebSocket server
-runs/      checkpoints, journals, tournament results (git-ignored)
+viz/               the imported Claude Design project — reference art + the original Academy flow
+app/               the recording app (plain HTML/JS, no build step, no CDN at record time)
+trainer/           Python: environment, three algorithms, tournament, WebSocket server
+tools/             asset pipelines (backdrops and buildings; the walking cat)
+source-animation/  the five generated Tom clips, immutable source material
+runs/              checkpoints, journals, tournament results (git-ignored)
+build/             frame extraction, alpha caches, QA renders (git-ignored)
 ```
 
 ## Fairness protocol
@@ -114,6 +117,89 @@ documented with its measurement in `README.md`:
 Two additions the brief implied but the original plan did not list: a **side-by-side**
 screen (all three schools, one room, nothing else different) and **highlight detection**
 for the fun moments.
+
+## The sprites
+
+Tom and Jerry are each drawn twice. The vector pair in `paint.js` is still there and
+still authoritative for identity; the second skin is a set of sprite sheets. Each sheet
+has the same shape — four phases across, eight directions down — and all of them are
+built ahead of time, so the app only ever loads transparent PNGs.
+
+Four sheets: a walk and a trapped animation per character.
+
+| sheet | frame | source |
+|---|---|---|
+| `tom-walk` | 256 | 5 generated clips |
+| `jerry-walk` | 256 | 5 generated strips |
+| `tom-trapped` | 448 | 5 generated strips |
+| `jerry-trapped` | 352 | 5 generated strips |
+
+The frames are different sizes on purpose. A trapped pose throws both arms up and
+reaches 185px either side of the trap, which does not fit in the walk sheet's frame; the
+metadata carries `charHeight` so the renderer sizes by the *character* rather than by the
+frame, and all four sheets therefore draw the same 204px character.
+
+There are two scripts because there are two kinds of source material:
+
+- **From video.** `tools/build_cat_sprites.py` has to *find* the four walk phases inside
+  continuous footage, which is most of its length. Only Tom's walk came this way.
+- **From strips.** `tools/build_strip_sprites.py` takes five images per animation, each
+  already holding the four phases in a row. No gait to detect; its one hard problem is
+  cutting the strip in the right places, which it does on the empty columns between the
+  poses rather than on even quarters — and splitting the widest run at its thinnest
+  column when a thrown-out arm closes the gap between two frames.
+
+Drawing all four phases in one image is the point, not a convenience: within a single
+generation the model holds proportions, colour and style together. That is the same
+property continuous video gave Tom, and the reason neither character was assembled from
+separately generated stills.
+
+Everything downstream is shared — `tools/catlib/` does the matting, the alignment, the
+mirroring, the packing and the QA for all of them.
+
+**What a frame is anchored on depends on what is standing still.** A walk anchors on the
+torso and lets the feet move. Being caught in a trap is the other way round: the trap is
+the one rigid thing in the shot and the character strains around it, so those sheets
+anchor on the floor — and not on the centroid of everything touching it, which the cat's
+free paw drags 15px back and forth, but on the offset that best lines each frame's floor
+profile up with the first frame's. Measured on the trap's own wooden base, that holds it
+to within 1.4px across all 64 trapped frames.
+
+Three things the video pipeline had to be taught, each of which quietly ruins the result
+if missed:
+
+- **The clips are 8 fps inside a 24 fps container.** Every pose is held for three frames.
+  Measured on the held sequence, self-similarity reports a stride of three.
+- **The background is not "white".** The character's own cream sits ~40 units off white
+  and the contact shadow is *darker* than it, so the matte cuts on the ink line and on
+  the drawn gradient step, not on a whiteness threshold.
+- **Two of the five clips stand still before setting off, and one dollies in.** Neither
+  the stride nor the framing can be read from the clip as a whole.
+
+For both characters only five directions were generated. RIGHT, DOWN_RIGHT and UP_RIGHT
+are exact horizontal mirrors of their left-facing partners — deliberately, so the two
+sides cannot drift.
+
+    npm run analyze:cat-walk   # measure the clips, write cat-walk.config.json
+    npm run build:cat-walk     # config -> 32 frames + sheet + metadata + QA
+    npm run build:mouse-walk   # strips -> the same, for Jerry
+    npm run build:trapped      # both characters, caught in a trap
+    npm run build:sprites      # all four
+
+One config per character and animation — `cat-walk`, `mouse-walk`, `cat-trapped`,
+`mouse-trapped` — so a pose that reads badly is one integer away from being fixed and the
+build stays reproducible. `app/sprite-lab.html` is the development view: either character,
+either animation, all eight directions at once, over the backgrounds a matte fails on.
+
+In the arena the sprites are on by default and `c` toggles back to the vector pair. The
+accent that the vector cat wears as a collar moves to a ring on the floor, because the
+rule that a school is legible from the character has to survive the swap.
+
+The trapped animation is driven by the environment, not by a timer. `CFG.freezeSteps` is
+5, and the countdown maps straight onto the four frames — snap, recoil, then the struggle
+repeating — so the snap is drawn on the very step the jaw closed and the two can never
+drift apart. While a character is held, the vector trap in that cell is not drawn: the
+sprite is holding its own.
 
 ## Open items
 

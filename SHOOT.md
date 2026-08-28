@@ -167,6 +167,7 @@ the recorded pace with no trainer running at all.
 |---|---|
 | `1` `2` `3` | enter a school |
 | `l` | full-screen lesson (toggle) |
+| `w` | how this algorithm works — six manual steps, training pauses while you read |
 | `x` | side by side — all three, same room |
 | `h` | the highlight reel |
 | `g` | the level generator |

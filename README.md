@@ -35,7 +35,8 @@ Then open <http://localhost:8778>. **[SHOOT.md](SHOOT.md) is the run of show** �
 suggested recording order tied to the keys, with the data beats worth pointing at.
 
 **Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
-`l` full-screen lesson · `v` verdict · `esc` menu · `space` pause · `s` skip an episode · `[` `]` speed ·
+`l` full-screen lesson · `w` how the algorithm works · `v` verdict · `esc` menu · `space` pause ·
+`s` skip an episode · `[` `]` speed ·
 `h` highlight reel · `t` train live on camera · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
 
 ## The reveal

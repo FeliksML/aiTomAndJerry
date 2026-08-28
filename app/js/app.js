@@ -181,8 +181,11 @@
           }).join('')
         + '</div>'
         + '<div style="display:flex;gap:10px;margin-top:auto">'
-        + scoreBox('TOM', anchor ? pct(anchor.cat.catch) : '—', 'var(--cat)')
-        + scoreBox('JERRY', anchor ? pct(anchor.mouse.escape) : '—', 'var(--mouse)')
+        // Name the measurement. Bare "TOM 42%" on the opening screen reads as this
+        // school's headline number, and the leaderboard two screens later says 74% —
+        // the same cat, scored against the learned field instead of the Examiner.
+        + scoreBox('TOM · vs EXAMINER', anchor ? pct(anchor.cat.catch) : '—', 'var(--cat)')
+        + scoreBox('JERRY · vs EXAMINER', anchor ? pct(anchor.mouse.escape) : '—', 'var(--mouse)')
         + '</div></div></div>';
     }).join('');
 
@@ -226,12 +229,28 @@
         + '</div>'
         + '<div class="faint" style="font-size:10px">' + (lv ? lv.route + ' cells · ' + lv.onRoute + ' traps on route' : '&nbsp;') + '</div></div>');
     }
+    /* Ranges are read off the rooms actually on screen rather than written down. The
+       old copy quoted a fixed 21-32 cell spawn, which was a one-hole rule: with two
+       holes the longest possible trek is roughly halved, so ten of the twelve tiles
+       beside it printed a number the sentence said was impossible. */
+    function span(pick) {
+      if (!App.levels.length) return null;
+      var lo = Infinity, hi = -Infinity;
+      App.levels.forEach(function (l) { var v = pick(l); if (v < lo) lo = v; if (v > hi) hi = v; });
+      return lo === hi ? String(lo) : lo + '–' + hi;
+    }
+    var trek = span(function (l) { return l.route; });
+    var onRt = span(function (l) { return l.onRoute; });
+
     var rules = [
       ['ONE ROOM, MANY SHAPES', 'Seven cover blocks and ten pillars, reseeded until 94% of the floor is one connected region.'],
-      ['TWO WAYS HOME', 'The hole always has two independent approaches, so camping it can never be unbeatable.'],
-      ['TRAPS ON THE WALKED PATH', 'Three of six traps sit on her shortest route and two flank it — a hazard off the path is never learned.'],
-      ['MORE THAN ONE WAY OUT', 'With a single hole the cat just stands on it. Every extra hole is kept far enough away that he cannot cover two, so she gets a choice and he has to guess.'],
-      ['A REAL CHANCE FOR BOTH', 'She spawns 21–32 cells from home; he spawns at least 10 from her and within 17 of the hole.'],
+      ['TWO WAYS HOME', 'Every hole is placed so that walling off any one of its neighbours still leaves it reachable — it always has two independent approaches, so camping it can never be unbeatable.'],
+      ['TRAPS ON THE WALKED PATH', 'Up to six traps a room: the first three go on her shortest route, the next two flank it, and a room with fewer than four is reseeded — a hazard off the path is never learned.'
+        + (onRt ? ' On this level set, ' + onRt + ' of them sit on the route.' : '')],
+      ['MORE THAN ONE WAY OUT', 'With a single hole the cat just stands on it. Every extra hole is kept at least 10 cells from the others, so he cannot cover two: she gets a choice and he has to guess.'],
+      ['A REAL CHANCE FOR BOTH', 'She spawns in the farthest slice of the room — at least 72% of that map\'s own longest trek from a hole'
+        + (trek ? ', which is ' + trek + ' cells here' : '')
+        + '. He spawns at least 10 cells from her, and himself 4 to 85% of that trek from a hole, so camping is available to him but not free.'],
       ['SHARED BY EVERY SCHOOL', 'The same seeds train all three. Nobody gets to memorise one room.']
     ].map(function (r) {
       return '<div style="margin-bottom:16px"><div class="mono" style="font-size:11px;letter-spacing:1.6px;color:#c9d8ee">' + r[0] + '</div>'
@@ -250,13 +269,19 @@
       + '<div class="btn" data-act="menu">BACK TO THE ACADEMY</div>'
       + '<div class="dim" style="font-size:13px">' + (App.levels.length >= 12
         ? 'Level set complete — ' + App.levels.reduce(function (a, l) { return a + l.onRoute; }, 0) + ' traps sitting on a walked route.'
-        : 'Building arena ' + Math.min(12, App.levels.length + 1) + ' of 12.') + '</div></div></div>';
+        : !App.cat
+          ? 'Waiting for the trainer — the seeds and the hole count belong to the run, so there is nothing to draw yet.'
+          : 'Building arena ' + Math.min(12, App.levels.length + 1) + ' of 12.') + '</div></div></div>';
   }
 
   function renderSchool() {
     var v = view(App.school);
     var accent = v.color;
-    var n = App.cat ? App.cat.levels.length : 12;
+    // During the highlight reel the run is the reel, not the twelve-arena level set:
+    // ten episodes counted out of twelve, under LV01-LV12 labels that name rooms the
+    // reel is not playing, is two wrong numbers in the same corner of the screen.
+    var reel = App.highlights;
+    var n = reel ? reel.length : (App.cat ? App.cat.levels.length : 12);
     var st = App.runState || {};
     var done = App.results.filter(Boolean);
     var catch_ = done.filter(function (r) { return r === 'catch'; }).length;
@@ -276,7 +301,8 @@
       strip.push('<div style="flex:1;text-align:center;padding:5px 0;border-radius:6px;border:1px solid '
         + (r === 'catch' ? 'rgba(255,138,92,.36)' : r === 'escape' ? 'rgba(126,224,255,.32)' : r ? 'var(--line)' : (live ? 'rgba(124,188,255,.5)' : 'rgba(130,160,200,.1)'))
         + ';background:' + (r === 'catch' ? 'rgba(255,122,84,.14)' : r === 'escape' ? 'rgba(110,226,255,.12)' : r ? 'rgba(255,255,255,.04)' : (live ? 'rgba(124,188,255,.16)' : 'rgba(255,255,255,.02)'))
-        + '"><div class="mono" style="font-size:9px;color:var(--faint)">LV' + String(i + 1).padStart(2, '0') + '</div>'
+        + '"><div class="mono" style="font-size:9px;color:var(--faint)">LV'
+        + String((reel ? reel[i].arena : i) + 1).padStart(2, '0') + '</div>'
         + '<div class="mono" style="font-size:13px;color:'
         + (r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : r ? '#8fa4c4' : (live ? '#f2f7ff' : '#3d4a60')) + '">'
         + (r === 'catch' ? 'T' : r === 'escape' ? 'J' : r ? '–' : (live ? '▸' : '·')) + '</div></div>');
@@ -333,7 +359,13 @@
       + '<div class="dim" style="margin-left:auto;font-size:12px;text-align:right">'
       + (hl ? '<span class="mono" style="color:var(--gold);letter-spacing:2px">' + esc(hl.kind.toUpperCase())
               + '</span> &nbsp;·&nbsp; ' + esc(hl.why) + '<br>' : '')
-      + (App.trainInfo ? esc(App.trainInfo) : 'Frames are streaming from the trained policy — nothing here is scripted.')
+      // Name the checkpoint that is actually playing. SHOOT.md sends the author through
+      // UNTRAINED and HALF-TRAINED on camera, and the old line said "trained" over both.
+      + (App.trainInfo ? esc(App.trainInfo)
+         : App.link !== 'live' ? 'Trainer offline — this is the last frame it sent.'
+         : !App.frame ? 'Waiting for the first frame from the trainer.'
+         : 'Frames are streaming from the ' + CP_NAME[App.checkpoint].toLowerCase()
+           + ' policy — nothing here is scripted.')
       + '</div></div></div>';
   }
 
@@ -692,10 +724,19 @@
         + '<div class="btn ghost" style="margin-top:24px" data-act="menu">ESC · ACADEMY</div></div></div>';
     }
     var schools = t.schools;
-    var head = '<tr><th></th>' + schools.map(function (m) {
-      var v = view(m);
-      return '<th style="color:' + v.color + '">' + esc(v.short) + ' mouse</th>';
-    }).join('') + '<th>SCORE</th><th>vs EXAMINER</th></tr>';
+    /* Two header rows, not one. The columns are the OPPONENT, so for the three cat rows
+       they are mice and for the three mouse rows they are cats — a single "… mouse"
+       header sitting over both halves says the bottom half is mice playing mice. */
+    function head(role, top) {
+      return '<tr>' + (top ? '<th></th>' : '<th style="padding-top:18px"></th>')
+        + schools.map(function (s) {
+            var v = view(s);
+            return '<th style="color:' + v.color + (top ? '' : ';padding-top:18px') + '">'
+              + esc(v.short) + ' ' + role + '</th>';
+          }).join('')
+        + '<th' + (top ? '' : ' style="padding-top:18px"') + '>SCORE</th>'
+        + '<th' + (top ? '' : ' style="padding-top:18px"') + '>vs EXAMINER</th></tr>';
+    }
 
     var rows = schools.map(function (c) {
       var v = view(c);
@@ -747,11 +788,13 @@
       + '<div class="title" style="font-size:48px;margin-top:6px">THE LEADERBOARD</div></div>'
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
       + '<div style="position:relative;display:flex;gap:22px;margin-top:18px;flex:1">'
-      + '<div class="card" style="padding:20px 24px"><table class="grid">' + head + rows + mrows + '</table>'
+      + '<div class="card" style="padding:20px 24px"><table class="grid">'
+      + head('mouse', true) + rows + head('cat', false) + mrows + '</table>'
       + '<div class="faint" style="font-size:11.5px;margin-top:14px;max-width:760px;line-height:1.6">'
       + 'Each cell is ' + t.episodesPerPair + ' episodes on ' + t.arenas.length + ' held-out arenas. '
-      + 'SCORE is the mean against the whole field — the shaded diagonal is a school playing itself, which is the number '
-      + 'that flatters a school with a weak sparring partner. Ranges are 95% intervals.'
+      + 'SCORE is the mean against the OTHER TWO schools. The shaded diagonal is a school playing itself — it is drawn '
+      + 'because the gap is the interesting part, but it does not count towards SCORE, because it is exactly the number '
+      + 'that flatters a school that raised a weak sparring partner. Ranges are 95% intervals.'
       + '</div></div>'
       + '<div style="flex:1;display:flex;flex-direction:column;gap:14px">'
       + champBox('BEST TOM', champCat, pct(t.catScore[t.champion.cat].rate), 'cat')
@@ -760,8 +803,12 @@
           + '<div class="mono" style="font-size:11px;color:var(--gold);letter-spacing:1.4px">TOO CLOSE TO CALL</div>'
           + '<div class="faint" style="font-size:12px;margin-top:6px;line-height:1.5">'
           + 'The intervals overlap, so this margin is not evidence. '
-          + (t.contested.cat.length ? 'Cat: ' + t.contested.cat.map(function (s) { return view(s).short; }).join(', ') + '. ' : '')
-          + (t.contested.mouse.length ? 'Mouse: ' + t.contested.mouse.map(function (s) { return view(s).short; }).join(', ') + '.' : '')
+          // Name the winner as well as the challengers: "Mouse: PPO." on its own reads
+          // as the verdict, directly under a BEST JERRY card crowning somebody else.
+          + (t.contested.cat.length ? 'Cat: ' + view(t.champion.cat).short + ' over '
+              + t.contested.cat.map(function (s) { return view(s).short; }).join(', ') + '. ' : '')
+          + (t.contested.mouse.length ? 'Mouse: ' + view(t.champion.mouse).short + ' over '
+              + t.contested.mouse.map(function (s) { return view(s).short; }).join(', ') + '.' : '')
           + '</div></div>' : '')
       + budgets + '</div></div>'
       + '<div style="position:relative;display:flex;gap:10px;margin-top:12px">'
@@ -775,7 +822,7 @@
       + '<div><div class="faint" style="font-size:10px;letter-spacing:2px">' + label + '</div>'
       + '<div class="title" style="font-size:32px;color:' + (v.sealed ? '#8494ad' : v.color) + ';margin-top:4px">' + esc(v.short) + '</div>'
       + '<div class="mono" style="font-size:22px;margin-top:6px">' + score + '</div>'
-      + '<div class="faint" style="font-size:10.5px">against the whole field</div></div></div>';
+      + '<div class="faint" style="font-size:10.5px">against the other two schools</div></div></div>';
   }
 
   /* ---------------- render + hot loop ---------------- */
@@ -941,11 +988,13 @@
   function genTick(now) {
     if (App.levels.length >= 12) return;
     if (now - App.lastGen < 300) return;
+    // Without the catalogue there is no level set and no hole count, and the old
+    // fallback invented both — twelve one-hole rooms under a two-hole run, drawn as if
+    // they were the arenas the schools trained on. Better to draw nothing and say why.
+    if (!App.cat || !App.cat.levels) return;
     App.lastGen = now;
-    var seeds = App.cat ? App.cat.levels.map(function (l) { return l.seed; }) : null;
-    var seed = seeds ? seeds[App.levels.length] : (20260826 + App.levels.length * 911);
-    var nn = (App.cat && App.cat.levels && App.cat.levels[App.levels.length]
-              && App.cat.levels[App.levels.length].nests) || 1;
+    var seed = App.cat.levels[App.levels.length].seed;
+    var nn = App.cat.levels[App.levels.length].nests || 1;
     var m = E.genMap(seed >>> 0, nn);
     var on = {};
     (m.route || []).forEach(function (p) { on[p[0] + ',' + p[1]] = 1; });
@@ -983,9 +1032,13 @@
     App.net.send({ cmd: 'play', school: key, checkpoint: App.checkpoint });
   }
 
-  /* The arenas the highlight scan picked, in its order. The environment is
-     deterministic given (arena, seed), so these replay as the same episodes that were
-     scored — no hunting for the good one on camera. */
+  /* The episodes the highlight scan picked, in its order.
+     Three things have to travel with the request or the caption describes an episode
+     nobody is watching: the arena, the episode seed (the server re-seeds both the
+     environment and the action stream from it), and the MOUSE'S school — the scan runs
+     the champion cat against the champion mouse, and those are usually not the same
+     school. highlights.py re-scores every pick through this exact replay before writing
+     it, so the label on screen is the label of the episode on screen. */
   function playHighlights() {
     var H = App.cat && App.cat.highlights;
     if (!H || !H.highlights || !H.highlights.length) return;
@@ -994,13 +1047,21 @@
     App.results = [];
     App.frame = App.prev = null;
     App.mode = 'play';
-    App.trainInfo = H.found + ' dramatic episodes found in ' + H.episodes
-      + ' — playing the best ' + H.highlights.length + ', one per room';
+    // Distinct episodes and rooms, not seeds tried: a saturated policy plays a room
+    // the same way whatever the seed, so "149 found in 480" would be four episodes
+    // counted forty times each.
+    App.trainInfo = H.found + ' distinct dramatic episodes'
+      + (H.rooms ? ' in ' + H.rooms + ' of the ' + (H.arenas || 12) + ' rooms' : '')
+      + ' — playing the best ' + H.highlights.length + ', one per room'
+      + (H.mouseSchool && H.mouseSchool !== H.catSchool
+         ? ' · ' + view(H.catSchool).short + ' cat vs ' + view(H.mouseSchool).short + ' mouse' : '');
     App.highlights = H.highlights;
     App.screen = 'school';
     render();
     App.net.send({ cmd: 'play', school: App.school, checkpoint: 'trained',
-                   levels: H.highlights.map(function (h) { return h.arena; }) });
+                   mouseSchool: H.mouseSchool || App.school,
+                   levels: H.highlights.map(function (h) { return h.arena; }),
+                   seeds: H.highlights.map(function (h) { return h.seed; }) });
   }
 
   function startRace() {
@@ -1012,7 +1073,10 @@
 
   function trainLive() {
     App.mode = 'train';
-    App.trainInfo = 'Training live — the panel is this run\'s own telemetry.';
+    // Not "training live" yet — the optimiser takes a couple of seconds to set up, and
+    // the arena holds still until it exists rather than being filled by anything else.
+    App.trainReady = false;
+    App.trainInfo = 'Starting the optimiser — the arena waits for the first real policy.';
     App.net.send({ cmd: 'train', school: App.school, minutes: 10 });
     render();
   }
@@ -1108,21 +1172,42 @@
         render();
       })
       .on('frame', function (m) {
-        App.prev = App.frame || m;
+        // `step` advances by exactly one within an episode and resets on a new one, so
+        // it is the precise test for whether these two frames are joinable.
+        var joins = App.frame && m.step === App.frame.step + 1;
+        App.prev = joins ? App.frame : m;
         App.frame = m;
-        App.alpha = 0;
+        App.alpha = joins ? 0 : 1;
         App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
         if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
+        // The first frame of a train run is the proof the optimiser exists: the server
+        // holds the shadow arena until it does, so only now is "training live" true.
+        if (m.mode === 'train' && !App.trainReady) {
+          App.trainReady = true;
+          App.trainInfo = 'Training live — the panel is this run\'s own telemetry.';
+          render();
+        }
+      })
+      .on('trainWait', function () {
+        App.trainReady = false;
+        App.trainInfo = 'Starting the optimiser — the arena waits for the first real policy.';
+        render();
       })
       .on('race', function (m) {
         App.raceSchools = m.schools;
         App.raceWins = m.wins;
-        App.racePrev = App.raceFrames || {};
-        var next = {};
-        m.lanes.forEach(function (l) { next[l.school] = l; });
+        // Lanes finish at different times, so continuity is decided per lane: a pane
+        // that has already ended holds still while the others keep moving.
+        var prevLanes = {}, next = {};
+        m.lanes.forEach(function (l) {
+          var was = App.raceFrames && App.raceFrames[l.school];
+          prevLanes[l.school] = (was && l.step === was.step + 1) ? was : l;
+          next[l.school] = l;
+        });
+        App.racePrev = prevLanes;
         App.raceFrames = next;
         App.alpha = 0;
         if (m.map) { App.map = m.map; }

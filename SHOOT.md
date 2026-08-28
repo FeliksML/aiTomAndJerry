@@ -34,12 +34,17 @@ while they appear — they are the reason the game is not trivially won by eithe
 
 ## 2 · School one: PPO
 
-**Screen:** `1` → `l` (the lesson) → `l` again (back to the arena)
+**Screen:** `1` → `t` → `l` (the lesson) → `l` again (back to the arena)
 
-Open on the arena so the audience sees the game before the algorithm. Then `l` for the
-full-screen lesson: five action-probability bars, and the importance-ratio histogram
-against the clip band. The one line worth saying out loud: *the update tried to move,
-and it was not allowed to* — you can see the whole histogram piled up inside the band.
+Open on the arena so the audience sees the game before the algorithm.
+
+**The lesson panel needs a live optimiser.** It draws its numbers from the running
+trainer, so with nothing training it says *no telemetry yet* rather than inventing a
+shape. Press `t` first, wait for the caption to turn from "starting the optimiser" to
+"training live", then `l`: five action-probability bars, and the importance-ratio
+histogram against the clip band. The one line worth saying out loud: *the update tried
+to move, and it was not allowed to* — you can see the whole histogram piled up inside
+the band.
 
 Back on the arena, the right-hand panel shows **what each brain is about to do** — the
 network's actual five probabilities this step, for both animals, with what each of them
@@ -97,9 +102,17 @@ did one school simply solve it?
 
 ## 7 · The fun bit
 
-**Press `h`.** The highlight reel. The scanner played the champions across 480 episodes
-and scored every one for drama; this plays the best, one per room, and names each moment
-on screen as it runs.
+**Press `h`.** The highlight reel. The scanner played the champions over 480 seeded
+episodes and scored every one for drama; this plays the best, one per room, and names
+each moment on screen as it runs. Every pick was scored on the *same* replay the app is
+running — same arena, same seed, same pair of schools — so the caption and the episode
+cannot come apart.
+
+On this run that is four rooms out of twelve, and the reason is worth a sentence:
+**both PPO policies are decided enough that a room plays out the same way whatever the
+seed.** Drama needs someone still guessing. If you want a longer reel, re-run the scan
+with `--mouse ga` — the runner-up mouse is stochastic and gives 99 dramatic episodes
+across 9 rooms.
 
 Save the **nail-biters** for last. Those are the ones where she dives into the hole on
 the *same step* he lands on her — legal because reaching the hole is checked before the
@@ -109,14 +122,19 @@ catch, which is a rule in the spec and turns out to be the best shot in the game
 
 **Press `b`.** This is where the fairness argument pays off, and it has three beats:
 
-1. **The diagonal is the lie.** A school playing itself is the number that flatters
-   whoever raised a weak sparring partner. Point at a school whose home number is far
-   above its away numbers.
+1. **The diagonal is the lie, which is why it is not in the score.** A school playing
+   itself is the number that flatters whoever raised a weak sparring partner. Point at a
+   school whose home number is far above its away numbers — CMA-ES catches 52% of its own
+   mouse and 23% of PPO's. SCORE is the mean of the other two cells only.
 2. **The champion's own mouse is its hardest opponent.** PPO's cat eats the other two
-   schools' mice and struggles against its own — because its own is the best in the field.
+   schools' mice (70% and 79%) and manages only 56% against its own — because its own is
+   the best mouse in the field. That cell is on the diagonal, so it is drawn but does not
+   count towards SCORE; say that out loud while pointing at it.
 3. **Beating the benchmark is not the same as being good.** Compare a school's
-   `vs EXAMINER` column against its cross-play SCORE. The scripted Examiner is much
-   weaker than the learned cats.
+   `vs EXAMINER` column against its cross-play SCORE. On the two-hole board the scripted
+   Examiner is the *harder* opponent for every cat — PPO takes 74% off the learned mice
+   and 42% off the Examiner — which is the same lesson from the other side: one fixed
+   opponent ranks nobody.
 
 And the budgets card: the same forty-five minutes buys very different numbers of updates,
 and very different numbers of environment steps. Whether PPO "wins" depends on which

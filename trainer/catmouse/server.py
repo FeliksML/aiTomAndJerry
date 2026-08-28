@@ -100,6 +100,7 @@ class Session:
         self.bot: ScriptedPair | None = None
         self.level = 0
         self.level_order: list[int] = []
+        self.level_seeds: list[int] | None = None
         self.results: list[str] = []
         self.ctx: dict = {}
         self._map_sent = None
@@ -140,20 +141,41 @@ class Session:
     # ---------- PLAY ----------
 
     def start_play(self, school: str, checkpoint: str, opponent: str = "self",
-                   levels: list[int] | None = None) -> dict:
+                   levels: list[int] | None = None, mouse_school: str | None = None,
+                   seeds: list[int] | None = None) -> dict:
+        """One school's pair, or a named cross-school pairing, over a list of arenas.
+
+        `mouse_school` lets the cat come from one school and the mouse from another —
+        the highlight reel needs it, because the scan that scored those episodes ran the
+        champion cat against the champion *mouse*, which is usually a different school.
+
+        `seeds` gives one RNG seed per entry in `levels`. With it, an episode depends on
+        nothing but (arena, seed): the environment stream and the action-sampling stream
+        are both re-seeded at the start of that episode, so the same pair of numbers
+        replays the same episode frame for frame, alone or in any order. Without it the
+        streams simply run on, which is what a straight twelve-arena run wants.
+        """
         pol = self.policies[checkpoint].get(school)
         if pol is None:
             return {"type": "error", "message": f"no {school} @ {checkpoint} in this run"}
+        mpol = pol
+        if mouse_school and mouse_school != school:
+            mpol = self.policies[checkpoint].get(mouse_school)
+            if mpol is None:
+                return {"type": "error",
+                        "message": f"no {mouse_school} @ {checkpoint} in this run"}
         self.mode = "play"
-        self.ctx = {"school": school, "checkpoint": checkpoint, "opponent": opponent}
+        self.ctx = {"school": school, "checkpoint": checkpoint, "opponent": opponent,
+                    "mouseSchool": mouse_school or school}
         self.level_order = levels if levels is not None else list(range(len(self.maps)))
+        self.level_seeds = list(seeds) if seeds else None
         self.level = 0
         self.results = []
         self.env = VecEnv(self.maps, 1, seed=1234)
         self.bot = ScriptedPair(self.env, EXAMINER_SKILL, seed=99)
         self.actors = {
             "cat": FlatActor(pol["cat"], self.device),
-            "mouse": FlatActor(pol["mouse"], self.device),
+            "mouse": FlatActor(mpol["mouse"], self.device),
         }
         if opponent == "examiner-mouse":
             self.actors["mouse"] = None
@@ -168,6 +190,7 @@ class Session:
             return {"type": "error", "message": "no tournament.json — run the tournament first"}
         ck, mk = t["champion"]["cat"], t["champion"]["mouse"]
         self.mode = "final"
+        self.level_seeds = None
         self.ctx = {"catSchool": ck, "mouseSchool": mk, "rounds": rounds,
                     "wins": {"cat": 0, "mouse": 0, "draw": 0}}
         self.level_order = list(range(min(rounds, len(self.final_maps))))
@@ -196,6 +219,7 @@ class Session:
         if len(have) < 2:
             return {"type": "error", "message": f"need at least two schools at {checkpoint}"}
         self.mode = "race"
+        self.level_seeds = None
         self.race = have
         self.ctx = {"schools": have, "checkpoint": checkpoint,
                     "wins": {s: {"catch": 0, "escape": 0, "draw": 0} for s in have}}
@@ -250,6 +274,15 @@ class Session:
         assert self.env is not None
         idx = self.level_order[self.level % len(self.level_order)]
         self.env.reset(map_idx=np.array([idx]))
+        if self.level_seeds:
+            # Both streams, because both feed the episode: `env.rng` draws the hearing
+            # noise and `self.rng` draws the action samples. Re-seeding them here is what
+            # makes (arena, seed) a complete description of an episode — otherwise the
+            # streams carry over from whatever played before, and the same arena replays
+            # differently depending on how long the previous episode ran.
+            sd = int(self.level_seeds[self.level % len(self.level_seeds)])
+            self.env.rng = np.random.default_rng(sd)
+            self.rng = np.random.default_rng(sd ^ 0x5EED)
         if self.bot:
             self.bot.reset()
         self._map_sent = None
@@ -290,6 +323,17 @@ class Session:
         if e is None:
             return []
         msgs = []
+        # In train mode the shadow arena must not step until there is a policy to step
+        # it with. `start_train` returns before the optimiser thread exists (setup alone
+        # is ~2.5 s for PPO), and `_refresh_shadow` only runs at episode boundaries, so
+        # the whole first episode used to fall through to the scripted Examiner —
+        # a skilled chase at t=0, under a caption promising this run's own policy, with
+        # the play getting visibly *worse* once the real network arrived.
+        if self.mode == "train" and (self.actors.get("cat") is None
+                                     or self.actors.get("mouse") is None):
+            self._refresh_shadow()
+            if self.actors.get("cat") is None or self.actors.get("mouse") is None:
+                return [{"type": "trainWait", "mode": self.mode, **self.ctx_public()}]
         if not e.done[0]:
             a_c, a_m, probs = self._actions()
             e.step(a_c, a_m)
@@ -358,6 +402,7 @@ class Session:
         if self._train_task and not self._train_task.done():
             return {"type": "error", "message": "training already running"}
         self.mode = "train"
+        self.level_seeds = None
         self.ctx = {"school": school, "minutes": minutes}
         self.train_school = None
         # A shadow episode, replayed from the policy as it currently stands. Training

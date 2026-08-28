@@ -4,9 +4,12 @@ Three separate numbers, answering three different questions, and only the first 
 decides the championship:
 
   **cross-play** — every cat plays every mouse, including the two it has never met, on
-      arenas none of them trained on. A cat's score is its mean catch rate across all
-      three mice. This is the headline: the opponents are genuinely unseen, so it
-      cannot be gamed by having had a weak sparring partner at home.
+      arenas none of them trained on. A cat's score is its mean catch rate across the
+      two mice it did *not* grow up with. This is the headline, and the exclusion is
+      what makes it one: leaving self-play in would let a school lift its own score by
+      having raised a weak sparring partner — exactly the effect the whole tournament
+      exists to remove. The diagonal is still reported, as `home`, and still drawn on
+      the leaderboard; it simply does not vote.
 
   **anchor** — every policy plays the scripted Examiner at skill 0.60, a difficulty
       absent from every school's training ladder. Same opponent for all six, so it puts
@@ -92,13 +95,18 @@ def run_tournament(run_dir: Path, device: torch.device, reps: int = 40,
                                  seed=seed + 13, reps=reps, skill=EXAMINER_SKILL)
         anchor[s] = {"cat": c.as_dict(), "mouse": m.as_dict()}
 
-    # Cross-play marginals: a cat is judged on how it does against the WHOLE field.
+    # Cross-play marginals, OFF-DIAGONAL ONLY: a cat is judged on the mice it did not
+    # grow up with. Averaging its own mouse back in is the one thing that would let a
+    # weak sparring partner flatter the score, and on the two-hole run it decides the
+    # answer — with the diagonal in, GA's mouse leads on 64% against GA's own cat, the
+    # worst in the field; with it out, PPO's mouse leads and the intervals separate.
     cat_score, mouse_score = {}, {}
     for s in present:
-        cw = sum(cross[s][mk]["catch"] * cross[s][mk]["n"] for mk in present)
-        cn = sum(cross[s][mk]["n"] for mk in present)
-        mw = sum(cross[ck][s]["escape"] * cross[ck][s]["n"] for ck in present)
-        mn = sum(cross[ck][s]["n"] for ck in present)
+        others = [x for x in present if x != s] or present   # a lone school scores at home
+        cw = sum(cross[s][mk]["catch"] * cross[s][mk]["n"] for mk in others)
+        cn = sum(cross[s][mk]["n"] for mk in others)
+        mw = sum(cross[ck][s]["escape"] * cross[ck][s]["n"] for ck in others)
+        mn = sum(cross[ck][s]["n"] for ck in others)
         p, lo, hi = arena.wilson(int(round(cw)), cn)
         q, mlo, mhi = arena.wilson(int(round(mw)), mn)
         cat_score[s] = {"rate": p, "lo": lo, "hi": hi, "n": cn}

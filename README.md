@@ -91,12 +91,13 @@ school simply solved it.
 ## Fairness — the part that makes this an experiment
 
 Self-play alone proves nothing across schools. A GA mouse escaping 80% of the time may
-just mean the GA cat is bad. This run shows exactly that: **CMA-ES's cat catches 71% of
-its own mouse and 11% of the other two.**
+just mean the GA cat is bad. This run shows exactly that: **CMA-ES's cat catches 52% of
+its own mouse and 23% of PPO's** — the same policy, a 29-point spread that depends
+entirely on who is being chased.
 
 So the championship is decided by **cross-play**: every cat plays every mouse, on eight
 arenas that appear in no training set, and a cat's score is its mean catch rate against
-the whole field. Alongside it sits a **fixed anchor** — the scripted controller at skill
+the two mice it did *not* grow up with. Alongside it sits a **fixed anchor** — the scripted controller at skill
 0.60, a difficulty absent from every school's training ladder — which puts all six
 policies on one absolute axis.
 
@@ -158,35 +159,49 @@ eight held-out rooms, 320 episodes a pairing:
 
 | | Tom, 1 hole | Tom, 2 holes | Jerry, 1 hole | Jerry, 2 holes |
 |---|---:|---:|---:|---:|
-| **PPO** | **76.1%** ±2.7 | **68.1%** ±2.9 | 39.6% ±3.1 | 44.1% ±3.1 |
-| GA | 52.5% ±3.2 | 20.7% ±2.6 | 28.9% ±2.9 | **49.3%** ±3.2 |
-| CMA-ES | 50.2% ±3.2 | 36.1% ±3.0 | 19.0% ±2.5 | 41.2% ±3.1 |
+| **PPO** | **82.3%** ±3.0 | **74.4%** ±3.4 | **41.4%** ±3.8 | **51.9%** ±3.9 |
+| GA | 54.1% ±3.8 | 21.9% ±3.2 | 23.9% ±3.3 | 41.9% ±3.8 |
+| CMA-ES | 40.6% ±3.8 | 28.1% ±3.5 | 13.6% ±2.7 | 38.0% ±3.7 |
 
-**With one hole, PPO won both roles under both promotion rules, and its own numbers moved
-less than a point between them.** Adding the second hole changed the answer:
+SCORE here is the mean against the **other two** schools. A school's own mouse is left
+out of its cat's score and vice versa, because averaging it back in is precisely the
+route by which a weak sparring partner at home flatters a score — the thing this whole
+tournament exists to rule out. The diagonal is still on the leaderboard, and the gap
+between it and the rest is the interesting part; it simply does not vote.
+
+That exclusion is not cosmetic. With the diagonal counted, the two-hole board crowned
+GA's mouse at 49.3% — on the strength of 64.1% against GA's *own* cat, the worst cat in
+the field at 21.9%. Off the diagonal, PPO's mouse leads at 51.9% against GA's 41.9%, and
+the intervals no longer touch.
+
+**PPO wins both roles at both hole counts.** Adding the second hole did not change who
+wins, but it changed everything about the margins:
 
 - Every cat got worse and every mouse got better, which is the point of the change — with
   one exit, standing on it was most of the job.
-- **GA now raises the best Jerry**, ahead of PPO on cross-play (49.3% vs 44.1%) *and* on
-  the fixed anchor (41.6% vs 38.4%). The intervals still overlap, so the board says
-  TOO CLOSE TO CALL rather than crowning it — but the same school leads on two
-  independent measures.
-- GA's cat collapsed to 20.7% and never got past year two. Breeding whole brains is a
-  workable way to learn "run for whichever door he is not covering" and a poor way to
-  learn "cover two doors at once".
+- **GA's mouse gained the most** — 23.9% to 41.9%, from last place to within a stride of
+  PPO — and on the fixed anchor it actually leads (41.6% vs 38.4%). Breeding whole brains
+  is a good way to learn "run for whichever door he is not covering".
+- **GA's cat collapsed** to 21.9% and never got past year two. The same method is a poor
+  way to learn "cover two doors at once".
 
-So the headline is no longer a clean sweep: **PPO raises the best hunter, GA raises the
-best escape artist.** That split fell out of a rules change, not out of tuning.
+So the split is not in who wins but in how much: **PPO raises the best hunter and the
+best escape artist, but the second hole turns GA from the worst Jerry into the closest
+challenger.** That fell out of a rules change, not out of tuning.
 
 Three things worth pointing at on camera:
 
-- **The diagonal is the lie.** PPO's cat catches 70–79% of the other schools' mice and
-  only 56% of its own — because its own mouse is the hardest opponent in the field.
-  A school that raised a weak sparring partner looks dominant at home.
+- **The diagonal is the lie, and it is not in the score.** PPO's cat catches 70–79% of
+  the other schools' mice and only 56% of its own — because its own mouse is the hardest
+  opponent its cat ever meets, and the best mouse in the field besides. Read the other
+  two rows the other way round: a school that raised a weak sparring partner looks
+  dominant at home. That is why SCORE averages the off-diagonal only.
 - **CMA-ES's cat catches 52% of its own mouse and 23% of PPO's.** The same policy, a
   29-point spread. Any single matchup would have been a meaningless ranking.
 - **Beating the benchmark is not being good.** Compare any school's `vs EXAMINER` column
-  against its cross-play score; the scripted opponent is far weaker than the learned ones.
+  against its cross-play score. On the two-hole board the Examiner is the *harder*
+  opponent for every cat — PPO's catches 74% of the learned mice and 42% of the scripted
+  one — which is the same lesson from the other side: one fixed opponent ranks nobody.
 
 ## What the explainers draw
 
@@ -213,20 +228,35 @@ regardless: it is measured from the real sample cloud.
 ## Finding the good bits
 
 ```bash
-.venv/bin/python trainer/scripts/highlights.py --run runs/v4 --episodes 400
+.venv/bin/python trainer/scripts/highlights.py --run runs/v4 --episodes 480
 ```
 
-Plays the champions across hundreds of episodes and scores each for drama: a **nail-biter**
-(she reaches the hole with him inside two cells), a **heartbreak** (caught within a cell or
-two of home), **the snap** (a trap fires and turns the episode), **the long one** (several
-separate near-misses), **the shutout**. It writes the winners to `highlights.json`, one per
-room, and `h` in the app replays exactly those — the environment is deterministic given
-(arena, seed), so what you watch is the episode that was scored.
+Plays the champions and scores each episode for drama: a **nail-biter** (she reaches the
+hole with him inside two cells), a **heartbreak** (caught within a cell or two of home),
+**the snap** (a trap fires and turns the episode), **the long one** (several separate
+near-misses), **the shutout**. It writes the winners to `highlights.json`, one per room,
+and `h` in the app replays exactly those.
 
-On the first run it found 102 dramatic episodes in 240, including sixteen where she dives
-into the hole on the *same step* he lands on her. Those exist because reaching the hole is
-checked before the catch — the rule is in the spec, and it turns out to be the single best
-shot in the game.
+**"Exactly those" is a load-bearing claim, so the scan is the replay.** Every candidate
+is played through the same construction `serve.py` uses, keyed on (arena, seed): the
+environment stream and the action-sampling stream are both re-seeded per episode, so an
+episode is fully described by those two numbers and plays the same alone or in any order.
+The reel request carries the seed *and the mouse's school* — the champions are usually
+two different schools, and sending only the arena replayed the cat's own pair instead.
+
+That matters because it used to be wrong in a way nobody would notice until the edit. The
+scan ran hundreds of episodes in one batch, where a lane's samples come out of a shared
+stream at a position no single-episode replay can reach; the app then played a different
+episode under the scored one's caption. Two of ten flipped outcome outright — a
+"HEARTBREAK · caught 1 cell from home" that plays as an escape.
+
+On the two-hole run it finds 29 distinct dramatic episodes across 4 of the 12 rooms. Only
+four, because both PPO policies are saturated enough to play a given room the same way
+whatever the seed — which is itself worth saying on camera. A pairing with a stochastic
+side has far more: `--mouse ga` gives 99 distinct dramatic episodes across 9 of the 12
+rooms, including ones where she dives into the hole on the *same step* he lands on her. Those exist because reaching
+the hole is checked before the catch — the rule is in the spec, and it turns out to be
+the single best shot in the game.
 
 ## Recording
 
@@ -240,6 +270,26 @@ frame. If a take stalls or a run goes wrong, replay it exactly:
 The app follows the stream, so a replay drives itself — it walks into the right screen and
 plays the recorded episodes at the recorded pace with no trainer running. The same
 mechanism means Python can drive the app during a live take.
+
+## Solid walls
+
+The simulation never lets anyone stand on a wall — 518,400 sampled positions, zero
+violations. The *screen*, though, does not show simulation state; it shows an
+interpolation of it, and both wall bugs lived there:
+
+- **Bodies were tweened between the last two frames.** On the first frame of a new
+  episode those are the old death position and the new spawn, 28 to 43 cells apart, so
+  the pair slid across the room straight through the blocks. One recorded session held
+  198 such frame pairs. The painter now refuses to interpolate a move larger than one
+  cell, because that cannot be motion.
+- **The vision cone was cast at the destination cell and then translated** to the tweened
+  body, hanging an exact shape off the wrong anchor and spilling light through cover —
+  up to half a cell deep. It is now cast at the tweened position; `env.js` is in the
+  browser and takes fractional coordinates, so this is both exact and smooth. Measured
+  penetration fell from 0.498 cells to 0.045, which is the ray-caster's own step
+  tolerance.
+
+`tools/check_render.js` replays a journal through the real painter and fails on either.
 
 ## About the hardware
 
@@ -255,7 +305,7 @@ download actions — says the opposite:
 | actor round trip, 48 policies x 12 envs | **0.67 ms** | 1.71 ms |
 | PPO end to end, 45 s budget | **126k env-steps/s** | 62k |
 
-At 2,533 parameters the run is bound by how many GPU kernels get launched, not by their
+At 2,853 parameters the run is bound by how many GPU kernels get launched, not by their
 arithmetic. `nets.pick_device("auto")` therefore benchmarks the *whole call* and picks CPU;
 benchmarking the matmul alone picks wrong. MPS would win back with a network an order of
 magnitude larger — but a larger network is exactly what makes evolution unusable, so the
@@ -272,10 +322,11 @@ The environment is the contract, so it is tested rather than trusted.
 
 | gate | what it proves |
 |---|---|
-| `trainer/scripts/parity.py` | `env.py` reproduces `env.js` exactly — 560 seeds, identical maps, identical trajectories, rewards to 1e-9 |
+| `trainer/scripts/parity.py` | `env.py` reproduces `env.js` exactly — 150 maps at each hole count, identical maps, identical trajectories, rewards to 1e-9 |
 | `trainer/scripts/vec_parity.py` | the batched trainer environment matches the reference step for step |
 | `trainer/scripts/balance.py` vs `js_balance.js` | the scripted Examiner behaves like the JS original across the whole skill sweep |
 | `trainer/scripts/check_arenas.py` | the training, evaluation and tournament rooms are disjoint — the claim the leaderboard rests on |
+| `tools/check_render.js` | replays a recorded session through the real painter: no body and no vision cone is ever drawn inside a wall |
 | `trainer/scripts/train.py --minutes 3` | end-to-end smoke: three schools, checkpoints, telemetry |
 
 Run the first three after any change to `env.py`, `vec.py` or `scripted.py`. The map

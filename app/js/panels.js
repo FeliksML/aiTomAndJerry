@@ -32,6 +32,14 @@
 
   function fmt(v, d) { return (v === undefined || v === null) ? '—' : (+v).toFixed(d === undefined ? 3 : d); }
 
+  /* Every panel draws this until its optimiser has actually said something. An empty
+     box on camera invites "is it broken?"; an invented number is worse. */
+  function waiting(w, h) {
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'
+      + '<text x="' + (w / 2) + '" y="' + (h / 2) + '" fill="#3d4a60" font-size="13" text-anchor="middle"'
+      + ' font-family="JetBrains Mono,monospace">no telemetry yet — press t to train this school on camera</text></svg>';
+  }
+
   /* ---------------- PPO ---------------- */
 
   function PpoPanel() {
@@ -60,7 +68,12 @@
   };
 
   PpoPanel.prototype.draw = function (w, h, accent) {
-    this.probs = easeArr(this.probs, this.target || [0.2, 0.2, 0.2, 0.2, 0.2], 0.18);
+    // Nothing until the optimiser has spoken, the same as GaPanel and CmaPanel. A
+    // fallback of [0.2 x 5] would draw a *measurement* — five bars reading "20", a
+    // perfectly uniform policy — out of the absence of one, and the clip band would be
+    // drawn at the JS constant rather than at the trainer's epsilon.
+    if (!this.target) return waiting(w, h);
+    this.probs = easeArr(this.probs, this.target, 0.18);
     this.hist = easeArr(this.hist, this.histTarget || new Array(32).fill(0), 0.22);
     var p = [], f = function (v) { return (+v).toFixed(1); };
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
@@ -157,7 +170,7 @@
 
   GaPanel.prototype.draw = function (w, h, accent) {
     var fpT = this.fpTarget, fitT = this.fitTarget;
-    if (!fpT || !fitT) return '<svg viewBox="0 0 ' + w + ' ' + h + '"></svg>';
+    if (!fpT || !fitT) return waiting(w, h);
     this.fit = easeArr(this.fit, fitT, 0.2);
     this.flash = Math.max(0, this.flash - 0.045);
     var p = [], f = function (v) { return (+v).toFixed(1); };
@@ -269,7 +282,7 @@
   };
 
   CmaPanel.prototype.draw = function (w, h, accent) {
-    if (!this.samples) return '<svg viewBox="0 0 ' + w + ' ' + h + '"></svg>';
+    if (!this.samples) return waiting(w, h);
     this.scale = ease(this.scale, this.scaleT || 1, 0.08);
     if (this.ellipseT) {
       this.ellipse.rx = ease(this.ellipse.rx, this.ellipseT.rx, 0.15);
@@ -389,8 +402,13 @@
   };
 
   LivePanel.prototype.draw = function (w, h, accent) {
-    this.cat = easeArr(this.cat, this.catT || [0.2, 0.2, 0.2, 0.2, 0.2], 0.25);
-    this.mouse = easeArr(this.mouse, this.mouseT || [0.2, 0.2, 0.2, 0.2, 0.2], 0.25);
+    // No easing here, unlike the explainer panels. Those smooth telemetry that arrives
+    // a couple of times a second; this one gets a fresh tensor every simulation step,
+    // and a 25%-per-frame lag would print a running average while the caption says the
+    // bars are the network's own numbers. Measured on a recorded session at 4x, the
+    // eased version highlighted the wrong action in 10.6% of frames.
+    this.cat = this.catT;
+    this.mouse = this.mouseT;
     var fr = this.frame || { cat: {}, mouse: {} };
     var p = ['<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'];
     p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT EACH BRAIN IS ABOUT TO DO</text>');

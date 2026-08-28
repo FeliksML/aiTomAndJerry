@@ -120,6 +120,37 @@ rate in 157 generations, with episodes shortening from 164 steps to 118 as it st
 hiding and started running. **Scoring is untouched** — catch, escape and timeout rates are
 counted exactly as the spec defines them.
 
+## The result
+
+Two full 45-minute runs, one under each curriculum rule (the flat bar, then the
+calibrated one). Cross-play scores on the eight held-out rooms, 320 episodes a pairing:
+
+| | Tom, v2 | Tom, v3 | Jerry, v2 | Jerry, v3 |
+|---|---:|---:|---:|---:|
+| **PPO** | **76.9%** ±2.7 | **76.1%** ±2.7 | **39.7%** ±3.1 | **39.6%** ±3.1 |
+| GA | 55.8% ±3.1 | 52.5% ±3.2 | 27.7% ±2.8 | 28.9% ±2.9 |
+| CMA-ES | 56.4% ±3.1 | 50.2% ±3.2 | 29.8% ±2.9 | 19.0% ±2.5 |
+
+**PPO wins both roles under both rules, clear of the field, and its own numbers move by
+less than a point between runs.** Second place is a coin flip: GA and CMA-ES overlap
+inside their intervals in both runs and swap order between them, which is exactly what
+"too close to call" is for.
+
+Three things in that table are worth pointing at on camera:
+
+- **The diagonal is the lie.** PPO's cat catches 85–89% of the other schools' mice and
+  only 60–64% of its own — because its own mouse is the hardest opponent in the field.
+  A school that raised a weak sparring partner looks dominant at home.
+- **GA's cat catches 83% of CMA-ES's mouse and 25% of PPO's.** The same policy, a 58-point
+  spread. Any single matchup would have been a meaningless ranking.
+- **Beating the benchmark is not being good.** PPO's mouse scores 79% against the scripted
+  Examiner and 40% in cross-play. The learned cats are far better than the hand-written one.
+
+The calibrated bar did what it was designed to do — in v2 neither population school's cat
+ever left year one; in v3 GA's reached year three at 86M steps and CMA-ES's year two at
+103M — without changing who wins. That the ranking survived a change to the training
+curriculum is worth more than either run on its own.
+
 ## What the explainers draw
 
 Nothing is a mock-up; every panel is fed from its own optimiser while it runs.

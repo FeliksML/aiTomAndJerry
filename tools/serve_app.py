@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import functools
 import http.server
+import os
 import pathlib
 import re
 import socketserver
@@ -57,7 +58,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8778)
+    # $PORT first, so a launcher that assigns one is obeyed; 8778 is only the default
+    # the docs quote. Nothing here needs a specific port — the trainer's WebSocket is on
+    # 8765 and the app dials that by name, not by its own address.
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8778)))
     a = ap.parse_args()
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", a.port), functools.partial(Handler, directory=str(ROOT))) as s:

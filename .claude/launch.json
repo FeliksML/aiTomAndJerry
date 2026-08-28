@@ -5,11 +5,10 @@
       "name": "app",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
-        "tools/serve_app.py",
-        "--port",
-        "8778"
+        "tools/serve_app.py"
       ],
-      "port": 8778
+      "port": 8778,
+      "autoPort": true
     },
     {
       "name": "viz",

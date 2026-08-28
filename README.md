@@ -21,13 +21,13 @@ runs/         checkpoints, telemetry, journals, tournament results (git-ignored)
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch numpy pillow websockets
 
 # train all three schools in parallel — same wall-clock, same machine, same load
-.venv/bin/python trainer/scripts/train.py --minutes 45 --tag v2
+.venv/bin/python trainer/scripts/train.py --minutes 45 --tag v3
 
 # decide the championship on arenas nobody trained on
-.venv/bin/python trainer/scripts/tournament_run.py --run runs/v2
+.venv/bin/python trainer/scripts/tournament_run.py --run runs/v3
 
 # serve the app
-.venv/bin/python trainer/scripts/serve.py --run runs/v2 &
+.venv/bin/python trainer/scripts/serve.py --run runs/v3 &
 python3 -m http.server 8778 --directory app
 ```
 
@@ -176,7 +176,7 @@ regardless: it is measured from the real sample cloud.
 ## Finding the good bits
 
 ```bash
-.venv/bin/python trainer/scripts/highlights.py --run runs/v2 --episodes 400
+.venv/bin/python trainer/scripts/highlights.py --run runs/v3 --episodes 400
 ```
 
 Plays the champions across hundreds of episodes and scores each for drama: a **nail-biter**

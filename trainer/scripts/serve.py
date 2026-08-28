@@ -17,7 +17,7 @@ Commands the app sends:
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
     {"cmd":"next"}                                      jump to the next arena
-    {"cmd":"stop"}
+    {"cmd":"reset"}                                     drop every weight back to a random init\n    {"cmd":"stop"}
 
 Every outgoing message is journalled first, so any take can be replayed frame for frame.
 """
@@ -162,6 +162,12 @@ async def handler(ws, session, journal, clients, send):
             elif cmd == "next":
                 end = session.advance()
                 await send(end or {"type": "state", **session.state()})
+            elif cmd == "reset":
+                # Everyone watching should land in the same empty state at the same
+                # moment, so this goes out to every client rather than just the one
+                # that pressed the button.
+                await send(session.reset_to_zero(int(m.get("seed", 0))))
+                await send({"type": "state", **session.state()})
             elif cmd == "stop":
                 session.mode = "idle"
                 await send({"type": "state", **session.state()})

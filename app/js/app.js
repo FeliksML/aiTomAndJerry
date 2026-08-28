@@ -69,7 +69,7 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
-    trainInfo: null, showKeys: false,
+    trainInfo: null, showKeys: false, resetArmed: 0,
     // The six-step explainer (explain.js). 0 is closed; 1..6 is the step being read.
     // While it is open the run behind it is paused, and closing puts playback back the
     // way it was rather than unconditionally resuming.
@@ -236,9 +236,24 @@
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
       + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
           ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
+      + resetButton()
       + '<div class="dim" style="margin-left:auto;font-size:13px">'
-      + (ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
-               : 'Generate the shared level set first') + '</div></div></div>';
+      + (App.cat && App.cat.zeroed
+         ? 'Every weight is a fresh random init — nothing has been trained yet. Enter a school and press t to train one on camera.'
+         : ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
+                 : 'Generate the shared level set first') + '</div></div></div>';
+  }
+
+  /* Two presses, because this is the one control on screen that destroys something, and
+     it lives on a menu that gets clicked around during a take. The armed state times out
+     on its own, so a stray first press cannot sit there waiting to be completed. */
+  function resetButton() {
+    var armed = App.resetArmed && (performance.now() - App.resetArmed < 5000);
+    if (!armed && App.resetArmed) App.resetArmed = 0;
+    return '<div class="btn ghost" data-act="reset" style="border-color:'
+      + (armed ? 'rgba(255,138,92,.7)' : 'rgba(255,138,92,.28)') + ';color:'
+      + (armed ? '#ff9a72' : '#b98070') + (armed ? ';background:rgba(255,122,84,.12)' : '') + '">'
+      + (armed ? 'PRESS AGAIN — THIS WIPES EVERY WEIGHT' : 'RESET TO ZERO') + '</div>';
   }
 
   function scoreBox(label, value, color) {
@@ -321,7 +336,10 @@
     var catch_ = done.filter(function (r) { return r === 'catch'; }).length;
     var esc_ = done.filter(function (r) { return r === 'escape'; }).length;
 
-    var pills = CP.map(function (c) {
+    // A zeroed run has not been trained, so there is no half and no trained checkpoint
+    // to choose between — three identical pills would invite a comparison of one thing
+    // with itself.
+    var pills = (App.cat && App.cat.zeroed ? ['untrained'] : CP).map(function (c) {
       var on = App.checkpoint === c;
       return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
         + (on ? 'background:' + P.rgba(accent, .18) + ';border-color:' + P.rgba(accent, .45) + ';color:#dceaff' : '') + '">'
@@ -1185,6 +1203,19 @@
       else if (a === 'train') trainLive();
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
+      else if (a === 'reset') {
+        if (App.resetArmed && performance.now() - App.resetArmed < 5000) {
+          App.resetArmed = 0;
+          App.results = []; App.highlights = null; App.frame = App.prev = null;
+          App.trainInfo = null; App.runState = null; App.mode = 'play';
+          App.checkpoint = 'untrained';
+          App.net.send({ cmd: 'reset' });
+        } else {
+          App.resetArmed = performance.now();
+          setTimeout(function () { if (App.screen === 'menu') render(); }, 5100);
+        }
+        render();
+      }
       else if (a === 'school') { App.screen = 'school'; render(); }
       else if (a === 'x-open') openExplain();
       else if (a === 'x-next') stepExplain(1);

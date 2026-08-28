@@ -12,6 +12,12 @@
  *                         Trap: a toothed ring around an amber plate, snapping shut to
  *                         a vertical lens. Hole: an arch. Circle vs lens vs arch — three
  *                         unmistakable shapes at 22px.
+ *   Second skin         = both characters also exist as sprite sheets built from the
+ *                         source renders; `fxSvg({sprites: true})` swaps the vector pair
+ *                         for them. The identity rule is why spriteSvg exists at all — a
+ *                         painted cat cannot wear an accent collar, so the accent moves
+ *                         to a ring on the floor beneath it, and the alert tick and frost
+ *                         ring are drawn over the sprite exactly as before.
  *   State without text  = alert is wide eyes, small pupils and a tick above the head;
  *                         frozen is X eyes plus a dashed frost ring, with the trap drawn
  *                         shut for as long as the hold lasts. Facing is pupil offset and
@@ -252,6 +258,44 @@
     return o.join('');
   }
 
+  /* Either character, drawn from its sheet instead of from paths.
+     Placed by its ground anchor so the feet sit on the cell the game thinks it is in,
+     rather than by a corner of the frame — a sprite is much taller than one cell and
+     centring it would float the character above its own position. */
+  function spriteSvg(sheet, cx, cy, S, accent, st, opts) {
+    if (!sheet || !sheet.ready()) return null;
+    var n = function (v) { return (S * v).toFixed(2); };
+    // `cells` is how tall the CHARACTER should be, in map cells — not how tall the frame
+    // is. The trapped sheet is padded more generously than the walk sheet, so sizing by
+    // the frame would shrink the character the moment it stepped in a trap.
+    var cells = (opts && opts.cells) || 1.38;
+    var size = S * cells / (sheet.meta().charHeight || 0.8);
+    var ax = (cx + 0.5) * S, ay = (cy + 0.5 + ((opts && opts.footOffset) || 0.34)) * S;
+    var dir = sheet.fromFacing(st.facing);
+    var frame = opts && opts.frame !== null && opts.frame !== undefined ? opts.frame
+              : st.frozen > 0 ? sheet.idleFrame(dir)
+              : sheet.frameAt(dir, !!(opts && opts.moving), (opts && opts.now) || 0,
+                              opts && opts.fps);
+    var o = ['<g>'];
+    o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.4)
+      + '" ry="' + n(0.14) + '" fill="rgba(0,0,0,.5)"/>');
+    o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.46)
+      + '" ry="' + n(0.17) + '" fill="none" stroke="' + rgba(accent, st.sees ? 0.85 : 0.5)
+      + '" stroke-width="' + n(0.055) + '"/>');
+    o.push(sheet.svgAt(dir, frame, ax, ay, size));
+    o.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ','
+      + ((cy + 0.5) * S).toFixed(1) + ')">');
+    // The frost ring is the vector skin's way of saying "held". The trapped sprite says it
+    // far more plainly — the character is visibly struggling in a trap — so drawing both
+    // would be saying it twice.
+    if (st.frozen > 0 && !(opts && opts.held)) o.push(frostSvg(S));
+    if (st.sees) o.push('<g transform="translate(0,' + n(-1.35) + ')"><path d="M0 0v' + n(0.16)
+      + '" stroke="#ff8a5c" stroke-width="' + n(0.1) + '" stroke-linecap="round"/><circle cx="0" cy="'
+      + n(0.29) + '" r="' + n(0.055) + '" fill="#ff8a5c"/></g>');
+    o.push('</g></g>');
+    return o.join('');
+  }
+
   /* ---------- the live layer over the arena ---------- */
 
   function fxSvg(opts) {
@@ -285,7 +329,18 @@
     [v.cat, v.mouse].forEach(function (ag) {
       if (ag && ag.frozen > 0) busy[Math.round(ag.x) + ',' + Math.round(ag.y)] = ag.frozen;
     });
+    var W = global.WalkSprite;
+    var spriteTrap = {};
+    [['tom', v.cat], ['jerry', v.mouse]].forEach(function (e) {
+      var ch = opts.sprites && W ? W[e[0]] : null;
+      if (e[1].frozen > 0 && ch && ch.trapped && ch.trapped.ready()) {
+        spriteTrap[Math.round(e[1].x) + ',' + Math.round(e[1].y)] = 1;
+      }
+    });
     (map.traps || []).forEach(function (t) {
+      // A trapped sprite is drawn holding its own trap, so the vector one underneath it
+      // would be a second trap in the same cell. Every other trap on the map still draws.
+      if (spriteTrap[t[0] + ',' + t[1]]) return;
       var fr = busy[t[0] + ',' + t[1]] || 0;
       p.push(trapSvg((t[0] + 0.5) * CS, (t[1] + 0.5) * CS, CS, fr > 0, fr));
     });
@@ -320,8 +375,27 @@
       p.push('<path d="M' + f(hx - q2) + ' ' + f(hy - q2) + 'L' + f(hx + q2) + ' ' + f(hy + q2) + 'M' + f(hx + q2) + ' ' + f(hy - q2) + 'L' + f(hx - q2) + ' ' + f(hy + q2) + '" stroke="rgba(196,240,255,' + (0.55 * hd.conf).toFixed(3) + ')" stroke-width="1.5" stroke-linecap="round"/>');
     }
 
-    p.push(mouseSvg(mx, my, CS, opts.mouseAccent, v.mouse));
-    p.push(catSvg(cx, cy, CS, opts.catAccent, v.cat));
+    /* Which sheet a character is drawn from is decided by the game state, not by a timer:
+       a held agent uses its trapped sheet, and its frame comes from the freeze countdown,
+       so the snap lands on the very step the jaw closed and cannot drift out of sync. */
+    var skin = function (who, fallback, x, y, accent, ag, moving, cells) {
+      var ch = opts.sprites && W ? W[who] : null;
+      if (!ch) return fallback(x, y, CS, accent, ag);
+      var held = ag.frozen > 0 && ch.trapped && ch.trapped.ready();
+      var sheet = held ? ch.trapped : ch.walk;
+      if (!sheet || !sheet.ready()) return fallback(x, y, CS, accent, ag);
+      var s = spriteSvg(sheet, x, y, CS, accent, ag, {
+        now: now, moving: moving, fps: opts.spriteFps, cells: cells, held: held,
+        frame: held ? sheet.frameForHold(ag.frozen, opts.holdSteps || 5) : null
+      });
+      return s === null ? fallback(x, y, CS, accent, ag) : s;
+    };
+    // 1.38 and 0.95 cells are the vector pair's own measured heights, so swapping skins
+    // changes the drawing and nothing else — the cat stays exactly as large as the cat.
+    p.push(skin('jerry', mouseSvg, mx, my, opts.mouseAccent, v.mouse,
+                opts.mouseMoving, opts.mouseCells || 0.95));
+    p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat,
+                opts.catMoving, opts.catCells || 1.38));
     p.push('</svg>');
     return p.join('');
   }
@@ -373,6 +447,7 @@
 
   global.Paint = {
     rgba: rgba, mapSvg: mapSvg, fxSvg: fxSvg, trapSvg: trapSvg,
-    catSvg: catSvg, mouseSvg: mouseSvg, emblem: emblem, portrait: portrait
+    catSvg: catSvg, mouseSvg: mouseSvg, spriteSvg: spriteSvg,
+    emblem: emblem, portrait: portrait
   };
 })(window);

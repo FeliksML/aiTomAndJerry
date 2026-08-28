@@ -4,3 +4,7 @@ __pycache__/
 runs/
 node_modules/
 app/dev/
+
+# Frame extraction, alpha caches and QA renders: all reproducible from the source
+# material by the two sprite pipelines, so none of it is worth committing.
+build/

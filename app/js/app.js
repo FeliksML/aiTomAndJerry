@@ -13,7 +13,7 @@
  *
  * Keys: 1 2 3 schools · g generator · f final · b leaderboard · esc menu
  *       space pause · enter continue · s skip episode · [ ] speed · t train live
- *       r reveal next school · shift+R re-seal one
+ *       r reveal next school · shift+R re-seal one · c sprite skins on/off
  */
 (function () {
   'use strict';
@@ -69,11 +69,26 @@
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
     trainInfo: null, showKeys: false,
+    // The sprite skins. Loaded once, up front, so no frame of gameplay ever waits on a
+    // request; until they arrive the vector pair is drawn and nothing stalls, and a
+    // character whose sheet is missing simply keeps its vector skin rather than vanishing.
+    sprites: true, spriteFps: 8, catMoving: false, mouseMoving: false,
     net: null
   };
   window.App = App;
 
   ORDER.forEach(function (k) { App.panels[k] = window.Panels.create(k); });
+
+  if (window.WalkSprite) {
+    [window.WalkSprite.tom, window.WalkSprite.jerry].forEach(function (ch) {
+      window.WalkSprite.ANIMATIONS.forEach(function (a) {
+        ch[a].load(null, function (err, st) {
+          if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
+          if (a === 'walk') App.spriteFps = st.meta.defaultFPS;
+        });
+      });
+    });
+  }
   App.livePanel = window.Panels.live();
   App.mode = 'play';           // 'play' shows the live decision, 'train' the explainer
 
@@ -497,7 +512,10 @@
       if (!fr) continue;
       fh.innerHTML = P.fxSvg({
         frame: fr, prev: pv, alpha: App.alpha, cs: RCS, map: local,
-        key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color
+        key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color,
+        sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
+        catMoving: App.alpha < 1 && (fr.cat.x !== pv.cat.x || fr.cat.y !== pv.cat.y),
+        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y)
       });
     }
   }
@@ -806,7 +824,9 @@
     var mv = view(App.screen === 'final' ? (App.runState && App.runState.mouseSchool) || App.school : App.school);
     fx.innerHTML = P.fxSvg({
       frame: App.frame, prev: App.prev, alpha: App.alpha, cs: CS, map: App.map,
-      key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color
+      key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color,
+      sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
+      catMoving: App.catMoving, mouseMoving: App.mouseMoving
     });
     var b = el('arena-banner');
     if (b) {
@@ -847,6 +867,15 @@
     if (App.screen === 'gen') genTick(now);
     // Interpolate between the last two frames so movement is smooth at any speed.
     App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
+    // A character is walking exactly while it is still sliding between two cells; a step
+    // it spent standing still leaves the sprite on its idle pose rather than marching in
+    // place. The walk phase itself is clock-driven inside WalkSprite, so the feet keep
+    // their own 8 fps whatever the render rate or the playback speed.
+    var sliding = !!(App.frame && App.prev && App.alpha < 1);
+    App.catMoving = sliding
+      && (App.frame.cat.x !== App.prev.cat.x || App.frame.cat.y !== App.prev.cat.y);
+    App.mouseMoving = sliding
+      && (App.frame.mouse.x !== App.prev.mouse.x || App.frame.mouse.y !== App.prev.mouse.y);
     if (App.screen === 'race') paintRace(now);
     else if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
     else if (App.screen === 'lesson') paintPanel();
@@ -960,6 +989,7 @@
       else if (k === 'x') startRace();
       else if (k === '?' || k === '/') { App.showKeys = !App.showKeys; render(); e.preventDefault(); }
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
+      else if (k === 'c') { App.sprites = !App.sprites; App.mapKey = null; }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();
       else if (k === 'l') { App.screen = App.screen === 'lesson' ? 'school' : 'lesson'; render(); }

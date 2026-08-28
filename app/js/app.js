@@ -1001,9 +1001,12 @@
         render();
       })
       .on('frame', function (m) {
-        App.prev = App.frame || m;
+        // `step` advances by exactly one within an episode and resets on a new one, so
+        // it is the precise test for whether these two frames are joinable.
+        var joins = App.frame && m.step === App.frame.step + 1;
+        App.prev = joins ? App.frame : m;
         App.frame = m;
-        App.alpha = 0;
+        App.alpha = joins ? 0 : 1;
         App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
@@ -1013,9 +1016,15 @@
       .on('race', function (m) {
         App.raceSchools = m.schools;
         App.raceWins = m.wins;
-        App.racePrev = App.raceFrames || {};
-        var next = {};
-        m.lanes.forEach(function (l) { next[l.school] = l; });
+        // Lanes finish at different times, so continuity is decided per lane: a pane
+        // that has already ended holds still while the others keep moving.
+        var prevLanes = {}, next = {};
+        m.lanes.forEach(function (l) {
+          var was = App.raceFrames && App.raceFrames[l.school];
+          prevLanes[l.school] = (was && l.step === was.step + 1) ? was : l;
+          next[l.school] = l;
+        });
+        App.racePrev = prevLanes;
         App.raceFrames = next;
         App.alpha = 0;
         if (m.map) { App.map = m.map; }

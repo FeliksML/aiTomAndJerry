@@ -254,8 +254,26 @@
 
   /* ---------- the live layer over the arena ---------- */
 
+  /* Both agents move at most one cell per step, so anything larger between two frames
+     is not motion — it is a new episode, and the pair have respawned somewhere else.
+     Interpolating across that slides them diagonally across the room and straight
+     through the walls in between, which is exactly what "they sometimes walk into
+     walls" turned out to be. Measured on one recorded session: 198 such frame pairs,
+     jumping 28 to 43 cells each.
+
+     The check lives here rather than in the caller because this is the only place that
+     interpolates; anything that forgets to pass a sane `prev` is still safe. */
+  function continuous(prev, cur) {
+    if (!prev || !cur) return false;
+    return Math.abs(prev.cat.x - cur.cat.x) <= 1 && Math.abs(prev.cat.y - cur.cat.y) <= 1
+      && Math.abs(prev.mouse.x - cur.mouse.x) <= 1 && Math.abs(prev.mouse.y - cur.mouse.y) <= 1;
+  }
+
   function fxSvg(opts) {
-    var v = opts.frame, pv = opts.prev || opts.frame, a = opts.alpha, CS = opts.cs;
+    var v = opts.frame;
+    var pv = continuous(opts.prev, v) ? opts.prev : v;
+    var a = continuous(opts.prev, v) ? opts.alpha : 1;
+    var CS = opts.cs;
     var map = opts.map, key = opts.key || 'x', now = opts.now || 0;
     if (!v || !map) return '';
     var showV = opts.showVision !== false, showH = opts.showHearing !== false,
@@ -372,7 +390,7 @@
   }
 
   global.Paint = {
-    rgba: rgba, mapSvg: mapSvg, fxSvg: fxSvg, trapSvg: trapSvg,
+    rgba: rgba, mapSvg: mapSvg, fxSvg: fxSvg, trapSvg: trapSvg, continuous: continuous,
     catSvg: catSvg, mouseSvg: mouseSvg, emblem: emblem, portrait: portrait
   };
 })(window);

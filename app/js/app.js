@@ -13,7 +13,8 @@
  *
  * Keys: 1 2 3 schools · g generator · f final · b leaderboard · esc menu
  *       space pause · enter continue · s skip episode · [ ] speed · t train live
- *       r reveal next school · shift+R re-seal one · c sprite skins on/off
+ *       w how the algorithm works · r reveal next school · shift+R re-seal one
+ *       c sprite skins on/off
  */
 (function () {
   'use strict';
@@ -69,6 +70,10 @@
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
     trainInfo: null, showKeys: false,
+    // The six-step explainer (explain.js). 0 is closed; 1..6 is the step being read.
+    // While it is open the run behind it is paused, and closing puts playback back the
+    // way it was rather than unconditionally resuming.
+    explain: 0, explainWasPlaying: true,
     // The sprite skins. Loaded once, up front, so no frame of gameplay ever waits on a
     // request; until they arrive the vector pair is drawn and nothing stalls, and a
     // character whose sheet is missing simply keeps its vector skin rather than vanishing.
@@ -287,6 +292,13 @@
       + '<div><div class="title" style="font-size:34px;color:' + (v.sealed ? '#8494ad' : '#f2f7ff') + '">'
       + esc(v.short) + ' SCHOOL</div><div class="' + (v.sealed ? 'scramble' : 'dim') + '" style="font-size:12px">' + esc(v.line) + '</div></div>'
       + '<div style="display:flex;gap:8px;margin-left:24px">' + pills + '</div>'
+      // Hidden while the school is sealed, for the same reason the panel is: the
+      // explainer names the method on its first line, so there must be no door to it.
+      + (v.sealed ? '' : '<div data-act="x-open" style="cursor:pointer;margin-left:14px;height:36px;padding:0 15px;display:flex;align-items:center;gap:9px;border-radius:10px;border:1px solid '
+        + P.rgba(accent, .34) + ';background:' + v.deep + '">'
+        + '<div style="width:17px;height:17px;border-radius:50%;border:1.5px solid ' + accent
+        + ';display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:11px;line-height:1;color:' + accent + '">?</div>'
+        + '<span style="font-family:var(--display);font-size:11.5px;letter-spacing:1.6px;color:' + v.light + '">HOW IT WORKS · W</span></div>')
       + '<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
       + '<span class="chip">' + App.speed + '× &nbsp;[ ]</span>' + revealChip() + statusChip() + '</div></div>'
 
@@ -774,6 +786,7 @@
   var KEYS = [
     ['1 2 3', 'enter a school'], ['x', 'side by side — all three, same room'],
     ['g', 'the level generator'], ['l', 'full-screen lesson'],
+    ['w', 'how this algorithm works — six steps'],
     ['h', 'the highlight reel'], ['f', 'the grand final'],
     ['b', 'the leaderboard'], ['v', 'this school\'s verdict'],
     ['space', 'pause / resume'], ['s', 'skip this episode'],
@@ -802,11 +815,55 @@
       + '</div></div></div>';
   }
 
+  /* The explainer sits over whatever is running, in its own host rather than inside the
+     screen, so the arena keeps its DOM and closing it restarts nothing.
+     It is rewritten only when the thing being read actually changes. A frame, a status
+     message or a reveal landing behind it would otherwise re-run every diagram's entry
+     animation under the reader — and only the diagrams are supposed to move. */
+  var _xKey = '';
+  function renderExplain() {
+    var host = el('explain');
+    if (!host) return;
+    var v = App.explain ? view(App.school) : null;
+    var key = (v && !v.sealed) ? App.school + ':' + App.explain : '';
+    if (key === _xKey) return;
+    var opening = !_xKey && key;
+    _xKey = key;
+    // Only the open fades in. Stepping recreates the same chrome, which carries no
+    // animation of its own, so the swap is invisible and the new diagram plays alone.
+    host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening) : '';
+  }
+
+  function openExplain() {
+    if (App.screen !== 'school' || App.explain) return;
+    if (view(App.school).sealed) return;
+    App.explainWasPlaying = App.playing;
+    App.explain = 1;
+    if (App.playing) { App.playing = false; App.net.send({ cmd: 'pause' }); }
+    render();
+  }
+
+  function closeExplain() {
+    if (!App.explain) return;
+    App.explain = 0;
+    if (App.explainWasPlaying && !App.playing) { App.playing = true; App.net.send({ cmd: 'resume' }); }
+    render();
+  }
+
+  function stepExplain(d) {
+    if (!App.explain) return;
+    var n = App.explain + d;
+    if (n > window.Explain.count(App.school)) { closeExplain(); return; }
+    App.explain = Math.max(1, n);
+    render();
+  }
+
   function render() {
     var html = { menu: renderMenu, gen: renderGen, school: renderSchool, lesson: renderLesson,
                  race: renderRace, verdict: renderVerdict, final: renderFinal,
                  board: renderBoard }[App.screen]();
-    el('root').innerHTML = html + keyCard();
+    el('screens').innerHTML = html + keyCard();
+    renderExplain();
     App.mapKey = null;                 // force a repaint into the new DOM
     fitStage(true);
   }
@@ -962,8 +1019,9 @@
 
   function bind() {
     el('root').addEventListener('click', function (e) {
-      var t = e.target.closest('[data-act],[data-school],[data-cp]');
+      var t = e.target.closest('[data-act],[data-school],[data-cp],[data-xstep]');
       if (!t) return;
+      if (t.dataset.xstep) { App.explain = +t.dataset.xstep; render(); return; }
       if (t.dataset.school) { playSchool(t.dataset.school); return; }
       if (t.dataset.cp) { playSchool(App.school, t.dataset.cp); return; }
       var a = t.dataset.act;
@@ -977,10 +1035,23 @@
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
       else if (a === 'school') { App.screen = 'school'; render(); }
+      else if (a === 'x-open') openExplain();
+      else if (a === 'x-next') stepExplain(1);
+      else if (a === 'x-prev') stepExplain(-1);
+      else if (a === 'x-close') closeExplain();
     });
 
     window.addEventListener('keydown', function (e) {
       var k = (e.key || '').toLowerCase();
+      /* The explainer is a modal read, so it swallows the whole keyboard while it is
+         open — otherwise space would silently resume the run behind it and 1/2/3 would
+         swap schools under the reader's feet. */
+      if (App.explain) {
+        if (e.code === 'Space' || k === 'arrowright' || k === 'enter') { e.preventDefault(); stepExplain(1); }
+        else if (k === 'arrowleft') { e.preventDefault(); stepExplain(-1); }
+        else if (k === 'escape' || k === 'backspace' || k === 'w') closeExplain();
+        return;
+      }
       if (k === 'escape') go('menu');
       else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
       else if (k === 'g') go('gen');
@@ -993,6 +1064,7 @@
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
       else if (k === 't') trainLive();
       else if (k === 'l') { App.screen = App.screen === 'lesson' ? 'school' : 'lesson'; render(); }
+      else if (k === 'w') openExplain();
       else if (k === 's') App.net.send({ cmd: 'skip' });
       else if (e.code === 'Space') {
         e.preventDefault();
@@ -1009,7 +1081,12 @@
     });
 
     window.Reveal.bindKeys();
-    window.Reveal.on(function () { render(); });
+    window.Reveal.on(function () {
+      // Re-sealing a school mid-read (shift+R for a re-shoot) must not leave the modal
+      // up with nothing in it — and nothing swallowing the keyboard.
+      if (App.explain && view(App.school).sealed) closeExplain();
+      else render();
+    });
   }
 
   /* ---------------- wiring ---------------- */

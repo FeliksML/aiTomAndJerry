@@ -100,6 +100,29 @@ html, body {
 @keyframes scan { 0% { transform: translateY(-8px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(200px); opacity: 0; } }
 @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
 
+/* --- the "how it works" explainer (explain.js) ---
+   Every diagram in it is CSS, not canvas: a step costs one repaint on arrival and then
+   nothing, so a reader can sit on a beat for a minute without the recording drifting.
+   The x- prefix keeps them out of the way of the animations above. */
+@keyframes xIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes xUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes xPop { 0% { opacity: 0; transform: scale(.72); } 62% { transform: scale(1.07); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes xBar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes xRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes xPulse { 0%,100% { opacity: .4; } 50% { opacity: .95; } }
+@keyframes xFlick { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes xSpark { 0% { opacity: 0; transform: scale(.4); } 40% { opacity: 1; transform: scale(1.25); } 100% { opacity: .85; transform: scale(1); } }
+@keyframes xRing { 0% { opacity: .85; transform: scale(.55); } 100% { opacity: 0; transform: scale(2); } }
+@keyframes xDrop { 0% { opacity: 1; transform: none; } 100% { opacity: .16; transform: translateY(20px); } }
+@keyframes xSlideL { from { opacity: 0; transform: translateX(-46px); } to { opacity: 1; transform: none; } }
+@keyframes xSlideR { from { opacity: 0; transform: translateX(46px); } to { opacity: 1; transform: none; } }
+@keyframes xClip { 0% { width: 0; } 40% { width: 74%; } 62% { width: 11%; } 80% { width: 16%; } 100% { width: 13.5%; } }
+@keyframes xEllipse { 0% { transform: rotate(-30deg) scale(1,1); } 100% { transform: rotate(-30deg) scale(1.42,.44); } }
+@keyframes xShrink { 0% { transform: scale(1); opacity: .75; } 100% { transform: scale(.2); opacity: .5; } }
+@keyframes xGlide { 0% { transform: translate(0,0); } 100% { transform: translate(46px,-34px); } }
+@keyframes xOrbit { 0% { transform: rotate(0deg) translateX(126px) rotate(0deg); } 100% { transform: rotate(360deg) translateX(126px) rotate(-360deg); } }
+@keyframes xBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.13); } }
+
 .banner {
   position: absolute; left: 50%; top: 46%; transform: translateX(-50%);
   font-family: var(--display); font-size: 46px; letter-spacing: 4px;

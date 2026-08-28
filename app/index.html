@@ -15,7 +15,10 @@
 </head>
 <body>
   <div id="stage">
-    <div id="root"></div>
+    <!-- The screens are rewritten wholesale on every render; the explainer is not. It is
+         a modal read whose diagrams animate on arrival, so a status message landing
+         behind it must not restart them. -->
+    <div id="root"><div id="screens"></div><div id="explain"></div></div>
   </div>
   <script src="js/env.js"></script>
   <script src="js/walksprite.js"></script>
@@ -23,6 +26,7 @@
   <script src="js/reveal.js"></script>
   <script src="js/net.js"></script>
   <script src="js/panels.js"></script>
+  <script src="js/explain.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

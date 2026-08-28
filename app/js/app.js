@@ -89,7 +89,12 @@
       window.WalkSprite.ANIMATIONS.forEach(function (a) {
         ch[a].load(null, function (err, st) {
           if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
-          if (a === 'walk') App.spriteFps = st.meta.defaultFPS;
+          if (a !== 'walk') return;
+          App.spriteFps = st.meta.defaultFPS;
+          // The card portraits are built into the HTML at render time, so a screen drawn
+          // in the moment before the sheets arrive would keep its vector fallback until
+          // something else happened to re-render it. Draw again once they are here.
+          if (document.getElementById('screens')) render();
         });
       });
     });

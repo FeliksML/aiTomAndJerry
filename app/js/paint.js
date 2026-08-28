@@ -69,8 +69,15 @@
       p.push('<rect x="' + f(bx) + '" y="' + f(by) + '" width="' + f(bw) + '" height="' + f(bh) + '" rx="' + f(r) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
       p.push('<rect x="' + f(bx + CS * 0.22) + '" y="' + f(by + CS * 0.22) + '" width="' + f(bw - CS * 0.44) + '" height="' + f(bh - CS * 0.44) + '" rx="' + f(r * 0.6) + '" fill="none" stroke="rgba(120,160,215,.1)" stroke-width="1"/>');
     });
+    // A pillar blocks its whole cell, and the vision cone is cast against that whole
+    // cell — so drawing a 0.68-cell disc left the light stopping in what looked like open
+    // floor beside it, and made every corridor read wider than it is. The cell footprint
+    // is drawn first, at the same weight as the cover blocks, with the disc on top.
     (map.pillars || []).forEach(function (pp) {
+      var px = pp[0] * CS + 1, py = pp[1] * CS + 1, ps = CS - 2;
       var cx = (pp[0] + 0.5) * CS, cy = (pp[1] + 0.5) * CS;
+      p.push('<rect x="' + f(px) + '" y="' + f(py) + '" width="' + f(ps) + '" height="' + f(ps)
+        + '" rx="' + f(Math.max(3, CS * 0.24)) + '" fill="#18243a" stroke="rgba(138,180,235,.26)" stroke-width="1.2"/>');
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.34) + '" fill="#1b2740" stroke="rgba(138,180,235,.28)" stroke-width="1.1"/>');
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.17) + '" fill="none" stroke="rgba(175,215,255,.16)" stroke-width="1"/>');
     });
@@ -473,8 +480,36 @@
     return head + body + '</svg>';
   }
 
+  /* The card portraits on the leaderboard and the grand final. They draw the same sprite
+     the arena draws, standing still and facing the camera, so a single frame does not put
+     two different Toms on screen at once — the rendered one in the arena and a cartoon
+     vector on the card beside it.
+
+     Cropped by the sheet's own metadata rather than by hand: `charHeight` is how much of
+     the frame the character fills and `anchor` is where its feet are, so the crop follows
+     the art if the sheets are ever rebuilt. The vector pair stays as the fallback for the
+     moment before the sheets have loaded, and for a build without them. */
   function portrait(role, accent, size) {
     var S = size || 130, st = { facing: 2, frozen: 0, sees: false };
+    var WS = global.WalkSprite;
+    var ch = WS && (role === 'cat' ? WS.tom : WS.jerry);
+    var sh = ch && ch.walk;
+    if (sh && sh.ready()) {
+      var m = sh.meta() || {};
+      var a = m.anchor || { x: 0.5, y: 0.9 };
+      var F = 100 / (m.charHeight || 0.8);       // frame size that makes the body 100 tall
+      var fx2 = F * a.x, fy2 = F * a.y;          // the feet, inside that frame
+      var pad = 7, vbW = 100, vbH = 100 + pad * 2;
+      var n = function (v) { return (+v).toFixed(2); };
+      return '<svg width="100%" height="100%" viewBox="' + n(fx2 - vbW / 2) + ' '
+        + n(fy2 - 100 - pad) + ' ' + n(vbW) + ' ' + n(vbH) + '" style="display:block">'
+        // The same ground shadow and accent ring the arena puts under them, so the card
+        // reads as the school's colour rather than as a sticker.
+        + '<ellipse cx="' + n(fx2) + '" cy="' + n(fy2) + '" rx="25" ry="7" fill="rgba(0,0,0,.45)"/>'
+        + '<ellipse cx="' + n(fx2) + '" cy="' + n(fy2) + '" rx="29" ry="9" fill="none" stroke="'
+        + rgba(accent, 0.6) + '" stroke-width="2"/>'
+        + sh.svgAt('down', sh.idleFrame('down'), fx2, fy2, F) + '</svg>';
+    }
     if (role === 'cat') {
       return '<svg width="100%" height="100%" viewBox="' + (-0.34 * S) + ' ' + (-0.56 * S) + ' '
         + (1.68 * S) + ' ' + (1.72 * S) + '" style="display:block">' + catSvg(0, 0, S, accent, st) + '</svg>';

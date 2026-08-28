@@ -445,14 +445,22 @@ class Session:
 
 
 async def replay(path: Path, send) -> None:
-    """Play a journal back at its recorded pace — the safety net for a re-shoot."""
+    """Play a journal back at its recorded pace — the safety net for a re-shoot.
+
+    Every message is flagged `replay`, because a replay is not a live trainer and the app
+    should not claim it is. Nothing here listens: pause, speed and skip have no clock to
+    act on, so the screen says so rather than letting a key press look ignored.
+    """
     t0 = time.perf_counter()
+    await send({"type": "replay", "source": path.name})
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         msg = json.loads(line)
         at = msg.pop("at", 0.0)
+        msg["replay"] = True
         wait = at - (time.perf_counter() - t0)
         if wait > 0:
             await asyncio.sleep(wait)
         await send(msg)
+    await send({"type": "replayEnd", "source": path.name})

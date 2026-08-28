@@ -32,6 +32,15 @@
 
   function fmt(v, d) { return (v === undefined || v === null) ? '—' : (+v).toFixed(d === undefined ? 3 : d); }
 
+  /* Both roles train at once and both stream telemetry; each panel draws one of them.
+     Which one is not a detail the viewer can infer from the picture, so it is written on
+     it. `role` is set by the app when it forwards the telemetry. */
+  function roleTag(role, x, y) {
+    return '<text x="' + x + '" y="' + y + '" fill="#61708a" font-size="10" letter-spacing="1.4"'
+      + ' font-family="JetBrains Mono,monospace">' + String(role || 'cat').toUpperCase()
+      + ' · the other role trains alongside it</text>';
+  }
+
   /* Every panel draws this until its optimiser has actually said something. An empty
      box on camera invites "is it broken?"; an invented number is worse. */
   function waiting(w, h) {
@@ -57,6 +66,7 @@
     this.histTarget = t.ratioHist || this.histTarget;
     if (t.ratioRange) this.range = t.ratioRange;
     if (t.clipBand) this.band = t.clipBand;
+    this.role = t.role || this.role;
     this.stats = {
       clipped: t.clippedFrac, kl: t.approxKl, entropy: t.entropy,
       value: t.valueLoss, ev: t.explainedVar, year: t.year, ladder: t.ladderWin
@@ -81,6 +91,7 @@
     // Action probabilities
     var bx = 16, by = 34, bw = w * 0.36, bh = h - 76;
     p.push('<text x="' + bx + '" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT IT WOULD DO</text>');
+    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
     var slot = bw / ACTIONS.length;
     for (var i = 0; i < ACTIONS.length; i++) {
       var v = Math.max(0, Math.min(1, this.probs[i] || 0));
@@ -116,17 +127,24 @@
     p.push('<text x="' + f(b1) + '" y="' + f(hy + hh + 14) + '" fill="#7d90ad" font-size="10" text-anchor="middle" font-family="JetBrains Mono,monospace">clip</text>');
 
     // Entropy trail — how much exploration is left
-    var ty = hy + hh + 30, th = h - ty - 26;
+    // Absolute axis, 0 to ln 5. Fitting the trail to its own min and max turned 0.3% of
+    // noise into a full-height collapse, which is the shape of the story this panel is
+    // meant to tell and therefore the last thing it should draw when it has not happened.
+    var ty = hy + hh + 34, th = h - ty - 26;
+    var EMAX = Math.log(5);
     if (this.trail.length > 2 && th > 10) {
-      var mn = Math.min.apply(null, this.trail), mx = Math.max.apply(null, this.trail);
-      var rng = Math.max(1e-6, mx - mn), d = '';
+      var d = '';
       for (var j = 0; j < this.trail.length; j++) {
         var px = hx + j / (this.trail.length - 1) * hw2;
-        var py = ty + th - (this.trail[j] - mn) / rng * th;
+        var py = ty + th - Math.max(0, Math.min(1, this.trail[j] / EMAX)) * th;
         d += (j ? 'L' : 'M') + f(px) + ' ' + f(py);
       }
+      p.push('<line x1="' + f(hx) + '" y1="' + f(ty) + '" x2="' + f(hx + hw2) + '" y2="' + f(ty) + '" stroke="rgba(130,160,200,.14)" stroke-width="1"/>');
+      p.push('<line x1="' + f(hx) + '" y1="' + f(ty + th) + '" x2="' + f(hx + hw2) + '" y2="' + f(ty + th) + '" stroke="rgba(130,160,200,.14)" stroke-width="1"/>');
       p.push('<path d="' + d + '" fill="none" stroke="' + accent + '" stroke-width="1.6" opacity=".8"/>');
-      p.push('<text x="' + hx + '" y="' + f(ty - 4) + '" fill="#7d90ad" font-size="10" letter-spacing="1">ENTROPY · how much it is still exploring</text>');
+      p.push('<text x="' + hx + '" y="' + f(ty - 6) + '" fill="#7d90ad" font-size="10" letter-spacing="1">ENTROPY · how much it is still exploring &nbsp; 0 to ln 5 = 1.609, fixed axis</text>');
+      p.push('<text x="' + f(hx + hw2) + '" y="' + f(ty - 6) + '" text-anchor="end" fill="#c9d8ee" font-size="10" font-family="JetBrains Mono,monospace">'
+        + fmt(this.trail[this.trail.length - 1], 3) + '</text>');
     }
 
     var s = this.stats;
@@ -153,6 +171,7 @@
   }
 
   GaPanel.prototype.update = function (t) {
+    if (t && t.role) this.role = t.role;
     if (!t) return;
     this.fpTarget = t.fingerprints || this.fpTarget;
     this.fitTarget = t.fitness || this.fitTarget;
@@ -176,6 +195,7 @@
     var p = [], f = function (v) { return (+v).toFixed(1); };
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
     p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">FORTY-EIGHT BRAINS · RANKED, THEN BRED</text>');
+    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
 
     var n = fpT.length, cols = 12, rows = Math.ceil(n / cols);
     var gx = 16, gy = 32, gw = w - 32, gh = h - 96;
@@ -267,6 +287,7 @@
     this.selected = t.selected || (t.samples.length / 2) | 0;
     this.ellipseT = t.ellipse || this.ellipseT;
     this.stepT = t.meanStep || [0, 0];
+    this.role = t.role || this.role;
     this.stats = {
       sigma: t.sigma, condition: t.condition, ps: t.psNorm,
       best: t.fitBest, mean: t.fitMean, year: t.year, ladder: t.ladderWin
@@ -279,6 +300,10 @@
       m = Math.max(m, Math.abs(t.samples[i][0]), Math.abs(t.samples[i][1]));
     }
     this.scaleT = Math.max(1e-6, m * 1.25);
+    // The frame zooms in as the cloud contracts, which is what keeps the picture legible
+    // — and also what hides the contraction, since the ellipse fills the same space at
+    // any sigma. Remember the first scale so the zoom itself can be shown.
+    if (this.scale0 === undefined) this.scale0 = this.scaleT;
   };
 
   CmaPanel.prototype.draw = function (w, h, accent) {
@@ -303,9 +328,18 @@
 
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
     p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">THE SEARCH CLOUD, AND THE SHAPE IT HAS LEARNED</text>');
+    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
 
     for (var r = 1; r <= 3; r++) {
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(R * r / 3) + '" fill="none" stroke="rgba(130,160,200,.10)" stroke-width="1"/>');
+    }
+    // The ring carries its real value, and the zoom says how far the frame has closed in
+    // since the first generation. Without them the cloud looks the same size forever.
+    p.push('<text x="' + f(cx) + '" y="' + f(cy - R - 6) + '" text-anchor="middle" fill="#7d90ad" font-size="10" font-family="JetBrains Mono,monospace">±'
+      + this.scale.toPrecision(3) + '</text>');
+    if (this.scale0 && this.scale0 / this.scale > 1.15) {
+      p.push('<text x="' + f(cx) + '" y="' + f(cy + R + 16) + '" text-anchor="middle" fill="#ffd166" font-size="10" font-family="JetBrains Mono,monospace">frame zoomed ×'
+        + (this.scale0 / this.scale).toFixed(1) + ' since generation 1</text>');
     }
     p.push('<line x1="' + f(cx - R) + '" y1="' + f(cy) + '" x2="' + f(cx + R) + '" y2="' + f(cy) + '" stroke="rgba(130,160,200,.13)" stroke-width="1"/>');
     p.push('<line x1="' + f(cx) + '" y1="' + f(cy - R) + '" x2="' + f(cx) + '" y2="' + f(cy + R) + '" stroke="rgba(130,160,200,.13)" stroke-width="1"/>');
@@ -339,7 +373,7 @@
     var lx = cx + R + 28;
     var rows = [
       ['sigma', fmt(this.stats.sigma, 4), 'how wide it is sampling'],
-      ['condition', fmt(this.stats.condition, 1), 'how stretched the shape is'],
+      ['condition', fmt(this.stats.condition, 1), 'across all 2,853 axes, not the 2 drawn'],
       ['path', fmt(this.stats.ps, 2), 'is it still moving in one direction'],
       ['kept', this.selected + ' of ' + this.samples.length, 'the better half recombines']
     ];
@@ -350,7 +384,8 @@
       p.push('<text x="' + f(lx + 74) + '" y="' + f(ry + 14) + '" fill="#61708a" font-size="10">' + rows[rI][2] + '</text>');
     }
     p.push('<text x="16" y="' + (h - 9) + '" fill="#7d90ad" font-size="10.5">generation ' + this.gen
-      + ' · filled dots are the half that gets kept · the ellipse is the real spread of this generation\'s samples</text>');
+      + ' · filled dots are the half that gets kept · the ellipse is the real spread of this generation\'s samples,'
+      + ' but the frame rescales to it every generation — read the ring, not the size</text>');
     p.push('</svg>');
     return p.join('');
   };

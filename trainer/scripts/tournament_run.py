@@ -30,6 +30,8 @@ def main() -> None:
     ap.add_argument("--run", default="runs/v1")
     ap.add_argument("--reps", type=int, default=40, help="episodes per arena, per pairing")
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--nests", default=None,
+                    help="hole count(s); defaults to what the run's config.json records")
     a = ap.parse_args()
 
     from catmouse import arena, nets, tournament
@@ -40,13 +42,19 @@ def main() -> None:
 
     t0 = time.time()
     cfg = json.loads((run_dir / "config.json").read_text()) if (run_dir / "config.json").exists() else {}
-    nests = arena.spread(arena.parse_nests(cfg.get("nests")), len(arena.FINAL_SEEDS))
+    # The run's own config is the authority; --nests is for older runs whose config
+    # predates the option and would otherwise be re-scored at today's default.
+    nests = arena.spread(arena.parse_nests(a.nests if a.nests is not None
+                                           else cfg.get("nests")), len(arena.FINAL_SEEDS))
+    print(f"  holes per room: {sorted(set(nests))}", flush=True)
     t = tournament.run_tournament(run_dir, dev, reps=a.reps, nests=nests)
     (run_dir / "tournament.json").write_text(json.dumps(t, indent=2))
     print(f"  cross-play + anchor: {time.time() - t0:.0f}s", flush=True)
 
     t1 = time.time()
-    prog = tournament.progression(run_dir, dev, nests=nests)
+    # Same reps as the tournament, so the TRAINED row is literally the vs EXAMINER
+    # column the leaderboard shows rather than a second, smaller estimate of it.
+    prog = tournament.progression(run_dir, dev, reps=a.reps, nests=nests)
     (run_dir / "progression.json").write_text(json.dumps(prog, indent=2))
     print(f"  checkpoint progression: {time.time() - t1:.0f}s", flush=True)
 

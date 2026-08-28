@@ -268,7 +268,10 @@ class VecEnv:
         self.mouse_frozen = np.zeros(n, np.int32)
         self.step_n = np.zeros(n, np.int32)
         self.scent = np.zeros((n, NCELL), np.float32)
-        self.heard = np.zeros((n, 3), np.float32)   # x, y, confidence
+        # x, y, confidence, radius. The radius is the width of the fix she took, so it
+        # is stored with the fix rather than recomputed: once he goes quiet she still
+        # believes the last thing she heard, and how vague it was cannot keep changing.
+        self.heard = np.zeros((n, 4), np.float32)
         self.heard_on = np.zeros(n, bool)
         self.done = np.zeros(n, bool)
         self.result = np.zeros(n, np.int8)          # 0 running, 1 catch, 2 escape, 3 timeout
@@ -456,8 +459,11 @@ class VecEnv:
                 "heard": ({"x": round(float(self.heard[i, 0]), 2),
                            "y": round(float(self.heard[i, 1]), 2),
                            "conf": round(float(self.heard[i, 2]), 3),
-                           "radius": 1 + (S.HEARING_BASE_NOISE + S.HEARING_DIST_NOISE *
-                                          float(np.hypot(cx - mx, cy - my))) * 7}
+                           # The radius the fix was taken with, not one recomputed from
+                           # where he actually is now. Recomputing it made the ring track
+                           # his live distance while he was frozen or out of earshot —
+                           # drawing information she does not have.
+                           "radius": round(float(self.heard[i, 3]), 3)}
                           if self.heard_on[i] else None),
             },
             "scent": [[int(c % W), int(c // W), round(float(sc[c]), 3)] for c in hot],
@@ -557,6 +563,7 @@ class VecEnv:
             np.clip(cx + jx, 0, W - 1),
             np.clip(cy + jy, 0, H - 1),
             np.maximum(0.08, 1 - d_cat / S.HEARING_RANGE),
+            1 + noise * 7,                       # env.py stores this on the Heard record
         ], 1).astype(np.float32)
         faded = self.heard.copy()
         faded[:, 2] *= np.where(live, 0.82, 1.0)

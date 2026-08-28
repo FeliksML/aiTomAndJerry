@@ -89,7 +89,12 @@
       window.WalkSprite.ANIMATIONS.forEach(function (a) {
         ch[a].load(null, function (err, st) {
           if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
-          if (a === 'walk') App.spriteFps = st.meta.defaultFPS;
+          if (a !== 'walk') return;
+          App.spriteFps = st.meta.defaultFPS;
+          // The card portraits are built into the HTML at render time, so a screen drawn
+          // in the moment before the sheets arrive would keep its vector fallback until
+          // something else happened to re-render it. Draw again once they are here.
+          if (document.getElementById('screens')) render();
         });
       });
     });
@@ -130,10 +135,39 @@
       + '<div class="veil"></div><div class="grid-lines"></div>';
   }
 
+  /* An open socket is not a running simulation. The chip used to read TRAINER LIVE off
+     `readyState` alone, so a stalled clock — a crashed pump, a paused replay, a trainer
+     mid-garbage-collection — looked identical to a healthy one while the arena sat still.
+     It now says how long it has been since a frame arrived, but only while something is
+     supposed to be moving: on the menu, with the session idle, silence is correct. */
+  var RUNNING = { play: 1, final: 1, race: 1, train: 1 };
+
+  function linkState() {
+    if (App.link !== 'live') return App.link === 'connecting'
+      ? { cls: 'link-wait', txt: 'CONNECTING' } : { cls: 'link-off', txt: 'TRAINER OFFLINE' };
+    var running = App.runState && RUNNING[App.runState.mode] && App.playing;
+    var age = App.lastFrameAt ? (performance.now() - App.lastFrameAt) / 1000 : 1e9;
+    if (running && age > 2) {
+      return { cls: 'link-wait', txt: 'NO FRAMES ' + Math.min(99, Math.round(age)) + 's' };
+    }
+    return { cls: 'link-live', txt: App.replay ? 'REPLAY' : 'TRAINER LIVE' };
+  }
+
   function statusChip() {
-    var cls = App.link === 'live' ? 'link-live' : (App.link === 'connecting' ? 'link-wait' : 'link-off');
-    var txt = App.link === 'live' ? 'TRAINER LIVE' : (App.link === 'connecting' ? 'CONNECTING' : 'TRAINER OFFLINE');
-    return '<span class="chip"><span class="link-dot ' + cls + '"></span>' + txt + '</span>';
+    var st = linkState();
+    return '<span class="chip" id="linkchip"><span class="link-dot ' + st.cls + '"></span>' + st.txt + '</span>';
+  }
+
+  /* Patched in place from the animation loop rather than by re-rendering: a stalled
+     stream is exactly the case where no message arrives to trigger a render. */
+  var _linkTxt = null;
+  function refreshStatus() {
+    var el2 = el('linkchip');
+    if (!el2) { _linkTxt = null; return; }
+    var st = linkState();
+    if (st.txt === _linkTxt) return;
+    _linkTxt = st.txt;
+    el2.innerHTML = '<span class="link-dot ' + st.cls + '"></span>' + st.txt;
   }
 
   function revealChip() {
@@ -372,6 +406,19 @@
   function renderFinal() {
     var t = App.cat && App.cat.tournament;
     var st = App.runState || {};
+    // Champion versus champion is a claim about a tournament. Without one there is no
+    // pairing to show, and defaulting to PPO-versus-PPO would put two invented finalists
+    // under a headline saying they earned it.
+    if (!t && !st.catSchool) {
+      return '<div class="screen">' + backdrop('bg-final', .35)
+        + '<div style="position:relative"><div class="kicker">Champion versus champion</div>'
+        + '<div class="title" style="font-size:48px;margin-top:6px">THE GRAND FINAL</div>'
+        + '<div class="dim" style="margin-top:14px;font-size:15px;max-width:40em;line-height:1.6">'
+        + 'There are no champions yet — the final is whoever wins the cross-play tournament, '
+        + 'and it has not been run for this training run.<br>'
+        + 'Run <span class="mono">python trainer/scripts/tournament_run.py --run runs/v4</span> and reload.</div>'
+        + '<div class="btn ghost" style="margin-top:24px" data-act="menu">ESC · ACADEMY</div></div></div>';
+    }
     var ck = st.catSchool || (t && t.champion.cat) || 'ppo';
     var mk = st.mouseSchool || (t && t.champion.mouse) || 'ppo';
     var cv = view(ck), mv = view(mk);
@@ -602,7 +649,10 @@
 
   function renderVerdict() {
     var v = view(App.school);
-    var n = App.cat ? App.cat.levels.length : 12;
+    // The reel is twelve rooms chosen FOR being dramatic. Scoring it like a straight run
+    // and printing "TOM came out ahead" would be a tally of episodes picked to be close.
+    var reel = App.highlights;
+    var n = reel ? reel.length : (App.cat ? App.cat.levels.length : 12);
     var done = App.results.filter(Boolean);
     var c = done.filter(function (r) { return r === 'catch'; }).length;
     var m = done.filter(function (r) { return r === 'escape'; }).length;
@@ -621,22 +671,19 @@
         if (!row) return '';
         return '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">'
           + '<div class="mono faint" style="width:120px;font-size:10.5px;letter-spacing:1.4px">' + CP_NAME[cp] + '</div>'
-          + '<div style="flex:1"><div style="display:flex;gap:8px;align-items:center">'
-          + '<div style="flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden">'
-          + '<div style="height:100%;width:' + Math.round(row.cat * 100) + '%;background:var(--cat);opacity:.85"></div></div>'
-          + '<div class="mono" style="width:46px;font-size:12px;color:var(--cat)">' + pct(row.cat) + '</div></div>'
-          + '<div style="display:flex;gap:8px;align-items:center;margin-top:5px">'
-          + '<div style="flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden">'
-          + '<div style="height:100%;width:' + Math.round(row.mouse * 100) + '%;background:var(--mouse);opacity:.85"></div></div>'
-          + '<div class="mono" style="width:46px;font-size:12px;color:var(--mouse)">' + pct(row.mouse) + '</div></div></div></div>';
+          + '<div style="flex:1">'
+          + ciBar(row.cat, row.catLo, row.catHi, 'var(--cat)')
+          + ciBar(row.mouse, row.mouseLo, row.mouseHi, 'var(--mouse)')
+          + '</div></div>';
       }).join('');
     }
 
-    var strip = App.results.map(function (r, i) {
+    var strip = App.results.slice(0, n).map(function (r, i) {
       return '<div style="flex:1;text-align:center;padding:8px 0;border-radius:7px;border:1px solid '
         + (r === 'catch' ? 'rgba(255,138,92,.36)' : r === 'escape' ? 'rgba(126,224,255,.32)' : 'var(--line)')
         + ';background:' + (r === 'catch' ? 'rgba(255,122,84,.14)' : r === 'escape' ? 'rgba(110,226,255,.12)' : 'rgba(255,255,255,.03)') + '">'
-        + '<div class="mono faint" style="font-size:9px">LV' + String(i + 1).padStart(2, '0') + '</div>'
+        + '<div class="mono faint" style="font-size:9px">LV'
+        + String((reel ? reel[i].arena : i) + 1).padStart(2, '0') + '</div>'
         + '<div class="mono" style="font-size:16px;color:' + (r === 'catch' ? '#ff9a72' : r === 'escape' ? '#7ee0ff' : '#8fa4c4') + '">'
         + (r === 'catch' ? 'T' : r === 'escape' ? 'J' : '–') + '</div></div>';
     }).join('');
@@ -657,6 +704,10 @@
       + scoreBox('RAN OUT OF TIME', String(d), '#8fa4c4') + '</div>'
       + '<div style="display:flex;gap:6px">' + strip + '</div>'
       + '<div class="dim" style="font-size:13.5px;line-height:1.6">'
+      + (reel
+         ? 'These are the <b>highlight reel</b>\u2019s ' + n + ' episodes \u2014 chosen for drama, one per room, '
+           + 'so this tally is not a measurement of anything. Press <span class="mono">b</span> for the numbers that are. '
+         : '')
       + 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
       + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
       + 'both sides here were raised together, so it says as much about the sparring partner as the student. '
@@ -705,6 +756,23 @@
             + CP_NAME[r.cp] + '</div>'
             + bar(r.row.catTraps, max, 'var(--cat)') + bar(r.row.mouseTraps, max, 'var(--mouse)') + '</div>';
         }).join('') + '</div></div>';
+  }
+
+  /* A rate with its 95% interval drawn on the same track. Eight arenas and a few dozen
+     repeats is not a large sample, and three of these bars sit next to each other inviting
+     a comparison — so the width of the uncertainty has to be as visible as the rate. */
+  function ciBar(v, lo, hi, color) {
+    var band = (lo !== undefined && hi !== undefined)
+      ? '<div style="position:absolute;top:0;bottom:0;left:' + (lo * 100).toFixed(1) + '%;width:'
+        + Math.max(0.4, (hi - lo) * 100).toFixed(1) + '%;background:' + color + ';opacity:.22"></div>'
+        + '<div style="position:absolute;top:0;bottom:0;left:' + (lo * 100).toFixed(1) + '%;width:1px;background:' + color + ';opacity:.6"></div>'
+        + '<div style="position:absolute;top:0;bottom:0;left:' + (hi * 100).toFixed(1) + '%;width:1px;background:' + color + ';opacity:.6"></div>'
+      : '';
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
+      + '<div style="position:relative;flex:1;height:12px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden">'
+      + band
+      + '<div style="position:absolute;top:0;bottom:0;left:' + (v * 100).toFixed(1) + '%;width:2px;background:' + color + '"></div></div>'
+      + '<div class="mono" style="width:46px;font-size:12px;color:' + color + '">' + pct(v) + '</div></div>';
   }
 
   function bar(v, max, color) {
@@ -966,8 +1034,13 @@
   var last = 0;
   function loop(now) {
     requestAnimationFrame(loop);
+    step(now);
+  }
+
+  function step(now) {
     var dt = now - (last || now); last = now;
     fitStage();
+    refreshStatus();
     if (App.screen === 'gen') genTick(now);
     // Interpolate between the last two frames so movement is smooth at any speed.
     App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
@@ -984,6 +1057,20 @@
     else if (App.screen === 'school' || App.screen === 'final') { paintArena(now); paintPanel(); }
     else if (App.screen === 'lesson') paintPanel();
   }
+
+  /* requestAnimationFrame does not run in a hidden tab, but the WebSocket does: the score
+     boxes and the sense line kept updating out of the message handler while the arena sat
+     frozen on whatever it had last drawn. A window behind another one, or a second screen
+     the compositor has parked, is an ordinary thing to happen during a shoot. Timers are
+     throttled when hidden rather than stopped, so this keeps the picture and the numbers
+     telling the same story, and the return to visible snaps everything back into step. */
+  setInterval(function () { if (document.hidden) step(performance.now()); }, 250);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    last = 0;
+    App.alpha = 1;
+    step(performance.now());
+  });
 
   function genTick(now) {
     if (App.levels.length >= 12) return;
@@ -1116,6 +1203,16 @@
         else if (k === 'escape' || k === 'backspace' || k === 'w') closeExplain();
         return;
       }
+      // A replay has no clock to talk to: the journal is played back at its recorded
+      // pace and nothing is listening for commands. Answering these keys with a banner
+      // beats letting them look ignored on camera.
+      if (App.replay && (e.code === 'Space' || k === 's' || k === '[' || k === ']')) {
+        e.preventDefault();
+        App.banner = { t: 'REPLAY · THE PACE IS RECORDED', c: '#8fa4c4' };
+        App.bannerAt = performance.now();
+        render();
+        return;
+      }
       if (k === 'escape') go('menu');
       else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
       else if (k === 'g') go('gen');
@@ -1174,6 +1271,7 @@
       .on('frame', function (m) {
         // `step` advances by exactly one within an episode and resets on a new one, so
         // it is the precise test for whether these two frames are joinable.
+        App.lastFrameAt = performance.now();
         var joins = App.frame && m.step === App.frame.step + 1;
         App.prev = joins ? App.frame : m;
         App.frame = m;
@@ -1191,12 +1289,26 @@
           render();
         }
       })
+      // A journal replay is a legitimate way to shoot, but it is not a trainer, and the
+      // clock keys have nothing to talk to. Say both, rather than letting `space` look
+      // broken and the chip claim a live run.
+      .on('replay', function (m) {
+        App.replay = m.source || true;
+        App.trainInfo = 'Replaying ' + (m.source || 'a recorded session')
+          + ' — pause, speed and skip do not apply.';
+        render();
+      })
+      .on('replayEnd', function () {
+        App.trainInfo = 'Replay finished.';
+        render();
+      })
       .on('trainWait', function () {
         App.trainReady = false;
         App.trainInfo = 'Starting the optimiser — the arena waits for the first real policy.';
         render();
       })
       .on('race', function (m) {
+        App.lastFrameAt = performance.now();
         App.raceSchools = m.schools;
         App.raceWins = m.wins;
         // Lanes finish at different times, so continuity is decided per lane: a pane
@@ -1261,11 +1373,18 @@
           if (p) {
             // Cat and mouse telemetry both arrive; the panel shows the cat's, which is
             // the side the arena is usually following.
-            p.update(Object.assign({ gen: m.iter }, m.cat || m, { year: (m.cat || {}).year }));
+            p.update(Object.assign({ gen: m.iter, role: m.cat ? 'cat' : 'mouse' },
+                                   m.cat || m, { year: (m.cat || {}).year }));
           }
         } else if (m.kind === 'eval') {
-          App.trainInfo = 'live · cat ' + pct(m.catExam) + ' · mouse ' + pct(m.mouseExam)
-            + ' vs the Examiner · ' + (m.steps / 1e6).toFixed(1) + 'M steps';
+          // Only while the training screen is the one being watched. `t` starts a run
+          // that keeps going for minutes; leaving it for a plain playback screen used to
+          // leave its telemetry writing "live · cat 23% · mouse 35%" under an arena that
+          // is replaying a saved checkpoint and learning nothing.
+          if (App.mode === 'train') {
+            App.trainInfo = 'live · cat ' + pct(m.catExam) + ' · mouse ' + pct(m.mouseExam)
+              + ' vs the Examiner · ' + (m.steps / 1e6).toFixed(1) + 'M steps';
+          }
         } else if (m.kind === 'promotion') {
           App.banner = { t: m.role.toUpperCase() + ' PROMOTED TO YEAR ' + m.year, c: '#ffd166' };
           App.bannerAt = performance.now();

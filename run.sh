@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 PY=.venv/bin/python
-TAG_DEFAULT=v3
+TAG_DEFAULT=v4
 
 train() { $PY trainer/scripts/train.py --minutes "${1:-45}" --tag "${2:-$TAG_DEFAULT}"; }
 

@@ -21,13 +21,13 @@ runs/         checkpoints, telemetry, journals, tournament results (git-ignored)
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch numpy pillow websockets
 
 # train all three schools in parallel — same wall-clock, same machine, same load
-.venv/bin/python trainer/scripts/train.py --minutes 45 --tag v3
+.venv/bin/python trainer/scripts/train.py --minutes 45 --tag v4
 
 # decide the championship on arenas nobody trained on
-.venv/bin/python trainer/scripts/tournament_run.py --run runs/v3
+.venv/bin/python trainer/scripts/tournament_run.py --run runs/v4
 
 # serve the app
-.venv/bin/python trainer/scripts/serve.py --run runs/v3 &
+.venv/bin/python trainer/scripts/serve.py --run runs/v4 &
 python3 tools/serve_app.py
 ```
 
@@ -151,34 +151,41 @@ counted exactly as the spec defines them.
 
 ## The result
 
-Two full 45-minute runs, one under each curriculum rule (the flat bar, then the
-calibrated one). Cross-play scores on the eight held-out rooms, 320 episodes a pairing:
+Three full 45-minute runs. The first two used one hole and differed only in the
+promotion rule; the third uses two, which is a different game. Cross-play scores on the
+eight held-out rooms, 320 episodes a pairing:
 
-| | Tom, v2 | Tom, v3 | Jerry, v2 | Jerry, v3 |
+| | Tom, 1 hole | Tom, 2 holes | Jerry, 1 hole | Jerry, 2 holes |
 |---|---:|---:|---:|---:|
-| **PPO** | **76.9%** ±2.7 | **76.1%** ±2.7 | **39.7%** ±3.1 | **39.6%** ±3.1 |
-| GA | 55.8% ±3.1 | 52.5% ±3.2 | 27.7% ±2.8 | 28.9% ±2.9 |
-| CMA-ES | 56.4% ±3.1 | 50.2% ±3.2 | 29.8% ±2.9 | 19.0% ±2.5 |
+| **PPO** | **76.1%** ±2.7 | **68.1%** ±2.9 | 39.6% ±3.1 | 44.1% ±3.1 |
+| GA | 52.5% ±3.2 | 20.7% ±2.6 | 28.9% ±2.9 | **49.3%** ±3.2 |
+| CMA-ES | 50.2% ±3.2 | 36.1% ±3.0 | 19.0% ±2.5 | 41.2% ±3.1 |
 
-**PPO wins both roles under both rules, clear of the field, and its own numbers move by
-less than a point between runs.** Second place is a coin flip: GA and CMA-ES overlap
-inside their intervals in both runs and swap order between them, which is exactly what
-"too close to call" is for.
+**With one hole, PPO won both roles under both promotion rules, and its own numbers moved
+less than a point between them.** Adding the second hole changed the answer:
 
-Three things in that table are worth pointing at on camera:
+- Every cat got worse and every mouse got better, which is the point of the change — with
+  one exit, standing on it was most of the job.
+- **GA now raises the best Jerry**, ahead of PPO on cross-play (49.3% vs 44.1%) *and* on
+  the fixed anchor (41.6% vs 38.4%). The intervals still overlap, so the board says
+  TOO CLOSE TO CALL rather than crowning it — but the same school leads on two
+  independent measures.
+- GA's cat collapsed to 20.7% and never got past year two. Breeding whole brains is a
+  workable way to learn "run for whichever door he is not covering" and a poor way to
+  learn "cover two doors at once".
 
-- **The diagonal is the lie.** PPO's cat catches 85–89% of the other schools' mice and
-  only 60–64% of its own — because its own mouse is the hardest opponent in the field.
+So the headline is no longer a clean sweep: **PPO raises the best hunter, GA raises the
+best escape artist.** That split fell out of a rules change, not out of tuning.
+
+Three things worth pointing at on camera:
+
+- **The diagonal is the lie.** PPO's cat catches 70–79% of the other schools' mice and
+  only 56% of its own — because its own mouse is the hardest opponent in the field.
   A school that raised a weak sparring partner looks dominant at home.
-- **GA's cat catches 83% of CMA-ES's mouse and 25% of PPO's.** The same policy, a 58-point
-  spread. Any single matchup would have been a meaningless ranking.
-- **Beating the benchmark is not being good.** PPO's mouse scores 79% against the scripted
-  Examiner and 40% in cross-play. The learned cats are far better than the hand-written one.
-
-The calibrated bar did what it was designed to do — in v2 neither population school's cat
-ever left year one; in v3 GA's reached year three at 86M steps and CMA-ES's year two at
-103M — without changing who wins. That the ranking survived a change to the training
-curriculum is worth more than either run on its own.
+- **CMA-ES's cat catches 52% of its own mouse and 23% of PPO's.** The same policy, a
+  29-point spread. Any single matchup would have been a meaningless ranking.
+- **Beating the benchmark is not being good.** Compare any school's `vs EXAMINER` column
+  against its cross-play score; the scripted opponent is far weaker than the learned ones.
 
 ## What the explainers draw
 
@@ -205,7 +212,7 @@ regardless: it is measured from the real sample cloud.
 ## Finding the good bits
 
 ```bash
-.venv/bin/python trainer/scripts/highlights.py --run runs/v3 --episodes 400
+.venv/bin/python trainer/scripts/highlights.py --run runs/v4 --episodes 400
 ```
 
 Plays the champions across hundreds of episodes and scores each for drama: a **nail-biter**

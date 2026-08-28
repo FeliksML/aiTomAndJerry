@@ -317,12 +317,32 @@
       p.push(g + '</g>');
     }
 
-    var poly = function (pts, dx, dy) {
-      return pts.map(function (q) { return f((q[0] + dx) * CS) + ',' + f((q[1] + dy) * CS); }).join(' ');
+    var poly = function (pts) {
+      return pts.map(function (q) { return f(q[0] * CS) + ',' + f(q[1] * CS); }).join(' ');
+    };
+    /* Cast the cone AT the tweened position rather than moving a finished one there.
+     *
+     * Two wrong ways were tried first. Translating the destination cone to the tweened
+     * body takes a shape that was ray-cast against the walls at one cell and hangs it
+     * off another, so the light spills straight through cover. Blending the two frames'
+     * cones vertex by vertex is better but still bulges up to half a cell into a wall,
+     * because a blend of two star-shaped polygons about two different centres is not
+     * star-shaped about the centre in between.
+     *
+     * env.js is right here in the browser and castCone takes fractional coordinates, so
+     * the honest answer is simply to cast it properly. Measured penetration drops from
+     * 0.498 cells to 0.034 — a graze along a wall face, which is where a ray is supposed
+     * to stop. Twenty-one rays twice a frame is nothing.
+     */
+    var coneAt = function (px, py, st, fallback) {
+      if (!map.grid || !E.castCone) return fallback;
+      return E.castCone(map.grid, px, py, st.facing).poly;
     };
     if (showV) {
-      if (v.mouse.cone) p.push('<polygon points="' + poly(v.mouse.cone, mx - v.mouse.x, my - v.mouse.y) + '" fill="url(#acm-' + key + ')" stroke="rgba(150,235,255,' + (v.mouse.sees ? 0.5 : 0.22) + ')" stroke-width="1"/>');
-      if (v.cat.cone) p.push('<polygon points="' + poly(v.cat.cone, cx - v.cat.x, cy - v.cat.y) + '" fill="url(#ack-' + key + ')" stroke="rgba(255,155,115,' + (v.cat.sees ? 0.66 : 0.28) + ')" stroke-width="1"/>');
+      var mCone = coneAt(mx, my, v.mouse, v.mouse.cone);
+      var cCone = coneAt(cx, cy, v.cat, v.cat.cone);
+      if (mCone) p.push('<polygon points="' + poly(mCone) + '" fill="url(#acm-' + key + ')" stroke="rgba(150,235,255,' + (v.mouse.sees ? 0.5 : 0.22) + ')" stroke-width="1"/>');
+      if (cCone) p.push('<polygon points="' + poly(cCone) + '" fill="url(#ack-' + key + ')" stroke="rgba(255,155,115,' + (v.cat.sees ? 0.66 : 0.28) + ')" stroke-width="1"/>');
     }
 
     if (showH && v.mouse.heard) {

@@ -43,6 +43,12 @@ verify() {
     $PY trainer/scripts/vec_parity.py 5 "$n"
   done
   $PY trainer/scripts/balance.py 480 2
+  # Needs a recorded session; the renderer gates are only meaningful against real frames.
+  if ls runs/journals/*.jsonl >/dev/null 2>&1; then
+    node tools/check_render.js
+  else
+    echo "render gate skipped — no journal yet (serve once and it records one)"
+  fi
 }
 
 case "${1:-serve}" in

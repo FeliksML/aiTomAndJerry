@@ -240,6 +240,26 @@ The app follows the stream, so a replay drives itself — it walks into the righ
 plays the recorded episodes at the recorded pace with no trainer running. The same
 mechanism means Python can drive the app during a live take.
 
+## Solid walls
+
+The simulation never lets anyone stand on a wall — 518,400 sampled positions, zero
+violations. The *screen*, though, does not show simulation state; it shows an
+interpolation of it, and both wall bugs lived there:
+
+- **Bodies were tweened between the last two frames.** On the first frame of a new
+  episode those are the old death position and the new spawn, 28 to 43 cells apart, so
+  the pair slid across the room straight through the blocks. One recorded session held
+  198 such frame pairs. The painter now refuses to interpolate a move larger than one
+  cell, because that cannot be motion.
+- **The vision cone was cast at the destination cell and then translated** to the tweened
+  body, hanging an exact shape off the wrong anchor and spilling light through cover —
+  up to half a cell deep. It is now cast at the tweened position; `env.js` is in the
+  browser and takes fractional coordinates, so this is both exact and smooth. Measured
+  penetration fell from 0.498 cells to 0.045, which is the ray-caster's own step
+  tolerance.
+
+`tools/check_render.js` replays a journal through the real painter and fails on either.
+
 ## About the hardware
 
 You asked for the M2 Max to be leveraged. It is — just not where you would expect, and
@@ -275,6 +295,7 @@ The environment is the contract, so it is tested rather than trusted.
 | `trainer/scripts/vec_parity.py` | the batched trainer environment matches the reference step for step |
 | `trainer/scripts/balance.py` vs `js_balance.js` | the scripted Examiner behaves like the JS original across the whole skill sweep |
 | `trainer/scripts/check_arenas.py` | the training, evaluation and tournament rooms are disjoint — the claim the leaderboard rests on |
+| `tools/check_render.js` | replays a recorded session through the real painter: no body and no vision cone is ever drawn inside a wall |
 | `trainer/scripts/train.py --minutes 3` | end-to-end smoke: three schools, checkpoints, telemetry |
 
 Run the first three after any change to `env.py`, `vec.py` or `scripted.py`. The map

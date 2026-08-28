@@ -1,7 +1,7 @@
 {
   "image": "jerry-trapped.png",
-  "frameWidth": 352,
-  "frameHeight": 352,
+  "frameWidth": 448,
+  "frameHeight": 448,
   "columns": 4,
   "rows": 8,
   "framesPerDirection": 4,
@@ -30,8 +30,8 @@
     "x": 0.5,
     "y": 0.7
   },
-  "charHeight": 0.4973,
-  "renderScale": 1.1655,
+  "charHeight": 0.4652,
+  "renderScale": 0.986,
   "idleFrame": {
     "down": 0,
     "downLeft": 0,

@@ -30,6 +30,8 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
 
+C8 = np.ones((3, 3), bool)
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from catlib import sheet as SH                       # noqa: E402
 from catlib.frames import geometry, place, band_profile, best_shift  # noqa: E402
@@ -117,6 +119,25 @@ def split_strip(alpha: np.ndarray, want: int = 4, override=None) -> list[tuple[i
     return out
 
 
+def _only_this_pose(alpha: np.ndarray, keep: float = 0.15) -> np.ndarray:
+    """Drop anything in the cut-out that belongs to the neighbouring pose.
+
+    The cut falls in the gap between two drawings, but the gap is not always empty — a
+    thrown-out arm or a whipping tail from the pose next door can reach across it, and
+    it then arrives as a fragment floating beside the character. The figure itself is one
+    connected piece, trap included, because the jaw is closed on its foot; a fragment big
+    enough to be a real limb rather than a leak has to be a sixth of the body.
+    """
+    m = alpha > 0.5
+    lab, n = ndi.label(m, structure=C8)
+    if n <= 1:
+        return alpha
+    sizes = ndi.sum(m, lab, np.arange(1, n + 1))
+    biggest = sizes.max()
+    wanted = np.isin(lab, [i for i in range(1, n + 1) if sizes[i - 1] >= keep * biggest])
+    return np.where(wanted, alpha, 0.0)
+
+
 def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation: str,
           config_name: str) -> dict:
     size = int(cfg['frameSize'])
@@ -135,6 +156,7 @@ def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation:
             sub_a, sub_rgb = alpha[:, a:b], rgb[:, a:b]
             if (sub_a > 0.5).sum() < 500:
                 raise SystemExit('empty frame in %s' % path)
+            sub_a = _only_this_pose(sub_a)
             frames.append((sub_rgb, sub_a, geometry(sub_a)))
         cut[d] = frames
         log('%-10s %s  ->  4 frames at x %s' % (d, path.name, [s[0] for s in spans]))

@@ -1,7 +1,7 @@
 {
   "image": "tom-trapped.png",
-  "frameWidth": 448,
-  "frameHeight": 448,
+  "frameWidth": 512,
+  "frameHeight": 512,
   "columns": 4,
   "rows": 8,
   "framesPerDirection": 4,
@@ -30,8 +30,8 @@
     "x": 0.5,
     "y": 0.7
   },
-  "charHeight": 0.5642,
-  "renderScale": 0.8071,
+  "charHeight": 0.4767,
+  "renderScale": 0.84,
   "idleFrame": {
     "down": 0,
     "downLeft": 0,

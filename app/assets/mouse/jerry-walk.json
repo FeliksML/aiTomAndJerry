@@ -1,0 +1,67 @@
+{
+  "image": "jerry-walk.png",
+  "frameWidth": 256,
+  "frameHeight": 256,
+  "columns": 4,
+  "rows": 8,
+  "framesPerDirection": 4,
+  "directions": {
+    "down": 0,
+    "downLeft": 1,
+    "left": 2,
+    "upLeft": 3,
+    "up": 4,
+    "upRight": 5,
+    "right": 6,
+    "downRight": 7
+  },
+  "directionOrder": [
+    "down",
+    "down-left",
+    "left",
+    "up-left",
+    "up",
+    "up-right",
+    "right",
+    "down-right"
+  ],
+  "defaultFPS": 8,
+  "anchor": {
+    "x": 0.5,
+    "y": 0.9
+  },
+  "charHeight": 0.8008,
+  "idleFrame": {
+    "down": 1,
+    "downLeft": 1,
+    "left": 1,
+    "upLeft": 1,
+    "up": 1,
+    "upRight": 1,
+    "right": 1,
+    "downRight": 1
+  },
+  "mirrored": {
+    "right": "left",
+    "downRight": "downLeft",
+    "upRight": "upLeft"
+  },
+  "phases": [
+    "contactA",
+    "passingA",
+    "contactB",
+    "passingB"
+  ],
+  "oneShotFrames": 0,
+  "framesDir": "walk",
+  "source": {
+    "strips": {
+      "down": "down.png",
+      "up": "up.png",
+      "left": "left.png",
+      "down-left": "down-left.png",
+      "up-left": "up-left.png"
+    },
+    "config": "mouse-walk.config.json"
+  }
+}

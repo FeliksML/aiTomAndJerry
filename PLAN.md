@@ -61,16 +61,16 @@ simply mean the GA cat is bad. So:
       skill 0.60, as the fixed yardstick. Gate: `scripts/balance.py` vs
       `scripts/js_balance.js` — the outcome mix tracks the JS original across the whole
       skill sweep.
-- [ ] **3b · Policy network.** One architecture, shared by all three algorithms.
-- [ ] **4 · Three algorithms.** PPO (clipped, GAE), GA (population 48, elitism,
+- [x] **3b · Policy network.** One architecture, shared by all three algorithms.
+- [x] **4 · Three algorithms.** PPO (clipped, GAE), GA (population 48, elitism,
       mutation), sep-CMA-ES (λ=16, σ-adaptation). Each emits training telemetry shaped
       for its own on-screen visualisation.
-- [ ] **5 · Tournament.** Cross-play grid + anchor, confidence intervals, champion picks.
-- [ ] **6 · WebSocket server.** `PLAY` / `TRAIN` modes over the frame protocol in
+- [x] **5 · Tournament.** Cross-play grid + anchor, confidence intervals, champion picks.
+- [x] **6 · WebSocket server.** `PLAY` / `TRAIN` modes over the frame protocol in
       `env-spec.json`, plus an algorithm-internals channel. Journals every frame.
-- [ ] **7 · App.** Fork the Academy flow to `app/`, wire the socket, add the three
+- [x] **7 · App.** Fork the Academy flow to `app/`, wire the socket, add the three
       explainer visualisations and the reveal layer.
-- [ ] **8 · Shoot support.** Highlight detection (near-misses, trap snaps), slow-motion
+- [x] **8 · Shoot support.** Highlight detection (near-misses, trap snaps), slow-motion
       replay, deterministic re-shoot from a journal.
 
 ## Algorithm visualisations — what each one shows
@@ -95,10 +95,29 @@ The ellipse is drawn from the real sample cloud's empirical covariance, which is
 picture of the search distribution — but the caption should say "diagonal" rather than
 imply a full matrix.
 
+## Where the plan changed
+
+Three parts of the original design did not survive contact with the data. Each is
+documented with its measurement in `README.md`:
+
+1. **Pure self-play was replaced by a league.** Coevolution from a random start produced
+   a cat winning 74% at home and 8% away. Training now faces a curriculum of scripted
+   opponents (three quarters) plus self-play against a hall of fame (one quarter).
+2. **The fixed curriculum was replaced by earned promotion.** A clock-driven ladder
+   punishes whichever algorithm is slower; a school now moves up a year on a sustained
+   40% win rate against its current year, measured only against the ladder.
+3. **The shaping coefficients were strengthened.** The spec's numbers make hiding until
+   the step limit strictly better than running home, and the mouse learned exactly that.
+   Potential-based shaping fixes it without changing which strategy is optimal. Scoring
+   is unchanged.
+
+Two additions the brief implied but the original plan did not list: a **side-by-side**
+screen (all three schools, one room, nothing else different) and **highlight detection**
+for the fun moments.
+
 ## Open items
 
-- None blocking. Assets resolved: `tools/build_assets.py` rebuilds all eight from the
-  five source renders in `assets-src/`.
+- None blocking.
 
 
 ## Measured, not assumed

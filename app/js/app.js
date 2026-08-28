@@ -1372,8 +1372,14 @@
                                    m.cat || m, { year: (m.cat || {}).year }));
           }
         } else if (m.kind === 'eval') {
-          App.trainInfo = 'live · cat ' + pct(m.catExam) + ' · mouse ' + pct(m.mouseExam)
-            + ' vs the Examiner · ' + (m.steps / 1e6).toFixed(1) + 'M steps';
+          // Only while the training screen is the one being watched. `t` starts a run
+          // that keeps going for minutes; leaving it for a plain playback screen used to
+          // leave its telemetry writing "live · cat 23% · mouse 35%" under an arena that
+          // is replaying a saved checkpoint and learning nothing.
+          if (App.mode === 'train') {
+            App.trainInfo = 'live · cat ' + pct(m.catExam) + ' · mouse ' + pct(m.mouseExam)
+              + ' vs the Examiner · ' + (m.steps / 1e6).toFixed(1) + 'M steps';
+          }
         } else if (m.kind === 'promotion') {
           App.banner = { t: m.role.toUpperCase() + ' PROMOTED TO YEAR ' + m.year, c: '#ffd166' };
           App.bannerAt = performance.now();

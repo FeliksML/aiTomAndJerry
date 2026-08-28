@@ -2,9 +2,9 @@
 
 Fairness starts with nobody getting a bigger head. Every policy — PPO's, the GA's,
 CMA-ES's — is the *same* architecture with the *same* parameter count, reading the
-*same* 40-number observation:
+*same* 50-number observation:
 
-    40 -> 32 -> tanh -> 32 -> tanh -> 5 logits          2,533 parameters
+    50 -> 32 -> tanh -> 32 -> tanh -> 5 logits          2,853 parameters
 
 and every policy serialises to one flat float32 vector of that length. That single
 format is what lets a PPO cat and a CMA-ES mouse meet in the tournament without any
@@ -211,6 +211,12 @@ class FlatActor:
 
     def set_params(self, flat: np.ndarray) -> None:
         f = np.atleast_2d(np.asarray(flat, np.float32))
+        if f.shape[1] != FLAT_DIM:
+            # Almost always a checkpoint from before the observation changed shape.
+            raise ValueError(
+                f"policy has {f.shape[1]} weights, this build expects {FLAT_DIM}. "
+                f"That run was trained against a different observation "
+                f"(OBS_DIM is now {OBS_DIM}) — retrain, or check out the commit it came from.")
         self.P = f.shape[0]
         self.flat = torch.as_tensor(f, device=self.device)
 

@@ -44,6 +44,7 @@ def main() -> None:
     ap.add_argument("--top", type=int, default=12)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--arenas", default="train", choices=("train", "final"))
+    ap.add_argument("--nests", default=None)
     a = ap.parse_args()
 
     from catmouse import arena as A
@@ -66,7 +67,7 @@ def main() -> None:
     print(f"champions: {LABELS.get(ck, ck)} cat vs {LABELS.get(mk, mk)} mouse", flush=True)
 
     seeds = A.TRAIN_SEEDS if a.arenas == "train" else A.FINAL_SEEDS
-    maps = vec.MapSet(seeds)
+    maps = vec.MapSet(seeds, A.spread(A.parse_nests(a.nests), len(seeds)))
     n = a.episodes
     e = vec.VecEnv(maps, n, seed=20260827)
     map_idx = np.arange(n) % len(maps)

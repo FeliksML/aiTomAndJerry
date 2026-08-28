@@ -25,10 +25,10 @@ from catmouse import env as S  # noqa: E402
 from catmouse import vec as V  # noqa: E402
 
 
-def main(n_maps: int = 8, eps_per_map: int = 4) -> int:
+def main(n_maps: int = 8, eps_per_map: int = 4, nests: int = 2) -> int:
     seeds = [4200 + i for i in range(n_maps)]
-    print(f"compiling {n_maps} arenas …")
-    ms = V.MapSet(seeds)
+    print(f"compiling {n_maps} arenas with {nests} hole(s) …")
+    ms = V.MapSet(seeds, nests)
 
     rng = np.random.default_rng(7)
     n = n_maps * eps_per_map
@@ -37,7 +37,7 @@ def main(n_maps: int = 8, eps_per_map: int = 4) -> int:
 
     scal = []
     for i in range(n):
-        m = S.gen_map(seeds[i // eps_per_map])
+        m = S.gen_map(seeds[i // eps_per_map], nests)
         scal.append(S.reset(m, 999 + i))
 
     # One shared action stream so both sides walk the same trajectory.
@@ -61,15 +61,15 @@ def main(n_maps: int = 8, eps_per_map: int = 4) -> int:
                 sm = S.observe(s, "mouse")
                 worst_obs = max(
                     worst_obs,
-                    np.abs(np.asarray(sc["rays"]) - oc[i, 7:28]).max(),
-                    np.abs(np.asarray(sm["rays"]) - om[i, 7:28]).max(),
-                    abs(sc["nestDist"] - oc[i, 30]), abs(sm["nestDist"] - om[i, 30]),
-                    abs(sc["targetDist"] - oc[i, 34]), abs(sm["targetDist"] - om[i, 34]),
+                    np.abs(np.asarray(sc["rays"]) - oc[i, V.IX_RAYS:V.IX_RAYS + 21]).max(),
+                    np.abs(np.asarray(sm["rays"]) - om[i, V.IX_RAYS:V.IX_RAYS + 21]).max(),
+                    abs(sc["nestDist"] - oc[i, 28]), abs(sm["nestDist"] - om[i, 28]),
+                    abs(sc["targetDist"] - oc[i, 33]), abs(sm["targetDist"] - om[i, 33]),
                 )
-                if sc["targetVisible"] != oc[i, 31] or sm["targetVisible"] != om[i, 31]:
+                if sc["targetVisible"] != oc[i, 30] or sm["targetVisible"] != om[i, 30]:
                     fails.append(f"env {i} t{t}: visibility differs")
                 want = sc["scent"]
-                got = oc[i, 36:40]
+                got = oc[i, V.IX_CUE:V.IX_CUE + 4]
                 if (want is None) != (got[3] == 0):
                     fails.append(f"env {i} t{t}: cat scent presence differs")
                 elif want is not None:
@@ -114,4 +114,5 @@ def main(n_maps: int = 8, eps_per_map: int = 4) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8))
+    raise SystemExit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8,
+                          nests=int(sys.argv[2]) if len(sys.argv) > 2 else 2))

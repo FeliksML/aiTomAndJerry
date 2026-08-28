@@ -6,7 +6,7 @@ every screen is reading live from the trainer, so you can stop and poke at any o
 Before you start:
 
 ```bash
-./run.sh serve v3
+./run.sh serve
 ```
 
 Then open <http://localhost:8778>, press `?` once to check the key card, and confirm the
@@ -22,11 +22,14 @@ reveal chip in the top right says **REVEAL 1 / 3**. If it says anything else, pr
 Twelve arenas are born one at a time, on camera. Talk over the four rules on the right
 while they appear — they are the reason the game is not trivially won by either side:
 
-- the hole always has **two independent approaches**, so camping it can never be
-  unbeatable;
+- there are **two holes**, at least 10 cells apart so the cat cannot cover both — with
+  one hole his best move is just to stand on it, and 27% of episodes then die on the
+  clock;
+- each hole has **two independent approaches**, so even one of them cannot be sealed;
 - three of six traps sit **on her shortest route home**, because a hazard off the walked
   path is never learned and never seen;
-- she spawns 21–32 cells from home, he spawns at least 10 from her — both get a chance;
+- she spawns in the farthest slice of the room from either hole, he spawns at least 10
+  cells from her — both get a real chance;
 - **all three schools train on these same twelve rooms.** Nobody memorises one room.
 
 ## 2 · School one: PPO
@@ -68,7 +71,7 @@ better. It plays all forty-eight, keeps the winners, and breeds.*
 `3` → `l`. The sample cloud and its ellipse. Say what the ellipse is: the real spread of
 this generation's thirty-two brains, projected onto its own two principal directions.
 Watch it stretch along whatever keeps working. Worth being straight about: this is
-*separable* CMA-ES — a full covariance over 2,533 weights is 6.4M numbers, and giving
+*separable* CMA-ES — a full covariance over 2,853 weights is 8.1M numbers, and giving
 CMA-ES a smaller network than the others would have broken the comparison.
 
 ## 5 · Training, live

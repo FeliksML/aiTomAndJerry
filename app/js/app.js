@@ -89,12 +89,21 @@
   /* Centre by translating half the canvas back before scaling, rather than relying on
      flex/grid centring — a 1920-wide child inside a narrower box gets clipped at the
      start edge, which silently cuts the left of every frame. */
-  function fitStage() {
+  var _fitW = 0, _fitH = 0;
+  function fitStage(force) {
     var r = el('root');
-    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    if (!r) return;
+    var w = window.innerWidth, h = window.innerHeight;
+    if (!force && w === _fitW && h === _fitH) return;
+    _fitW = w; _fitH = h;
+    var s = Math.min(w / 1920, h / 1080);
     r.style.transform = 'translate(' + (-960 * s) + 'px,' + (-540 * s) + 'px) scale(' + s + ')';
   }
-  window.addEventListener('resize', fitStage);
+  // Checked every frame rather than only on `resize`. A window that changes size while
+  // the page is hidden, or a tab restored at a different size, never fires the event —
+  // and the result is a frame recorded at the wrong scale, which is not recoverable in
+  // the edit. The check is two integer comparisons.
+  window.addEventListener('resize', function () { fitStage(); });
 
   function backdrop(name, opacity) {
     return '<div class="backdrop" style="background-image:url(assets/' + name + '.png);opacity:' + (opacity || 0.5) + '"></div>'
@@ -201,6 +210,7 @@
       ['ONE ROOM, MANY SHAPES', 'Seven cover blocks and ten pillars, reseeded until 94% of the floor is one connected region.'],
       ['TWO WAYS HOME', 'The hole always has two independent approaches, so camping it can never be unbeatable.'],
       ['TRAPS ON THE WALKED PATH', 'Three of six traps sit on her shortest route and two flank it — a hazard off the path is never learned.'],
+      ['MORE THAN ONE WAY OUT', 'With a single hole the cat just stands on it. Every extra hole is kept far enough away that he cannot cover two, so she gets a choice and he has to guess.'],
       ['A REAL CHANCE FOR BOTH', 'She spawns 21–32 cells from home; he spawns at least 10 from her and within 17 of the hole.'],
       ['SHARED BY EVERY SCHOOL', 'The same seeds train all three. Nobody gets to memorise one room.']
     ].map(function (r) {
@@ -780,7 +790,7 @@
                  board: renderBoard }[App.screen]();
     el('root').innerHTML = html + keyCard();
     App.mapKey = null;                 // force a repaint into the new DOM
-    fitStage();
+    fitStage(true);
   }
 
   function paintArena(now) {
@@ -810,7 +820,9 @@
      bit-for-bit against this same env.js — so the two always agree. */
   function localMap(payload) {
     if (payload._local) return payload._local;
-    var m = E.genMap(payload.seed >>> 0);
+    // The hole count is part of the room's identity: the same seed with one hole and
+    // with two is two different rooms. The trainer sends it with the map.
+    var m = E.genMap(payload.seed >>> 0, (payload.nests || []).length || 1);
     payload._local = m;
     return m;
   }
@@ -831,6 +843,7 @@
   function loop(now) {
     requestAnimationFrame(loop);
     var dt = now - (last || now); last = now;
+    fitStage();
     if (App.screen === 'gen') genTick(now);
     // Interpolate between the last two frames so movement is smooth at any speed.
     App.alpha = Math.min(1, App.alpha + dt / 1000 * 9 * App.speed);
@@ -845,7 +858,9 @@
     App.lastGen = now;
     var seeds = App.cat ? App.cat.levels.map(function (l) { return l.seed; }) : null;
     var seed = seeds ? seeds[App.levels.length] : (20260826 + App.levels.length * 911);
-    var m = E.genMap(seed >>> 0);
+    var nn = (App.cat && App.cat.levels && App.cat.levels[App.levels.length]
+              && App.cat.levels[App.levels.length].nests) || 1;
+    var m = E.genMap(seed >>> 0, nn);
     var on = {};
     (m.route || []).forEach(function (p) { on[p[0] + ',' + p[1]] = 1; });
     App.levels.push({
@@ -978,8 +993,9 @@
         App.cat = m;
         if (!App.levels.length && m.levels) {
           App.levels = m.levels.map(function (l) {
-            var mm = E.genMap(l.seed >>> 0);
-            return { seed: l.seed, map: mm, route: l.optimal, onRoute: l.trapsOnRoute };
+            var mm = E.genMap(l.seed >>> 0, l.nests || 1);
+            return { seed: l.seed, map: mm, route: l.optimal, onRoute: l.trapsOnRoute,
+                     nests: l.nests || 1 };
           });
         }
         render();

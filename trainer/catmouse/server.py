@@ -78,8 +78,13 @@ class Session:
         self.run_dir = run_dir
         self.device = device
         self.journal = journal
-        self.maps = MapSet(arena.TRAIN_SEEDS)              # the shared level set
-        self.final_maps = MapSet(arena.FINAL_SEEDS)
+        # How many holes this run was trained with. A room with one hole plays a
+        # completely different game from a room with two, so the server takes it from
+        # the run rather than assuming.
+        cfg = self._load_json("config.json") or {}
+        self.nests = arena.parse_nests(cfg.get("nests", arena.DEFAULT_NESTS))
+        self.maps = MapSet(arena.TRAIN_SEEDS, arena.spread(self.nests, len(arena.TRAIN_SEEDS)))
+        self.final_maps = MapSet(arena.FINAL_SEEDS, arena.spread(self.nests, len(arena.FINAL_SEEDS)))
         self.policies = {ck: load_run(run_dir, ck) for ck in CHECKPOINTS}
         self.tournament = self._load_json("tournament.json")
         self.progression = self._load_json("progression.json")
@@ -119,9 +124,11 @@ class Session:
             "labels": LABELS,
             "checkpoints": list(CHECKPOINTS),
             "available": have,
-            "levels": [{"seed": int(t.seed), "optimal": int(t.optimal),
+            "levels": [{"seed": int(t.seed), "optimal": int(t.optimal), "nests": int(t.n_nests),
                         "trapsOnRoute": int(t.n_traps_on_route)} for t in self.maps.tables],
             "finalSeeds": list(arena.FINAL_SEEDS),
+            "finalNests": [int(t.n_nests) for t in self.final_maps.tables],
+            "nests": self.nests,
             "examinerSkill": EXAMINER_SKILL,
             "tournament": self.tournament,
             "progression": self.progression,
@@ -382,7 +389,8 @@ class Session:
             with contextlib.suppress(Exception):
                 asyncio.run_coroutine_threadsafe(self._train_events.put(msg), loop)
 
-        s = cls(self.maps, MapSet(arena.EVAL_SEEDS[:8]), self.device,
+        s = cls(self.maps, MapSet(arena.EVAL_SEEDS[:8],
+                                  arena.spread(self.nests, 8)), self.device,
                 Budget(seconds=minutes * 60), seed=seed, on_event=on_event)
         s.setup()
         self.train_school = s

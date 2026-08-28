@@ -39,7 +39,8 @@ def build(school: str, maps, emaps, device, budget, seed, on_event, out):
     return cls(maps, emaps, device, budget, seed=seed, on_event=on_event, out_dir=out)
 
 
-def run_one(school: str, minutes: float, seed: int, out: Path, threads: int, device: str) -> None:
+def run_one(school: str, minutes: float, seed: int, out: Path, threads: int, device: str,
+            nests=None) -> None:
     import torch
     torch.set_num_threads(threads)
     os.environ.setdefault("OMP_NUM_THREADS", str(threads))
@@ -47,9 +48,10 @@ def run_one(school: str, minutes: float, seed: int, out: Path, threads: int, dev
     from catmouse import arena, nets, vec
     from catmouse.school import Budget
 
+    nests = arena.parse_nests(nests)
     dev = nets.pick_device(device)
-    maps = vec.MapSet(arena.TRAIN_SEEDS)
-    emaps = vec.MapSet(arena.EVAL_SEEDS)
+    maps = vec.MapSet(arena.TRAIN_SEEDS, arena.spread(nests, len(arena.TRAIN_SEEDS)))
+    emaps = vec.MapSet(arena.EVAL_SEEDS, arena.spread(nests, len(arena.EVAL_SEEDS)))
     out.mkdir(parents=True, exist_ok=True)
     (out / school).mkdir(parents=True, exist_ok=True)
     log = (out / school / "events.jsonl").open("w")
@@ -81,29 +83,31 @@ def main() -> None:
     ap.add_argument("--tag", default="latest")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--threads", type=int, default=3)
+    ap.add_argument("--nests", default=str(2),
+                    help="holes per room: '2', or a mix like '1,2,3' across the level set")
     ap.add_argument("--_child", default=None, help=argparse.SUPPRESS)
     a = ap.parse_args()
 
     out = ROOT / "runs" / a.tag
     if a._child:
-        run_one(a._child, a.minutes, a.seed, out, a.threads, a.device)
+        run_one(a._child, a.minutes, a.seed, out, a.threads, a.device, a.nests)
         return
     if a.school != "all":
-        run_one(a.school, a.minutes, a.seed, out, a.threads, a.device)
+        run_one(a.school, a.minutes, a.seed, out, a.threads, a.device, a.nests)
         return
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps({
-        "minutes": a.minutes, "seed": a.seed, "schools": list(SCHOOLS),
+        "minutes": a.minutes, "seed": a.seed, "schools": list(SCHOOLS), "nests": a.nests,
         "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }, indent=2))
-    print(f"training {', '.join(SCHOOLS)} in parallel for {a.minutes:.0f} min each "
-          f"-> runs/{a.tag}", flush=True)
+    print(f"training {', '.join(SCHOOLS)} in parallel for {a.minutes:.0f} min each, "
+          f"{a.nests} hole(s) per room -> runs/{a.tag}", flush=True)
     procs = [
         subprocess.Popen(
             [sys.executable, __file__, "--_child", s, "--minutes", str(a.minutes),
              "--seed", str(a.seed), "--tag", a.tag, "--device", a.device,
-             "--threads", str(a.threads)])
+             "--threads", str(a.threads), "--nests", str(a.nests)])
         for s in SCHOOLS
     ]
     codes = [p.wait() for p in procs]

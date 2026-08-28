@@ -28,7 +28,7 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch nu
 
 # serve the app
 .venv/bin/python trainer/scripts/serve.py --run runs/v3 &
-python3 -m http.server 8778 --directory app
+python3 tools/serve_app.py
 ```
 
 Then open <http://localhost:8778>. **[SHOOT.md](SHOOT.md) is the run of show** — a
@@ -48,6 +48,35 @@ deliberately sealed rather than broken, and nothing needs blurring in the edit.
 The level survives a reload (it is in `localStorage`), so a crash mid-shoot does not
 unseal the rest of the video. Every screen reads a school's identity through
 `Reveal.view()`, so a new screen cannot leak one by forgetting to check.
+
+## How many holes
+
+```bash
+./run.sh train 45 v4 --nests 2      # the default
+```
+
+**One hole is not a fair game.** The cat's best strategy is simply to stand on it: the
+mouse has no decision to make and the chase collapses into a stakeout. Measured on the
+scripted controller at low skill, 27% of one-hole episodes died on the step limit.
+
+Two holes, kept at least 10 cells apart so one cat cannot cover both, fix it without
+changing the balance at the top:
+
+| holes | avg trek | Tom @0.65 | Jerry @0.65 | stakeouts @0.35 | avg steps |
+|---|---:|---:|---:|---:|---:|
+| 1 | 28.5 | 33.8% | 64.6% | **27.3%** | 74 |
+| **2** | 18.4 | 31.2% | 64.6% | **7.9%** | 54 |
+| 3 | 13.6 | 20.2% | 75.8% | 4.6% | 44 |
+
+Two is the default: the same high-skill balance as one hole, a third of the stakeouts,
+and shorter, punchier episodes. Three tips it decisively to the mouse.
+
+`--nests 1,2,3` mixes counts across the twelve rooms, so a policy learns to handle any of
+them. The observation always carries `MAX_NESTS` hole slots — bearing, distance and a
+valid flag each, nearest first — so one trained network can play a one-hole room or a
+three-hole room without being reshaped. Changing the count changes `OBS_DIM`, so
+checkpoints from a different `MAX_NESTS` build are refused with an explanation rather
+than a reshape error.
 
 ## Side by side
 
@@ -72,7 +101,7 @@ policies on one absolute axis.
 
 Controls that make the comparison mean something:
 
-- **Same brain.** One architecture, 2,533 parameters, one observation vector, for all
+- **Same brain.** One architecture, 2,853 parameters, one observation vector, for all
   three. PPO additionally trains a critic; it never plays and is discarded at evaluation.
 - **Same rooms.** One seeded 12-arena training set shared by all three; separate held-out
   arenas for scoring.
@@ -168,8 +197,8 @@ During **playback** the same panel shows something better than a mock optimiser:
 policy's actual action probabilities this step, for both animals. Not a "mode" label —
 the tensor.
 
-Note: the optimiser is **separable (diagonal) CMA-ES**. A full covariance over 2,533
-weights is 6.4M numbers with an eigendecomposition per update, and giving CMA-ES a smaller
+Note: the optimiser is **separable (diagonal) CMA-ES**. A full covariance over 2,853
+weights is 8.1M numbers with an eigendecomposition per update, and giving CMA-ES a smaller
 network than the other two would break the comparison. The ellipse on screen is honest
 regardless: it is measured from the real sample cloud.
 

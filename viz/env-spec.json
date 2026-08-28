@@ -13,9 +13,10 @@
       "coverBlocks": { "count": 7, "size": "2-5 x 2-4", "minGapBetweenBlocks": 2 },
       "pillars": { "count": 10, "note": "single cells, never adjacent to more than one wall — keeps corridors open" },
       "connectivity": ">=94% of free cells in one region, else reseed",
-      "nest": "free cell within 4 cells of a short edge with TWO INDEPENDENT APPROACHES — walling any single neighbour must leave it reachable. With capture radius 1 a one-corridor pocket can be sealed by a camping cat and every episode dies on the step limit.",
-      "mouseSpawn": "BFS distance to nest in [21, 32] — long enough that the cat gets a real chance to intercept",
-      "catSpawn": "BFS distance to mouse >= 10 and to nest in [5, 17] (camping the exit must be viable)",
+      "nests": "CONFIGURABLE, default 2, max 3. Each is a free cell within 4 cells of a short edge with TWO INDEPENDENT APPROACHES — walling any single neighbour must leave it reachable. Holes are kept >= 10 apart (BFS) so one cat cannot cover two. One hole makes camping it a dominant strategy: measured, 27% of low-skill episodes then die on the step limit, against 8% with two.",
+      "nestField": "multi-source BFS — distance to the NEAREST hole",
+      "mouseSpawn": "BFS distance to the nearest hole >= 72% of this map's maximum. A fixed range cannot work across hole counts: two holes on opposite walls halve the longest possible trek.",
+      "catSpawn": "BFS distance to mouse >= 10, and to the nearest hole in [4, 85% of max] (camping an exit must be viable)",
       "traps": { "count": 6, "placement": "3 sit ON the mouse's BFS shortest route to the nest (spaced, skipping the first 3 cells so nobody spawns trapped), 2 flank that route so detouring is not automatically safe, the rest scattered; nest mouth kept clear; a map that cannot place 4 is reseeded", "why": "a trap parked off the walked route is never learned and never seen" }
     }
   },
@@ -85,7 +86,7 @@
 
   "termination": {
     "catch": "capture radius 1 — same cell, Manhattan distance 1, or the two swapped through each other -> cat wins. A same-cell-only rule is nearly unsatisfiable with simultaneous moves at equal speed: the pair just trade places forever.",
-    "escape": "mouse reaches the nest cell -> mouse wins. CHECKED BEFORE catch: reaching the hole beats a simultaneous catch, otherwise sitting on the hole is an absolute strategy.",
+    "escape": "mouse reaches ANY hole -> mouse wins. CHECKED BEFORE catch: reaching the hole beats a simultaneous catch, otherwise sitting on the hole is an absolute strategy.",
     "timeout": "step == maxSteps -> draw (counts for neither side)"
   },
 

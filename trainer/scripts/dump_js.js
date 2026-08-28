@@ -2,13 +2,14 @@
  * Emits one JSON object per seed: the generated map plus a fully deterministic
  * rollout driven by a shared PRNG, so Python can reproduce both halves exactly.
  *
- *   node trainer/scripts/dump_js.js <firstSeed> <count> > runs/parity-js.json
+ *   node trainer/scripts/dump_js.js <firstSeed> <count> [nests] > runs/parity-js.json
  */
 const path = require('path');
 const E = require(path.join(__dirname, '..', '..', 'viz', 'env.js'));
 
 const first = parseInt(process.argv[2] || '1', 10);
 const count = parseInt(process.argv[3] || '200', 10);
+const nests = parseInt(process.argv[4] || '1', 10);
 
 function hashGrid(g) {
   // FNV-1a over the cell codes — a short, order-sensitive fingerprint.
@@ -20,7 +21,7 @@ function hashGrid(g) {
 const out = [];
 for (let k = 0; k < count; k++) {
   const seed = (first + k) >>> 0;
-  const m = E.genMap(seed);
+  const m = E.genMap(seed, nests);
 
   // Deterministic action stream, identical on both sides.
   const ar = E.rng((seed ^ 0xa5a5a5) >>> 0);
@@ -48,7 +49,7 @@ for (let k = 0; k < count; k++) {
   out.push({
     seed,
     gridHash: hashGrid(m.grid),
-    nest: m.nest, catSpawn: m.catSpawn, mouseSpawn: m.mouseSpawn,
+    nests: m.nests, catSpawn: m.catSpawn, mouseSpawn: m.mouseSpawn,
     traps: m.traps, optimal: m.optimal, routeLen: m.route.length,
     blocks: m.blocks.length, pillars: m.pillars.length,
     steps: s.step, result: s.result,
@@ -56,4 +57,4 @@ for (let k = 0; k < count; k++) {
     traj, obsSample
   });
 }
-process.stdout.write(JSON.stringify(out));
+process.stdout.write(JSON.stringify({ nests, maps: out }));

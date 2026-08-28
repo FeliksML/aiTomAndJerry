@@ -6,7 +6,7 @@ dynamics are integer too, so trajectories must match step for step. Only the ray
 casts touch trig, where V8 and CPython may disagree by an ULP; those are compared
 with a tolerance and the worst deviation is reported.
 
-    node trainer/scripts/dump_js.js 1 200 > runs/parity-js.json
+    node trainer/scripts/dump_js.js 1 200 2 > runs/parity-js.json
     python trainer/scripts/parity.py runs/parity-js.json
 """
 
@@ -31,20 +31,21 @@ def hash_grid(g) -> str:
 
 
 def main(path: str) -> int:
-    ref = json.loads(Path(path).read_text())
+    blob = json.loads(Path(path).read_text())
+    ref, n_nests = blob["maps"], blob["nests"]
     fails: list[str] = []
     worst_ray = 0.0
 
     for r in ref:
         seed = r["seed"]
-        m = E.gen_map(seed)
+        m = E.gen_map(seed, n_nests)
         tag = f"seed {seed}"
 
         if hash_grid(m.grid) != r["gridHash"]:
             fails.append(f"{tag}: grid hash {hash_grid(m.grid)} != {r['gridHash']}")
             continue
         for name, got, want in (
-            ("nest", list(m.nest), r["nest"]),
+            ("nests", [list(n) for n in m.nests], r["nests"]),
             ("catSpawn", list(m.cat_spawn), r["catSpawn"]),
             ("mouseSpawn", list(m.mouse_spawn), r["mouseSpawn"]),
             ("traps", [list(t) for t in m.traps], r["traps"]),
@@ -89,7 +90,7 @@ def main(path: str) -> int:
             if abs(got - want) > 1e-9:
                 fails.append(f"{tag}: {name} {got} != {want}")
 
-    print(f"maps compared      : {len(ref)}")
+    print(f"maps compared      : {len(ref)}  ({n_nests} hole(s) each)")
     print(f"worst ray deviation: {worst_ray:.3e}  (trig ULP noise; 0 means bit-identical)")
     if fails:
         print(f"\nFAIL — {len(fails)} mismatch(es):")

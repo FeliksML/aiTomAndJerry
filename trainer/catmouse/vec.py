@@ -10,8 +10,8 @@ and few. So every arena is compiled once into lookup tables:
     sees      [cell, facing, cell]    -> range + cone angle + occlusion, one bit
     los       [cell, cell]            -> facing-free line of sight
     rays      [cell, facing, 21]      -> the vision cone the policy actually reads
-    nest_field[cell]                  -> BFS distance home
-    next_home [cell]                  -> one greedy step toward the nest
+    nest_field[cell]                  -> BFS distance to the NEAREST hole
+    next_home [cell]                  -> one greedy step toward the nearest hole
 
 after which a step is pure array indexing and the whole batch moves together.
 A 27x19 grid is 513 cells, so the biggest table is 513*4*513 bits per arena.
@@ -40,17 +40,25 @@ NACT = 5
 #   2-5   facing, one-hot
 #   6     frozen fraction
 #   7-27  21 vision rays
-#   28-29 sin, cos of the bearing to the nest
-#   30    BFS distance to the nest, normalised
-#   31    target visible
-#   32-33 sin, cos of the bearing to the target (zero when unseen)
-#   34    target distance (1.0 when unseen)
-#   35    step fraction
-#   36-38 the role's private cue: cat = scent (x, y, strength), mouse = hearing (x, y, confidence)
-#   39    cue valid
-OBS_DIM = 40
+#   28    BFS distance to the NEAREST hole, normalised
+#   29    step fraction
+#   30    target visible
+#   31-32 sin, cos of the bearing to the target (zero when unseen)
+#   33    target distance (1.0 when unseen)
+#   34-36 the role's private cue: cat = scent (x, y, strength), mouse = hearing (x, y, confidence)
+#   37    cue valid
+#   38-49 one slot per hole, nearest first: sin, cos of its bearing, its distance, valid
+#
+# The holes get a slot each rather than a single "distance home" because with more than
+# one of them the choice is the whole game: she picks which to run for, he has to decide
+# which to cover. A policy that could only sense the nearest could do neither.
+# Slots are always MAX_NESTS wide and zero-filled, so one trained network can play a
+# room with one hole or three without being reshaped.
+MAX_NESTS = S.MAX_NESTS
+OBS_DIM = 38 + 4 * MAX_NESTS
 IX_RAYS = 7
-IX_CUE = 36
+IX_CUE = 34
+IX_NEST = 38
 
 CACHE = pathlib.Path(__file__).resolve().parents[2] / "runs" / "maptables"
 
@@ -66,8 +74,9 @@ class Tables:
     los: np.ndarray         # (NCELL, NCELL) bool, facing-free line of sight
     next_home: np.ndarray   # (NCELL,) int16, greedy step toward the nest
     rays: np.ndarray        # (NCELL, 4, 21) float32
-    nest_field: np.ndarray  # (NCELL,) int16
-    nest_cell: int
+    nest_field: np.ndarray  # (NCELL,) int16 — distance to the NEAREST hole
+    nest_cells: np.ndarray  # (MAX_NESTS,) int32, -1 padded
+    n_nests: int
     cat_spawn: int
     mouse_spawn: int
     nest_sin: np.ndarray    # (NCELL,) float32
@@ -134,18 +143,23 @@ def _compile(m: S.Map) -> Tables:
                 bd, best = qd, qy * W + qx
         next_home[c] = best
 
-    nest = m.nest[1] * W + m.nest[0]
-    nsin = np.zeros(NCELL, np.float32)
-    ncos = np.zeros(NCELL, np.float32)
-    b = np.arctan2(m.nest[1] - ys, m.nest[0] - xs)
-    nsin[:] = np.sin(b)
-    ncos[:] = np.cos(b)
+    cells = np.full(MAX_NESTS, -1, np.int32)
+    for k, n in enumerate(m.nests[:MAX_NESTS]):
+        cells[k] = n[1] * W + n[0]
+    # Bearing from every cell to every hole, precomputed: (MAX_NESTS, NCELL).
+    nsin = np.zeros((MAX_NESTS, NCELL), np.float32)
+    ncos = np.zeros((MAX_NESTS, NCELL), np.float32)
+    for k, n in enumerate(m.nests[:MAX_NESTS]):
+        b = np.arctan2(n[1] - ys, n[0] - xs)
+        nsin[k] = np.sin(b)
+        ncos[k] = np.cos(b)
 
     on_route = {(p[0], p[1]) for p in m.route}
     return Tables(
         seed=m.seed, grid=g, move_to=move_to, dist=dist, sees=sees, los=los,
         next_home=next_home, rays=rays,
-        nest_field=np.asarray(m.nest_field, np.int16), nest_cell=nest,
+        nest_field=np.asarray(m.nest_field, np.int16),
+        nest_cells=cells, n_nests=len(m.nests),
         cat_spawn=m.cat_spawn[1] * W + m.cat_spawn[0],
         mouse_spawn=m.mouse_spawn[1] * W + m.mouse_spawn[0],
         nest_sin=nsin, nest_cos=ncos, optimal=m.optimal,
@@ -153,9 +167,9 @@ def _compile(m: S.Map) -> Tables:
     )
 
 
-def tables_for(seed: int, use_cache: bool = True) -> Tables:
+def tables_for(seed: int, nests: int = 1, use_cache: bool = True) -> Tables:
     """Compile (or load) one arena. Compiling costs ~1s; arenas are reused constantly."""
-    key = hashlib.sha1(f"v2:{seed}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"v3:{seed}:{nests}".encode()).hexdigest()[:16]
     p = CACHE / f"{key}.npz"
     if use_cache and p.exists():
         z = np.load(p, allow_pickle=False)
@@ -163,19 +177,21 @@ def tables_for(seed: int, use_cache: bool = True) -> Tables:
             seed=int(z["seed"]), grid=z["grid"], move_to=z["move_to"], dist=z["dist"],
             sees=np.unpackbits(z["sees"], count=NCELL * 4 * NCELL).astype(bool).reshape(NCELL, 4, NCELL),
             los=np.unpackbits(z["los"], count=NCELL * NCELL).astype(bool).reshape(NCELL, NCELL),
-            next_home=z["next_home"], rays=z["rays"], nest_field=z["nest_field"], nest_cell=int(z["nest_cell"]),
+            next_home=z["next_home"], rays=z["rays"], nest_field=z["nest_field"],
+            nest_cells=z["nest_cells"], n_nests=int(z["n_nests"]),
             cat_spawn=int(z["cat_spawn"]), mouse_spawn=int(z["mouse_spawn"]),
             nest_sin=z["nest_sin"], nest_cos=z["nest_cos"], optimal=int(z["optimal"]),
             n_traps_on_route=int(z["n_traps_on_route"]),
         )
-    t = _compile(S.gen_map(seed))
+    t = _compile(S.gen_map(seed, nests))
     if use_cache:
         CACHE.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             p, seed=t.seed, grid=t.grid, move_to=t.move_to, dist=t.dist,
             sees=np.packbits(t.sees.reshape(-1)), los=np.packbits(t.los.reshape(-1)),
             next_home=t.next_home, rays=t.rays, nest_field=t.nest_field,
-            nest_cell=t.nest_cell, cat_spawn=t.cat_spawn, mouse_spawn=t.mouse_spawn,
+            nest_cells=t.nest_cells, n_nests=t.n_nests,
+            cat_spawn=t.cat_spawn, mouse_spawn=t.mouse_spawn,
             nest_sin=t.nest_sin, nest_cos=t.nest_cos, optimal=t.optimal,
             n_traps_on_route=t.n_traps_on_route,
         )
@@ -185,9 +201,14 @@ def tables_for(seed: int, use_cache: bool = True) -> Tables:
 class MapSet:
     """A stack of compiled arenas, addressable by index inside a batch."""
 
-    def __init__(self, seeds):
+    def __init__(self, seeds, nests=1):
+        """`nests` is a count, or one count per seed — a level set may deliberately mix
+        one-, two- and three-hole rooms so a policy learns to handle any of them."""
         self.seeds = list(seeds)
-        ts = [tables_for(s) for s in self.seeds]
+        if isinstance(nests, int):
+            nests = [nests] * len(self.seeds)
+        self.nests = [max(1, min(MAX_NESTS, int(n))) for n in nests]
+        ts = [tables_for(sd, nn) for sd, nn in zip(self.seeds, self.nests)]
         self.tables = ts
         self.grid = np.stack([t.grid for t in ts])
         self.move_to = np.stack([t.move_to for t in ts])
@@ -199,7 +220,8 @@ class MapSet:
         self.nest_field = np.stack([t.nest_field for t in ts])
         self.nest_sin = np.stack([t.nest_sin for t in ts])
         self.nest_cos = np.stack([t.nest_cos for t in ts])
-        self.nest_cell = np.array([t.nest_cell for t in ts], np.int32)
+        self.nest_cells = np.stack([t.nest_cells for t in ts])     # (M, MAX_NESTS)
+        self.n_nests = np.array([t.n_nests for t in ts], np.int32)
         self.cat_spawn = np.array([t.cat_spawn for t in ts], np.int32)
         self.mouse_spawn = np.array([t.mouse_spawn for t in ts], np.int32)
         self.optimal = np.array([t.optimal for t in ts], np.int32)
@@ -340,6 +362,7 @@ class VecEnv:
         other = self.mouse if role == "cat" else self.cat
         face = self.cat_face if role == "cat" else self.mouse_face
         frozen = self.cat_frozen if role == "cat" else self.mouse_frozen
+        M, mi = self.M, self.map_idx
 
         o = np.zeros((self.n, OBS_DIM), np.float32)
         mx, my = me % W, me // W
@@ -348,22 +371,43 @@ class VecEnv:
         o[:, 1] = my / H
         o[self._ar, 2 + face] = 1.0
         o[:, 6] = frozen / S.FREEZE_STEPS
-        o[:, IX_RAYS:IX_RAYS + 21] = self.M.rays[self.map_idx, me, face]
-        o[:, 28] = self.M.nest_sin[self.map_idx, me]
-        o[:, 29] = self.M.nest_cos[self.map_idx, me]
-        o[:, 30] = self.M.nest_field[self.map_idx, me] / (W + H)
+        o[:, IX_RAYS:IX_RAYS + 21] = M.rays[mi, me, face]
+        o[:, 28] = M.nest_field[mi, me] / (W + H)
+        o[:, 29] = self.step_n / S.MAX_STEPS
 
-        vis = self.M.sees[self.map_idx, me, face, other]
+        vis = M.sees[mi, me, face, other]
         bear = np.arctan2(oy - my, ox - mx)
-        o[:, 31] = vis
-        o[:, 32] = np.where(vis, np.sin(bear), 0)
-        o[:, 33] = np.where(vis, np.cos(bear), 0)
-        o[:, 34] = np.where(vis, np.hypot(ox - mx, oy - my) / S.VISION_RANGE, 1.0)
-        o[:, 35] = self.step_n / S.MAX_STEPS
+        o[:, 30] = vis
+        o[:, 31] = np.where(vis, np.sin(bear), 0)
+        o[:, 32] = np.where(vis, np.cos(bear), 0)
+        o[:, 33] = np.where(vis, np.hypot(ox - mx, oy - my) / S.VISION_RANGE, 1.0)
         o[:, IX_CUE:IX_CUE + 4] = self._cue_cat() if role == "cat" else self._cue_mouse()
+
+        # One slot per hole, nearest first. Sorting by walking distance rather than by
+        # index keeps the layout meaningful: slot 0 is always "the one I could reach
+        # soonest", whichever hole that happens to be on this map from where I stand.
+        cells = M.nest_cells[mi]                                   # (n, MAX_NESTS)
+        live = cells >= 0
+        safe = np.where(live, cells, 0)
+        d = M.dist[mi[:, None], safe, me[:, None]].astype(np.float32)   # (n, MAX_NESTS)
+        d = np.where(live & (d >= 0), d, 1e6)
+        order = np.argsort(d, axis=1, kind="stable")
+        d_sorted = np.take_along_axis(d, order, 1)
+        ok = np.take_along_axis(live, order, 1) & (d_sorted < 1e5)
+        for k in range(MAX_NESTS):
+            base = IX_NEST + 4 * k
+            # `order[:, k]` is which hole ranked k-th here; the bearing tables are
+            # indexed by that hole's slot, not by the cell it sits on.
+            hole = order[:, k]
+            o[:, base + 0] = np.where(ok[:, k], M.nest_sin[mi, hole, me], 0)
+            o[:, base + 1] = np.where(ok[:, k], M.nest_cos[mi, hole, me], 0)
+            o[:, base + 2] = np.where(ok[:, k], d_sorted[:, k] / (W + H), 0)
+            o[:, base + 3] = ok[:, k]
         return o
 
     def _draw(self) -> np.ndarray:
+        """One uniform per environment — or one per episode slot, tiled, when common
+        random numbers are on (see `noise_tile`)."""
         k = self.noise_tile
         if not k:
             return self.rng.random(self.n)
@@ -378,7 +422,8 @@ class VecEnv:
         return {
             "seed": int(t.seed), "w": W, "h": H,
             "grid": [int(v) for v in g],
-            "nest": [int(t.nest_cell % W), int(t.nest_cell // W)],
+            "nests": [[int(c % W), int(c // W)] for c in t.nest_cells if c >= 0],
+            "nest": [int(t.nest_cells[0] % W), int(t.nest_cells[0] // W)],
             "traps": [[int(c % W), int(c // W)] for c in np.flatnonzero(g == S.TRAP)],
             "optimal": int(t.optimal), "trapsOnRoute": int(t.n_traps_on_route),
         }
@@ -540,7 +585,8 @@ class VecEnv:
         man = np.abs(cx - mx) + np.abs(cy - my)
         swapped = (self.cat != pcat) & (self.cat == pmouse) & (self.mouse == pcat)
         caught = (man <= 1) | swapped
-        escaped = self.mouse == M.nest_cell[mi]
+        # Any hole will do — that is the point of having more than one.
+        escaped = (M.nest_cells[mi] == self.mouse[:, None]).any(1)
         timeout = self.step_n >= S.MAX_STEPS
 
         # Reaching the hole beats a simultaneous catch — she is inside.

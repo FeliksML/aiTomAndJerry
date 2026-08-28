@@ -33,6 +33,7 @@ import torch
 
 from . import arena
 from .league import EXAMINER_SKILL
+from .nets import FLAT_DIM
 from .school import load_checkpoints
 from .vec import MapSet
 
@@ -55,18 +56,25 @@ def load_run(run_dir: Path, checkpoint: str = "trained") -> dict[str, dict[str, 
         if not p.exists():
             continue
         cps = load_checkpoints(p)
-        if checkpoint in cps:
-            out[s] = cps[checkpoint]
+        if checkpoint not in cps:
+            continue
+        got = cps[checkpoint]["cat"].shape[-1]
+        if got != FLAT_DIM:
+            print(f"  skipping {s}: {got}-weight policy, this build expects {FLAT_DIM} "
+                  f"(trained against a different observation)")
+            continue
+        out[s] = cps[checkpoint]
     return out
 
 
 def run_tournament(run_dir: Path, device: torch.device, reps: int = 40,
-                   checkpoint: str = "trained", seed: int = 4242) -> dict:
+                   checkpoint: str = "trained", seed: int = 4242,
+                   nests=arena.DEFAULT_NESTS) -> dict:
     pols = load_run(run_dir, checkpoint)
     if not pols:
         raise SystemExit(f"no checkpoints under {run_dir}")
     present = [s for s in SCHOOLS if s in pols]
-    maps = MapSet(arena.FINAL_SEEDS)          # never trained on, never evaluated on before
+    maps = MapSet(arena.FINAL_SEEDS, nests)   # never trained on, never evaluated on before
 
     cross: dict[str, dict[str, dict]] = {}
     for ck in present:
@@ -119,12 +127,14 @@ def run_tournament(run_dir: Path, device: torch.device, reps: int = 40,
         "contested": {"cat": contested(cat_score, best_cat),
                       "mouse": contested(mouse_score, best_mouse)},
         "examinerSkill": EXAMINER_SKILL,
+        "nests": nests,
     }
 
 
-def progression(run_dir: Path, device: torch.device, reps: int = 16) -> dict:
+def progression(run_dir: Path, device: torch.device, reps: int = 16,
+                nests=arena.DEFAULT_NESTS) -> dict:
     """The same anchor score at all three checkpoints — the rising bars on screen."""
-    maps = MapSet(arena.FINAL_SEEDS)
+    maps = MapSet(arena.FINAL_SEEDS, nests)
     out: dict[str, dict] = {}
     for name in ("untrained", "half", "trained"):
         pols = load_run(run_dir, name)

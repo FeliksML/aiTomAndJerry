@@ -23,7 +23,7 @@ serve() {
   local tag="${1:-$TAG_DEFAULT}"
   $PY trainer/scripts/serve.py --run "runs/$tag" &
   local ws=$!
-  python3 -m http.server 8778 --directory app >/dev/null 2>&1 &
+  python3 tools/serve_app.py --port 8778 >/dev/null 2>&1 &
   local http=$!
   trap 'kill $ws $http 2>/dev/null || true' EXIT INT TERM
   echo
@@ -36,10 +36,13 @@ serve() {
 
 verify() {
   $PY trainer/scripts/check_arenas.py
-  node trainer/scripts/dump_js.js 1 200 > runs/parity-js.json
-  $PY trainer/scripts/parity.py runs/parity-js.json
-  $PY trainer/scripts/vec_parity.py 6
-  $PY trainer/scripts/balance.py 480
+  # Both hole counts: the generator branches on it, so one is not evidence for the other.
+  for n in 1 2; do
+    node trainer/scripts/dump_js.js 1 150 "$n" > "runs/parity-js-$n.json"
+    $PY trainer/scripts/parity.py "runs/parity-js-$n.json"
+    $PY trainer/scripts/vec_parity.py 5 "$n"
+  done
+  $PY trainer/scripts/balance.py 480 2
 }
 
 case "${1:-serve}" in

@@ -32,19 +32,21 @@ def main() -> None:
     ap.add_argument("--device", default="auto")
     a = ap.parse_args()
 
-    from catmouse import nets, tournament
+    from catmouse import arena, nets, tournament
 
     run_dir = Path(a.run) if Path(a.run).is_absolute() else ROOT / a.run
     dev = nets.pick_device(a.device)
     print(f"scoring {run_dir}  (device {dev}, {a.reps} reps per arena)", flush=True)
 
     t0 = time.time()
-    t = tournament.run_tournament(run_dir, dev, reps=a.reps)
+    cfg = json.loads((run_dir / "config.json").read_text()) if (run_dir / "config.json").exists() else {}
+    nests = arena.spread(arena.parse_nests(cfg.get("nests")), len(arena.FINAL_SEEDS))
+    t = tournament.run_tournament(run_dir, dev, reps=a.reps, nests=nests)
     (run_dir / "tournament.json").write_text(json.dumps(t, indent=2))
     print(f"  cross-play + anchor: {time.time() - t0:.0f}s", flush=True)
 
     t1 = time.time()
-    prog = tournament.progression(run_dir, dev)
+    prog = tournament.progression(run_dir, dev, nests=nests)
     (run_dir / "progression.json").write_text(json.dumps(prog, indent=2))
     print(f"  checkpoint progression: {time.time() - t1:.0f}s", flush=True)
 

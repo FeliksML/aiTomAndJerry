@@ -69,11 +69,16 @@
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(CS * 0.17) + '" fill="none" stroke="rgba(175,215,255,.16)" stroke-width="1"/>');
     });
 
-    var n = map.nest, nx = (n[0] + 0.5) * CS, ny = (n[1] + 0.5) * CS;
-    var hw = CS * 0.62, hh = CS * 0.72;
-    p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,.06)"/>');
-    p.push('<path d="M' + f(nx - hw / 2) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw / 2) + ' ' + f(ny - hh * 0.05) + 'A' + f(hw / 2) + ' ' + f(hw / 2) + ' 0 0 1 ' + f(nx + hw / 2) + ' ' + f(ny - hh * 0.05) + 'L' + f(nx + hw / 2) + ' ' + f(ny + hh / 2) + 'Z" fill="#05080c" stroke="#ffd166" stroke-width="' + f(Math.max(1.6, CS * 0.085)) + '"/>');
-    p.push('<path d="M' + f(nx - hw * 0.28) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'A' + f(hw * 0.28) + ' ' + f(hw * 0.28) + ' 0 0 1 ' + f(nx + hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'L' + f(nx + hw * 0.28) + ' ' + f(ny + hh / 2) + 'Z" fill="rgba(255,209,102,.16)"/>');
+    // Every hole, not just the first. With two of them the room is a different game —
+    // the mouse chooses and the cat cannot cover both — so both have to be on screen.
+    var holes = map.nests || [map.nest];
+    for (var hi = 0; hi < holes.length; hi++) {
+      var n = holes[hi], nx = (n[0] + 0.5) * CS, ny = (n[1] + 0.5) * CS;
+      var hw = CS * 0.62, hh = CS * 0.72;
+      p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,.06)"/>');
+      p.push('<path d="M' + f(nx - hw / 2) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw / 2) + ' ' + f(ny - hh * 0.05) + 'A' + f(hw / 2) + ' ' + f(hw / 2) + ' 0 0 1 ' + f(nx + hw / 2) + ' ' + f(ny - hh * 0.05) + 'L' + f(nx + hw / 2) + ' ' + f(ny + hh / 2) + 'Z" fill="#05080c" stroke="#ffd166" stroke-width="' + f(Math.max(1.6, CS * 0.085)) + '"/>');
+      p.push('<path d="M' + f(nx - hw * 0.28) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'A' + f(hw * 0.28) + ' ' + f(hw * 0.28) + ' 0 0 1 ' + f(nx + hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'L' + f(nx + hw * 0.28) + ' ' + f(ny + hh / 2) + 'Z" fill="rgba(255,209,102,.16)"/>');
+    }
 
     if (CS < 20) {
       (map.traps || []).forEach(function (t) {

@@ -11,6 +11,11 @@
   var DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];          // N E S W
   var ACTIONS = ['stay', 'north', 'east', 'south', 'west']; // action space (5, discrete)
 
+  // How many holes a room may have, and how far apart they must be. One hole makes
+  // camping it a dominant strategy; two give the mouse a choice the cat cannot cover.
+  var MAX_NESTS = 3;
+  var MIN_NEST_SEP = 10;
+
   var CFG = {
     vision: { halfAngleDeg: 50, range: 8.5, rays: 21 },
     hearing: { range: 12, baseNoise: 0.10, distNoise: 0.055 }, // mouse only
@@ -54,9 +59,33 @@
     return d;
   }
 
+  // Distance to the NEAREST of several sources. With more than one hole the mouse's
+  // "distance home" is the distance to whichever hole is closest, and every shaping,
+  // observation and route calculation downstream then works unchanged.
+  function bfsMulti(g, sources) {
+    var d = new Int16Array(W * H).fill(-1);
+    var q = [], head = 0, i;
+    for (i = 0; i < sources.length; i++) {
+      var sx = sources[i][0], sy = sources[i][1];
+      if (!passable(g, sx, sy) || d[idx(sx, sy)] === 0) continue;
+      d[idx(sx, sy)] = 0; q.push(sx, sy);
+    }
+    while (head < q.length) {
+      var x = q[head++], y = q[head++], nd = d[idx(x, y)] + 1;
+      for (i = 0; i < 4; i++) {
+        var nx = x + DIRS[i][0], ny = y + DIRS[i][1];
+        if (!passable(g, nx, ny)) continue;
+        if (d[idx(nx, ny)] !== -1) continue;
+        d[idx(nx, ny)] = nd; q.push(nx, ny);
+      }
+    }
+    return d;
+  }
+
   /* ---------- map generation ---------- */
 
-  function genMap(seed) {
+  function genMap(seed, nestCount) {
+    nestCount = Math.max(1, Math.min(MAX_NESTS, nestCount || 1));
     for (var attempt = 0; attempt < 80; attempt++) {
       var r = rng((seed >>> 0) + attempt * 7919);
       var g = new Uint8Array(W * H);
@@ -97,51 +126,82 @@
       for (i = 0; i < free.length; i++) if (probe[idx(free[i][0], free[i][1])] >= 0) reach++;
       if (reach < free.length * 0.94) continue;
 
-      // The nest needs TWO INDEPENDENT approaches, not just two open neighbours:
+      // Each hole needs TWO INDEPENDENT approaches, not just two open neighbours:
       // with a capture radius of 1 a single camping cat can seal a one-corridor
       // pocket completely, and every episode then dies on the step limit.
+      //
+      // With more than one hole the mouse gets a CHOICE, which is the point — one hole
+      // makes camping it a dominant strategy and the chase collapses into a stakeout.
+      // Holes are therefore also kept MIN_NEST_SEP apart, so a cat standing between
+      // two of them cannot cover both.
       var nestCands = free.filter(function (c) {
         if (probe[idx(c[0], c[1])] < 0) return false;
         var open = 0;
         for (var k = 0; k < 4; k++) if (passable(g, c[0] + DIRS[k][0], c[1] + DIRS[k][1])) open++;
         return open >= 2 && (c[0] <= 4 || c[0] >= W - 5);
       });
-      var nest = null, anchor = null, ni, nk, nb, saved, probe2;
+      var anchor = null, ni, nk, nb, saved, probe2;
       for (ni = 0; ni < free.length && !anchor; ni++) if (probe[idx(free[ni][0], free[ni][1])] >= 0) anchor = free[ni];
-      for (ni = 0; ni < 24 && nestCands.length && !nest; ni++) {
-        var cand = nestCands.splice(Math.floor(r() * nestCands.length), 1)[0];
-        if (cand[0] === anchor[0] && cand[1] === anchor[1]) continue;
-        var ok2 = true;
-        for (nk = 0; nk < 4 && ok2; nk++) {
-          nb = [cand[0] + DIRS[nk][0], cand[1] + DIRS[nk][1]];
-          if (!passable(g, nb[0], nb[1])) continue;
-          if (nb[0] === anchor[0] && nb[1] === anchor[1]) continue;
-          saved = g[idx(nb[0], nb[1])];
-          g[idx(nb[0], nb[1])] = WALL;
-          probe2 = bfs(g, anchor[0], anchor[1]);
-          if (probe2[idx(cand[0], cand[1])] < 0) ok2 = false;
-          g[idx(nb[0], nb[1])] = saved;
+
+      var nests = [], wanted = nestCount;
+      for (var slot = 0; slot < wanted; slot++) {
+        var picked = null;
+        for (ni = 0; ni < 24 && nestCands.length && !picked; ni++) {
+          var cand = nestCands.splice(Math.floor(r() * nestCands.length), 1)[0];
+          if (cand[0] === anchor[0] && cand[1] === anchor[1]) continue;
+          var candField = bfs(g, cand[0], cand[1]);
+          var farEnough = true;
+          for (nk = 0; nk < nests.length; nk++) {
+            var dd = candField[idx(nests[nk][0], nests[nk][1])];
+            if (dd < 0 || dd < MIN_NEST_SEP) { farEnough = false; break; }
+          }
+          if (!farEnough) continue;
+          var ok2 = true;
+          for (nk = 0; nk < 4 && ok2; nk++) {
+            nb = [cand[0] + DIRS[nk][0], cand[1] + DIRS[nk][1]];
+            if (!passable(g, nb[0], nb[1])) continue;
+            if (nb[0] === anchor[0] && nb[1] === anchor[1]) continue;
+            saved = g[idx(nb[0], nb[1])];
+            g[idx(nb[0], nb[1])] = WALL;
+            probe2 = bfs(g, anchor[0], anchor[1]);
+            if (probe2[idx(cand[0], cand[1])] < 0) ok2 = false;
+            g[idx(nb[0], nb[1])] = saved;
+          }
+          if (ok2) picked = cand;
         }
-        if (ok2) nest = cand;
+        if (!picked) break;
+        nests.push(picked);
       }
-      if (!nest) continue;
-      g[idx(nest[0], nest[1])] = NEST;
+      if (nests.length < wanted) continue;
+      for (ni = 0; ni < nests.length; ni++) g[idx(nests[ni][0], nests[ni][1])] = NEST;
+      var nest = nests[0];
 
-      var nestField = bfs(g, nest[0], nest[1]);
+      var nestField = bfsMulti(g, nests);
 
-      // mouse: a long enough trek that the cat gets a real chance to intercept
+      // How far "far from home" is depends on how many holes there are: two holes on
+      // opposite walls halve the longest possible trek, so a fixed 21-32 range simply
+      // cannot be met. The spawn is instead drawn from the farthest slice of the room,
+      // measured against this map's own maximum. Integer arithmetic, so both languages
+      // agree exactly.
+      var dmax = 0;
+      for (i = 0; i < free.length; i++) {
+        var fd = nestField[idx(free[i][0], free[i][1])];
+        if (fd > dmax) dmax = fd;
+      }
+      if (dmax < 10) continue;
+      var mMin = Math.floor(dmax * 72 / 100);
       var mCands = free.filter(function (c) {
-        var d = nestField[idx(c[0], c[1])];
-        return d >= 21 && d <= 32 && g[idx(c[0], c[1])] === EMPTY;
+        return nestField[idx(c[0], c[1])] >= mMin && g[idx(c[0], c[1])] === EMPTY;
       });
       if (!mCands.length) continue;
       var mouse = mCands[Math.floor(r() * mCands.length)];
       var mouseField = bfs(g, mouse[0], mouse[1]);
 
-      // cat: far from the mouse, but able to reach the nest first if it wants to camp
+      // cat: far from the mouse, but able to reach a hole first if it wants to camp one
+      var cMax = Math.max(10, Math.floor(dmax * 85 / 100));
       var cCands = free.filter(function (c) {
         var dm = mouseField[idx(c[0], c[1])], dn = nestField[idx(c[0], c[1])];
-        return dm >= 10 && dn >= 5 && dn <= 17 && g[idx(c[0], c[1])] === EMPTY;
+        return dm >= 10 && dn >= 4 && dn <= cMax && g[idx(c[0], c[1])] === EMPTY;
       });
       if (!cCands.length) continue;
       var cat = cCands[Math.floor(r() * cCands.length)];
@@ -200,11 +260,11 @@
 
       return {
         seed: seed, w: W, h: H, grid: g, blocks: blocks, pillars: pillars,
-        traps: traps, nest: nest, catSpawn: cat, mouseSpawn: mouse,
+        traps: traps, nest: nest, nests: nests, catSpawn: cat, mouseSpawn: mouse,
         route: path, nestField: nestField, optimal: nestField[idx(mouse[0], mouse[1])]
       };
     }
-    return genMap((seed >>> 0) + 104729);
+    return genMap((seed >>> 0) + 104729, nestCount);
   }
 
   /* ---------- sensors ---------- */
@@ -366,7 +426,7 @@
     var swapped = (s.cat.x === pcx && s.cat.y === pcy) === false &&
       s.cat.x === pmx && s.cat.y === pmy && s.mouse.x === pcx && s.mouse.y === pcy;
     var caught = man <= 1 || swapped;
-    var escaped = (s.mouse.x === s.map.nest[0] && s.mouse.y === s.map.nest[1]);
+    var escaped = s.map.nests.some(function (n) { return s.mouse.x === n[0] && s.mouse.y === n[1]; });
 
     // Reaching the hole beats a simultaneous catch: she is inside. Without this
     // precedence, sitting on the hole is an absolute strategy and episodes stall
@@ -379,6 +439,7 @@
 
   var API = {
     W: W, H: H, EMPTY: EMPTY, WALL: WALL, TRAP: TRAP, NEST: NEST,
+    MAX_NESTS: MAX_NESTS, MIN_NEST_SEP: MIN_NEST_SEP, bfsMulti: bfsMulti,
     DIRS: DIRS, ACTIONS: ACTIONS, CFG: CFG,
     rng: rng, idx: idx, inB: inB, passable: passable, bfs: bfs,
     genMap: genMap, reset: reset, step: step, observe: observe,

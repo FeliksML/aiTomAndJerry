@@ -31,6 +31,32 @@ TRAIN_SEEDS = [20260826 + i * 911 for i in range(12)]
 EVAL_SEEDS = [770001 + i * 6733 for i in range(24)]
 FINAL_SEEDS = [313370 + i * 40961 for i in range(8)]
 
+#: How many holes a room has, unless a run says otherwise.
+#:
+#: Two, not one. With a single hole the cat's best strategy is simply to stand on it —
+#: the mouse has no choice to make and the chase collapses into a stakeout. Two holes,
+#: kept far enough apart that one cat cannot cover both, turn it back into a game: she
+#: picks, he guesses. `--nests` on the trainer changes it, and a level set may mix
+#: counts (e.g. `--nests 1,2,3`) so a policy learns to handle any room.
+DEFAULT_NESTS = 2
+
+
+def parse_nests(spec) -> int | list[int]:
+    """`2` -> 2 (every room), `1,2,3` -> a repeating mix across the level set."""
+    if spec is None:
+        return DEFAULT_NESTS
+    if isinstance(spec, int):
+        return spec
+    parts = [int(x) for x in str(spec).split(",") if x.strip()]
+    return parts[0] if len(parts) == 1 else parts
+
+
+def spread(nests, n_seeds: int):
+    """Turn a count, or a mix, into one count per seed."""
+    if isinstance(nests, int):
+        return [nests] * n_seeds
+    return [nests[i % len(nests)] for i in range(n_seeds)]
+
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float, float]:
     """Wilson score interval — behaves at 0 and 1, where the normal one does not."""

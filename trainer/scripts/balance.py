@@ -44,9 +44,9 @@ def play(maps: V.MapSet, cat_skill: float, mouse_skill: float, n: int, seed: int
     }
 
 
-def main(n: int = 480) -> None:
-    print(f"compiling {len(TRAIN_SEEDS)} arenas …")
-    maps = V.MapSet(TRAIN_SEEDS)
+def main(n: int = 480, nests: int = 2) -> None:
+    print(f"compiling {len(TRAIN_SEEDS)} arenas with {nests} hole(s) …")
+    maps = V.MapSet(TRAIN_SEEDS, nests)
 
     print("\nscripted vs scripted, matched skill")
     print(f"{'skill':>6} {'catch':>7} {'escape':>7} {'draw':>7} {'steps':>7} {'traps/ep':>9}")
@@ -67,4 +67,5 @@ def main(n: int = 480) -> None:
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 480)
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 480,
+         int(sys.argv[2]) if len(sys.argv) > 2 else 2)

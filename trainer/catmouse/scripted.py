@@ -16,7 +16,9 @@ scoreboard should say so.
 Behaviour, unchanged from the JS original:
 
   cat   sees her -> cut across her line home; else follow the scent; else check her
-        last known cell; else camp the hole for 26 steps in every 54; else patrol.
+        last known cell; else camp a hole for 26 steps in every 54 — the one SHE is
+        closest to, since with several holes guarding the wrong one is worthless;
+        else patrol.
   mouse run home, weighted against a threat field built from sight, then hearing,
         then memory; break line of sight; freeze behind cover rather than bolt.
 
@@ -124,6 +126,16 @@ class ScriptedPair:
         m_camp = reach_camp & ((self.camp_clock % 54) < 26)
         m_wander = ~m_vis & ~m_scent & ~m_mem & ~m_camp
 
+        # Which hole to sit on: the one she could reach soonest. With one hole this is
+        # the old behaviour exactly; with two it is the difference between an ambush and
+        # standing in the wrong doorway.
+        holes = M.nest_cells[mi]                       # (n, MAX_NESTS)
+        hlive = holes >= 0
+        hsafe = np.where(hlive, holes, 0)
+        hd = M.dist[mi[:, None], hsafe, mouse[:, None]].astype(np.float64)
+        hd = np.where(hlive & (hd >= 0), hd, 1e9)
+        camp_cell = hsafe[np.arange(n), np.argmin(hd, axis=1)]
+
         # Lead her: aim at where her route home will have taken her. How far ahead is
         # itself a function of skill, so chain the greedy step to the deepest lead any
         # environment needs and pick the right depth per environment.
@@ -145,7 +157,7 @@ class ScriptedPair:
         target = np.where(m_vis, ahead,
                   np.where(m_scent, scent_cell,
                    np.where(m_mem, self.last_seen,
-                    np.where(m_camp, M.nest_cell[mi], self.wander)))).astype(np.int32)
+                    np.where(m_camp, camp_cell, self.wander)))).astype(np.int32)
 
         self.last_seen = np.where(m_vis, mouse, self.last_seen).astype(np.int32)
         self.has_last_seen |= m_vis

@@ -40,6 +40,11 @@ SCENT_DECAY = 0.93
 FREEZE_STEPS = 5
 MAX_STEPS = 180
 
+# How many holes a room may have, and how far apart they must be. One hole makes
+# camping it a dominant strategy; two give the mouse a choice the cat cannot cover.
+MAX_NESTS = 3
+MIN_NEST_SEP = 10
+
 R_CAT_CATCH = 1.0
 R_CAT_ESCAPED = -1.0
 R_CAT_STEP = -0.002
@@ -89,6 +94,35 @@ def bfs(g, sx: int, sy: int) -> list[int]:
     return d
 
 
+def bfs_multi(g, sources) -> list[int]:
+    """Distance to the NEAREST of several sources. With more than one hole the mouse's
+    "distance home" is the distance to whichever hole is closest, and every shaping,
+    observation and route calculation downstream then works unchanged."""
+    d = [-1] * (W * H)
+    q: list[int] = []
+    for sx, sy in sources:
+        if not passable(g, sx, sy) or d[idx(sx, sy)] == 0:
+            continue
+        d[idx(sx, sy)] = 0
+        q.append(sx)
+        q.append(sy)
+    head = 0
+    while head < len(q):
+        x, y = q[head], q[head + 1]
+        head += 2
+        nd = d[idx(x, y)] + 1
+        for dx, dy in DIRS:
+            nx, ny = x + dx, y + dy
+            if not passable(g, nx, ny):
+                continue
+            if d[idx(nx, ny)] != -1:
+                continue
+            d[idx(nx, ny)] = nd
+            q.append(nx)
+            q.append(ny)
+    return d
+
+
 @dataclass
 class Map:
     seed: int
@@ -97,6 +131,7 @@ class Map:
     pillars: list[tuple[int, int]]
     traps: list[tuple[int, int]]
     nest: tuple[int, int]
+    nests: list[tuple[int, int]]
     cat_spawn: tuple[int, int]
     mouse_spawn: tuple[int, int]
     route: list[tuple[int, int]]
@@ -106,10 +141,12 @@ class Map:
     h: int = H
 
 
-def gen_map(seed: int) -> Map:
+def gen_map(seed: int, nest_count: int = 1) -> Map:
     """Seeded arena generation. Port of env.js genMap — see that file's comments for
-    why each constraint exists (two nest approaches, traps on the walked route, etc.)."""
+    why each constraint exists (two approaches per hole, traps on the walked route,
+    holes kept apart so one cat cannot cover two)."""
     seed &= 0xFFFFFFFF
+    nest_count = max(1, min(MAX_NESTS, nest_count))
     for attempt in range(80):
         r = JsRng((seed + attempt * 7919) & 0xFFFFFFFF)
         g = bytearray(W * H)
@@ -173,9 +210,14 @@ def gen_map(seed: int) -> Map:
         if reach < len(free) * 0.94:
             continue
 
-        # The nest needs two INDEPENDENT approaches: walling any single neighbour
+        # Each hole needs two INDEPENDENT approaches: walling any single neighbour
         # must leave it reachable. A one-corridor pocket can be sealed by a camping
         # cat and then every episode dies on the step limit.
+        #
+        # With more than one hole the mouse gets a CHOICE, which is the point — one
+        # hole makes camping it a dominant strategy and the chase collapses into a
+        # stakeout. Holes are therefore also kept MIN_NEST_SEP apart, so a cat standing
+        # between two of them cannot cover both.
         nest_cands = []
         for c in free:
             if probe[idx(c[0], c[1])] < 0:
@@ -190,48 +232,78 @@ def gen_map(seed: int) -> Map:
                 anchor = c
                 break
 
-        nest = None
-        for _ in range(24):
-            if nest is not None or not nest_cands:
-                break
-            cand = nest_cands.pop(floor_mul(r(), len(nest_cands)))
-            if cand[0] == anchor[0] and cand[1] == anchor[1]:
-                continue
-            ok2 = True
-            for dx, dy in DIRS:
-                if not ok2:
+        nests: list[tuple[int, int]] = []
+        for _slot in range(nest_count):
+            picked = None
+            for _ in range(24):
+                if picked is not None or not nest_cands:
                     break
-                nb = (cand[0] + dx, cand[1] + dy)
-                if not passable(g, nb[0], nb[1]):
+                cand = nest_cands.pop(floor_mul(r(), len(nest_cands)))
+                if cand[0] == anchor[0] and cand[1] == anchor[1]:
                     continue
-                if nb[0] == anchor[0] and nb[1] == anchor[1]:
+                cand_field = bfs(g, cand[0], cand[1])
+                far_enough = True
+                for other in nests:
+                    dd = cand_field[idx(other[0], other[1])]
+                    if dd < 0 or dd < MIN_NEST_SEP:
+                        far_enough = False
+                        break
+                if not far_enough:
                     continue
-                saved = g[idx(nb[0], nb[1])]
-                g[idx(nb[0], nb[1])] = WALL
-                probe2 = bfs(g, anchor[0], anchor[1])
-                if probe2[idx(cand[0], cand[1])] < 0:
-                    ok2 = False
-                g[idx(nb[0], nb[1])] = saved
-            if ok2:
-                nest = cand
-        if nest is None:
+                ok2 = True
+                for dx, dy in DIRS:
+                    if not ok2:
+                        break
+                    nb = (cand[0] + dx, cand[1] + dy)
+                    if not passable(g, nb[0], nb[1]):
+                        continue
+                    if nb[0] == anchor[0] and nb[1] == anchor[1]:
+                        continue
+                    saved = g[idx(nb[0], nb[1])]
+                    g[idx(nb[0], nb[1])] = WALL
+                    probe2 = bfs(g, anchor[0], anchor[1])
+                    if probe2[idx(cand[0], cand[1])] < 0:
+                        ok2 = False
+                    g[idx(nb[0], nb[1])] = saved
+                if ok2:
+                    picked = cand
+            if picked is None:
+                break
+            nests.append(picked)
+        if len(nests) < nest_count:
             continue
-        g[idx(nest[0], nest[1])] = NEST
+        for n in nests:
+            g[idx(n[0], n[1])] = NEST
+        nest = nests[0]
 
-        nest_field = bfs(g, nest[0], nest[1])
+        nest_field = bfs_multi(g, nests)
 
+        # How far "far from home" is depends on how many holes there are: two holes on
+        # opposite walls halve the longest possible trek, so a fixed 21-32 range simply
+        # cannot be met. The spawn is instead drawn from the farthest slice of the room,
+        # measured against this map's own maximum. Integer arithmetic, so both languages
+        # agree exactly.
+        dmax = 0
+        for c in free:
+            fd = nest_field[idx(c[0], c[1])]
+            if fd > dmax:
+                dmax = fd
+        if dmax < 10:
+            continue
+        m_min = dmax * 72 // 100
         m_cands = [c for c in free
-                   if 21 <= nest_field[idx(c[0], c[1])] <= 32 and g[idx(c[0], c[1])] == EMPTY]
+                   if nest_field[idx(c[0], c[1])] >= m_min and g[idx(c[0], c[1])] == EMPTY]
         if not m_cands:
             continue
         mouse = m_cands[floor_mul(r(), len(m_cands))]
         mouse_field = bfs(g, mouse[0], mouse[1])
 
+        c_max = max(10, dmax * 85 // 100)
         c_cands = []
         for c in free:
             dm = mouse_field[idx(c[0], c[1])]
             dn = nest_field[idx(c[0], c[1])]
-            if dm >= 10 and 5 <= dn <= 17 and g[idx(c[0], c[1])] == EMPTY:
+            if dm >= 10 and 4 <= dn <= c_max and g[idx(c[0], c[1])] == EMPTY:
                 c_cands.append(c)
         if not c_cands:
             continue
@@ -308,10 +380,10 @@ def gen_map(seed: int) -> Map:
 
         return Map(
             seed=seed, grid=g, blocks=blocks, pillars=pillars, traps=traps,
-            nest=nest, cat_spawn=cat, mouse_spawn=mouse, route=path,
+            nest=nest, nests=nests, cat_spawn=cat, mouse_spawn=mouse, route=path,
             nest_field=nest_field, optimal=nest_field[idx(mouse[0], mouse[1])],
         )
-    return gen_map((seed + 104729) & 0xFFFFFFFF)
+    return gen_map((seed + 104729) & 0xFFFFFFFF, nest_count)
 
 
 def round_js(v: float) -> int:
@@ -528,7 +600,7 @@ def step(s: State, cat_action: int, mouse_action: int) -> dict:
     swapped = (not (s.cat.x == pcx and s.cat.y == pcy)) and \
         s.cat.x == pmx and s.cat.y == pmy and s.mouse.x == pcx and s.mouse.y == pcy
     caught = man <= 1 or swapped
-    escaped = (s.mouse.x == s.map.nest[0] and s.mouse.y == s.map.nest[1])
+    escaped = any(s.mouse.x == n[0] and s.mouse.y == n[1] for n in s.map.nests)
 
     # Reaching the hole beats a simultaneous catch — she is inside.
     if escaped:

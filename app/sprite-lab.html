@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sprite lab — Tom, eight directions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A development page. It is not part of the recording app: index.html does not link
+     it and it ships no state of its own. It exists so every direction can be watched at
+     once, against the backgrounds a matte fails on, before any of this reaches the
+     arena. Open it at /sprite-lab.html on the app server. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Manrope:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #e8eef9; --dim: #8fa4c4; --faint: #61708a;
+  --line: rgba(130,160,200,.18);
+  --mono: 'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  --display: 'Oswald','Arial Narrow',system-ui,sans-serif;
+  --body: 'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --accent: #ff8a5c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #04060a; color: var(--ink); font-family: var(--body); }
+body { display: flex; flex-direction: column; }
+
+header {
+  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--line); background: #070b12;
+}
+h1 { font-family: var(--display); font-size: 17px; letter-spacing: .16em;
+     text-transform: uppercase; margin: 0 14px 0 0; font-weight: 600; }
+.group { display: flex; align-items: center; gap: 8px; }
+.group > label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+button {
+  font: 600 12px var(--body); color: var(--ink); background: #131c2b;
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer;
+}
+button:hover { background: #1b2637; }
+button[aria-pressed="true"] { background: var(--accent); color: #180a04; border-color: var(--accent); }
+input[type=range] { width: 150px; accent-color: var(--accent); }
+.readout { font: 400 12px var(--mono); color: var(--dim); }
+.readout b { color: var(--ink); font-weight: 600; }
+
+main { flex: 1; overflow: auto; padding: 20px; }
+#stagewrap { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+
+.board { border-radius: 12px; border: 1px solid var(--line); padding: 10px; }
+.board.checker {
+  background-image:
+    linear-gradient(45deg, #262c36 25%, transparent 25%, transparent 75%, #262c36 75%),
+    linear-gradient(45deg, #262c36 25%, #1b2029 25%, #1b2029 75%, #262c36 75%);
+  background-size: 22px 22px; background-position: 0 0, 11px 11px;
+}
+
+/* The compass. Eight cells laid out where the direction points, so a wrong row in the
+   sheet shows up as a cat walking the wrong way across the page rather than as a number. */
+#compass { display: grid; grid-template-columns: repeat(3, var(--cellw)); gap: 6px; }
+.slot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.slot .art { border-radius: 8px; }
+.slot .tag { font: 600 9px var(--mono); letter-spacing: .1em; color: var(--faint); text-transform: uppercase; }
+.slot.active .tag { color: var(--accent); }
+.hub { display: flex; flex-direction: column; align-items: center; justify-content: center;
+       gap: 6px; font: 400 11px var(--mono); color: var(--faint); text-align: center; }
+
+.sprite { image-rendering: auto; background-repeat: no-repeat; }
+
+#play { width: 100%; height: 340px; border-radius: 12px; border: 1px solid var(--line);
+        position: relative; overflow: hidden; }
+#play .floor { position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(120,160,220,.07) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(120,160,220,.07) 1px, transparent 1px);
+  background-size: 40px 40px; }
+#player { position: absolute; }
+.hint { font: 400 11px var(--mono); color: var(--faint); margin: 8px 0 0; }
+.panel-title { font-family: var(--display); font-size: 12px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--dim); margin: 0 0 8px; font-weight: 500; }
+#err { color: #ff8a5c; font: 400 12px var(--mono); padding: 20px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Sprite lab</h1>
+    <div class="group">
+      <button id="toggle" aria-pressed="true">Pause</button>
+      <button id="stepb" title="previous frame">&#8592;</button>
+      <button id="stepf" title="next frame">&#8594;</button>
+    </div>
+    <div class="group">
+      <label for="fps">FPS</label>
+      <input type="range" id="fps" min="1" max="24" step="1" value="8">
+      <span class="readout"><b id="fpsv">8</b></span>
+    </div>
+    <div class="group">
+      <label for="size">Size</label>
+      <input type="range" id="size" min="64" max="256" step="8" value="140">
+    </div>
+    <div class="group" id="bgs">
+      <label>Background</label>
+      <button data-bg="#ffffff">White</button>
+      <button data-bg="#808080">Grey</button>
+      <button data-bg="#000000" aria-pressed="true">Black</button>
+      <button data-bg="#00ff00">Green</button>
+      <button data-bg="checker">Checker</button>
+    </div>
+    <div class="group">
+      <button id="walkall" aria-pressed="true">All walking</button>
+    </div>
+    <div class="group" id="who">
+      <label>Character</label>
+      <button data-who="tom" aria-pressed="true">Tom</button>
+      <button data-who="jerry">Jerry</button>
+    </div>
+    <div class="group" id="anim">
+      <label>Animation</label>
+      <button data-anim="walk" aria-pressed="true">Walk</button>
+      <button data-anim="trapped">Trapped</button>
+    </div>
+    <div class="readout" id="state"></div>
+  </header>
+
+  <main>
+    <div id="err" hidden></div>
+    <div id="stagewrap">
+      <div>
+        <p class="panel-title">Eight directions</p>
+        <div class="board" id="board"><div id="compass"></div></div>
+      </div>
+      <div style="flex:1; min-width:420px">
+        <p class="panel-title">Movement &rarr; direction</p>
+        <div class="board" id="playboard">
+          <div id="play"><div class="floor"></div><div id="player"></div></div>
+        </div>
+        <p class="hint">WASD or arrow keys. Diagonals are normalised, so W+D covers the
+          same ground per second as D alone. Release to see the idle pose for the last
+          facing.</p>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/walksprite.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var WS = window.WalkSprite;
+    var who = 'tom', anim = 'walk';
+    var S = WS.tom.walk;
+    var ORDER = ['up-left', 'up', 'up-right', 'left', null, 'right',
+                 'down-left', 'down', 'down-right'];
+
+    var ui = {
+      playing: true, fps: 8, size: 140, bg: '#000000', walkAll: true,
+      step: 0, direction: 'down', frame: 0
+    };
+    var slots = {};
+    var player = { x: 300, y: 170, dir: 'down', moving: false, phase: 0, speed: 190 };
+    var keys = {};
+
+    function el(id) { return document.getElementById(id); }
+
+    function applyBg() {
+      [el('board'), el('playboard')].forEach(function (b) {
+        b.classList.toggle('checker', ui.bg === 'checker');
+        b.style.background = ui.bg === 'checker' ? '' : ui.bg;
+      });
+      el('play').style.background = ui.bg === 'checker' ? 'transparent' : ui.bg;
+    }
+
+    function paint(node, direction, frame, size) {
+      var st = S.backgroundStyle(direction, frame, size);
+      for (var k in st) node.style[k] = st[k];
+    }
+
+    function buildCompass() {
+      var c = el('compass');
+      c.style.setProperty('--cellw', ui.size + 'px');
+      c.innerHTML = '';
+      ORDER.forEach(function (d) {
+        var slot = document.createElement('div');
+        if (!d) {
+          slot.className = 'hub';
+          slot.id = 'hub';
+          c.appendChild(slot);
+          hubText();
+          return;
+        }
+        slot.className = 'slot';
+        slot.dataset.dir = d;
+        var art = document.createElement('div');
+        art.className = 'sprite art';
+        var tag = document.createElement('div');
+        tag.className = 'tag';
+        tag.textContent = d;
+        slot.appendChild(art); slot.appendChild(tag);
+        slot.addEventListener('click', function () { ui.direction = d; });
+        c.appendChild(slot);
+        slots[d] = { slot: slot, art: art, tag: tag };
+      });
+    }
+
+    /* The trapped sheet is not a loop, so it is not driven like one. Its frames come
+       from a countdown standing in for the environment's freeze counter, which is what
+       drives it in the real game — so what the lab shows is what the arena will do:
+       the snap once, then the struggle repeating. */
+    /* What the four columns mean depends on the sheet, so read it off the sheet rather
+       than hard-coding the walk's vocabulary into the page. */
+    function hubText() {
+      var h = el('hub');
+      if (!h || !S.meta()) return;
+      var ph = S.meta().phases, one = S.meta().oneShotFrames || 0;
+      h.innerHTML = '<div>' + ph.map(function (x, i) { return 'F' + (i + 1); }).join(' &rarr; ') + '</div>'
+        + '<div style="opacity:.7">' + ph[0] + ' &middot; ' + ph[1] + '<br>' + ph[2] + ' &middot; ' + ph[3] + '</div>'
+        + (one ? '<div style="opacity:.55;margin-top:4px">first ' + one + ' play once,<br>then the rest loop</div>'
+               : '<div style="opacity:.55;margin-top:4px">all four loop</div>');
+    }
+
+    function frameFor(direction, now) {
+      if (!ui.playing) return ((ui.step % 4) + 4) % 4;
+      if (anim === 'trapped') {
+        var total = 5, held = total - Math.floor(now / 1000 * ui.fps) % (total + 3);
+        return S.frameForHold(Math.max(1, held), total);
+      }
+      if (!ui.walkAll && direction !== ui.direction) return S.idleFrame(direction);
+      return S.frameAt(direction, true, now, ui.fps);
+    }
+
+    var last = null;
+    function loop(now) {
+      requestAnimationFrame(loop);
+      var dt = last === null ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      S.DIRECTIONS.forEach(function (d) {
+        var s = slots[d];
+        if (!s) return;
+        var f = frameFor(d, now);
+        paint(s.art, d, f, ui.size);
+        s.slot.classList.toggle('active', d === ui.direction);
+      });
+      ui.frame = frameFor(ui.direction, now);
+
+      // playground
+      var dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
+      var dy = (keys.s || keys.ArrowDown ? 1 : 0) - (keys.w || keys.ArrowUp ? 1 : 0);
+      var moving = !!(dx || dy);
+      if (moving) {
+        var v = S.normalize(dx, dy);
+        var box = el('play').getBoundingClientRect();
+        player.x = Math.max(20, Math.min(box.width - 20, player.x + v.x * player.speed * dt));
+        player.y = Math.max(30, Math.min(box.height - 10, player.y + v.y * player.speed * dt));
+        player.dir = S.dirFromVector(dx, dy) || player.dir;
+        player.phase += dt * ui.fps;
+      }
+      player.moving = moving;
+      var pf = moving ? (Math.floor(player.phase) % 4 + 4) % 4 : S.idleFrame(player.dir);
+      var psize = 150, a = S.meta().anchor;
+      var pn = el('player');
+      paint(pn, player.dir, pf, psize);
+      pn.style.left = (player.x - psize * a.x) + 'px';
+      pn.style.top = (player.y - psize * a.y) + 'px';
+
+      el('state').innerHTML =
+        'compass <b>' + ui.direction + '</b> f<b>' + ui.frame + '</b>'
+        + ' &nbsp;|&nbsp; player <b>' + player.dir + '</b> f<b>' + pf + '</b>'
+        + ' ' + (moving ? 'walking' : 'idle')
+        + ' &nbsp;|&nbsp; <b>' + who + '/' + anim + '</b> '
+        + S.meta().columns + '&times;' + S.meta().rows + ' @ ' + S.meta().frameWidth + 'px'
+        + ' &nbsp;|&nbsp; ' + S.meta().phases.join(' &rarr; ');
+    }
+
+    function bind() {
+      el('toggle').addEventListener('click', function () {
+        ui.playing = !ui.playing;
+        this.textContent = ui.playing ? 'Pause' : 'Play';
+        this.setAttribute('aria-pressed', String(ui.playing));
+      });
+      el('stepf').addEventListener('click', function () { ui.playing = false; ui.step++; sync(); });
+      el('stepb').addEventListener('click', function () { ui.playing = false; ui.step--; sync(); });
+      function sync() {
+        var t = el('toggle');
+        t.textContent = 'Play'; t.setAttribute('aria-pressed', 'false');
+      }
+      el('fps').addEventListener('input', function () {
+        ui.fps = +this.value; el('fpsv').textContent = this.value;
+      });
+      el('size').addEventListener('input', function () {
+        ui.size = +this.value;
+        el('compass').style.setProperty('--cellw', ui.size + 'px');
+      });
+      el('bgs').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-bg]');
+        if (!b) return;
+        ui.bg = b.dataset.bg;
+        [].forEach.call(this.querySelectorAll('button'), function (x) {
+          x.setAttribute('aria-pressed', String(x === b));
+        });
+        applyBg();
+      });
+      el('walkall').addEventListener('click', function () {
+        ui.walkAll = !ui.walkAll;
+        this.setAttribute('aria-pressed', String(ui.walkAll));
+      });
+      function choose(nextWho, nextAnim, group, btn) {
+        var next = WS[nextWho][nextAnim];
+        next.load(null, function (err) {
+          if (err) {
+            el('err').hidden = false;
+            el('err').textContent = nextWho + ' ' + nextAnim + ': ' + err.message
+              + '  —  run  npm run build:sprites  first.';
+            return;
+          }
+          el('err').hidden = true;
+          who = nextWho; anim = nextAnim; S = next;
+          hubText();
+          [].forEach.call(document.querySelectorAll(group + ' button'), function (x) {
+            x.setAttribute('aria-pressed', String(x === btn));
+          });
+        });
+      }
+      el('who').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-who]');
+        if (b) choose(b.dataset.who, anim, '#who', b);
+      });
+      el('anim').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-anim]');
+        if (b) choose(who, b.dataset.anim, '#anim', b);
+      });
+      window.addEventListener('keydown', function (e) {
+        var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        keys[k] = true;
+        if (k === ' ') { el('toggle').click(); e.preventDefault(); }
+        if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(k) >= 0) e.preventDefault();
+      });
+      window.addEventListener('keyup', function (e) {
+        keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false;
+      });
+    }
+
+    WS.tom.walk.load(null, function (err) {
+      if (err) {
+        var e = el('err');
+        e.hidden = false;
+        e.textContent = 'Could not load the sprite sheet: ' + err.message
+          + '  —  run  python3 tools/build_cat_sprites.py  first.';
+        return;
+      }
+      el('fps').value = S.meta().defaultFPS;
+      el('fpsv').textContent = S.meta().defaultFPS;
+      ui.fps = S.meta().defaultFPS;
+      buildCompass(); bind(); applyBg();
+      requestAnimationFrame(loop);
+    });
+  })();
+  </script>
+</body>
+</html>

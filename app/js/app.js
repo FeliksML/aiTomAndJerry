@@ -121,19 +121,24 @@
       var v = view(k);
       var prog = (App.cat && App.cat.tournament) ? App.cat.tournament : null;
       var anchor = prog && prog.anchor && prog.anchor[k];
+      // A school the run does not contain must say so rather than look ready and then
+      // fail on click — during a shoot that reads as a bug in the demo.
+      var missing = !!(App.cat && App.cat.schools && App.cat.schools.indexOf(k) < 0);
       var art = v.sealed
         ? '<div class="sealed-art" style="position:absolute;inset:0;background-image:url(assets/school-' + k + '.png);background-size:contain;background-position:center;background-repeat:no-repeat"></div>'
           + '<div class="sealed-plate"><div class="sealed-tag">CLASSIFIED</div></div>'
         : '<div style="position:absolute;inset:0;background-image:url(assets/school-' + k + '.png);background-size:contain;background-position:center;background-repeat:no-repeat"></div>'
           + '<div style="position:absolute;inset:0;background:radial-gradient(70% 78% at 50% 46%,'
           + P.rgba(v.color, .22) + ' 0%,' + P.rgba(v.color, .06) + ' 45%,rgba(0,0,0,0) 78%);mix-blend-mode:screen"></div>';
-      return '<div class="card" data-school="' + k + '" style="flex:1;display:flex;flex-direction:column;border-color:'
-        + P.rgba(v.color, v.sealed ? .18 : .34) + ';cursor:pointer">'
+      return '<div class="card"' + (missing ? '' : ' data-school="' + k + '"')
+        + ' style="flex:1;display:flex;flex-direction:column;border-color:'
+        + P.rgba(v.color, v.sealed ? .18 : .34) + ';cursor:' + (missing ? 'default' : 'pointer')
+        + ';opacity:' + (missing ? '.45' : '1') + '">'
         + '<div style="height:4px;background:' + v.color + ';opacity:' + (v.sealed ? .3 : .9) + '"></div>'
         + '<div style="display:flex;justify-content:space-between;padding:14px 18px 0">'
         + '<span class="chip">SCHOOL 0' + (i + 1) + '</span>'
         + '<span class="chip" style="border-color:' + P.rgba(v.color, .32) + ';color:' + v.light + '">'
-        + (v.sealed ? 'SEALED' : (anchor ? 'GRADUATED' : 'READY')) + '</span></div>'
+        + (v.sealed ? 'SEALED' : missing ? 'NOT IN THIS RUN' : anchor ? 'GRADUATED' : 'READY') + '</span></div>'
         + '<div style="position:relative;height:250px;margin:8px 0">' + art + '</div>'
         + '<div style="padding:0 22px 20px;display:flex;flex-direction:column;gap:12px;flex:1">'
         + '<div style="display:flex;align-items:baseline;gap:12px">'

@@ -326,6 +326,7 @@
   function renderSchool() {
     var v = view(App.school);
     var accent = v.color;
+    var training = App.mode === 'train';
     // During the highlight reel the run is the reel, not the twelve-arena level set:
     // ten episodes counted out of twelve, under LV01-LV12 labels that name rooms the
     // reel is not playing, is two wrong numbers in the same corner of the screen.
@@ -390,9 +391,26 @@
 
       + '<div style="flex:1;display:flex;flex-direction:column;gap:12px;min-width:0">'
       + '<div style="display:flex;gap:12px">'
-      + scoreBox('TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
-      + scoreBox('JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
+      // During training these are a rolling tally over a loop that never ends, not a
+      // score out of twelve. Saying so in the label costs three words and stops the
+      // screen from looking like an evaluation that happens to keep restarting.
+      + scoreBox(training ? 'TOM · CAUGHT HER, THIS LAP' : 'TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
+      + scoreBox(training ? 'JERRY · GOT HOME, THIS LAP' : 'JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
       + scoreBox('ARENA', ((st.level || 0) + 1) + ' / ' + n, 'var(--gold)') + '</div>'
+      /* The first question anyone asks on pressing `t` is what the animals are doing,
+         because the arena starts moving and nothing says why. They are not being tested:
+         the optimiser is running thousands of episodes a second in a batch nobody could
+         watch, and this is one of them, pulled out and replayed at a speed you can see. */
+      + (training
+         ? '<div class="card" style="padding:13px 18px;border-color:rgba(255,209,102,.28)">'
+           + '<div class="mono" style="font-size:10px;letter-spacing:1.6px;color:var(--gold)">SHADOW EPISODE · NOT A TEST</div>'
+           + '<div class="faint" style="font-size:12px;line-height:1.5;margin-top:5px">'
+           + 'The optimiser is running thousands of episodes a second. This is one of them, '
+           + 'replayed at a watchable pace with the policy <b>as it stands right now</b> — '
+           + 'it is re-read at the start of every episode, so the pair should visibly get '
+           + 'better while you watch. The lap runs the twelve rooms and starts again.'
+           + '</div></div>'
+         : '')
       + '<div class="card" style="padding:14px 18px">'
       + '<div class="faint mono" style="font-size:10px;letter-spacing:1.6px">WHAT THEY CAN SENSE RIGHT NOW</div>'
       + '<div id="thought" class="mono" style="font-size:15px;margin-top:6px;color:#c9d8ee">' + esc(mode) + '</div></div>'
@@ -1331,6 +1349,15 @@
       })
       .on('replayEnd', function () {
         App.trainInfo = 'Replay finished.';
+        render();
+      })
+      /* The trainer answers some commands with a refusal — a second training run while
+         one is already going, a school the run does not contain. Nothing listened for
+         those, so on camera the key press simply did nothing and there was no way to
+         tell a refusal from a bug. */
+      .on('error', function (m) {
+        App.banner = { t: (m.message || 'the trainer refused that').toUpperCase(), c: '#ff9a72' };
+        App.bannerAt = performance.now();
         render();
       })
       .on('trainWait', function () {

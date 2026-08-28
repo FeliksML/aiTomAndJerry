@@ -30,7 +30,8 @@
     "x": 0.5,
     "y": 0.7
   },
-  "charHeight": 0.4554,
+  "charHeight": 0.5642,
+  "renderScale": 0.8071,
   "idleFrame": {
     "down": 0,
     "downLeft": 0,

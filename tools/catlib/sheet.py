@@ -49,7 +49,7 @@ def mirror_all(canvases: dict) -> dict:
 
 def write(canvases: dict, out: pathlib.Path, image: str, meta_name: str,
           size: int, fps: int, anchor: dict, idle: dict, source: dict,
-          frames_dir: str = 'walk') -> dict:
+          frames_dir: str = 'walk', render_scale: float = 1.0) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     for d in ROWS:
         sub = out / frames_dir / d
@@ -81,11 +81,19 @@ def write(canvases: dict, out: pathlib.Path, image: str, meta_name: str,
         'directionOrder': ROWS,
         'defaultFPS': fps,
         'anchor': anchor,
-        # How much of the frame the character actually fills. A trapped pose with both
-        # arms thrown up needs a roomier frame than a walk cycle, so the two sheets are
-        # padded differently; a renderer that sized by the frame would draw one character
-        # smaller than the other. Sizing by this instead keeps them the same character.
-        'charHeight': round(float(np.median(heights)) / size, 4) if heights else 1.0,
+        # How tall one character is, as a fraction of the frame — the renderer divides by
+        # this, so a sheet padded more generously still draws the same character.
+        #
+        # It is the *measured* silhouette divided by `renderScale`, and the division is
+        # the whole point. Measured alone, every sheet would draw its silhouette at the
+        # same height — which is wrong the moment a pose set has both arms thrown up,
+        # because that inflates the silhouette without making the character any bigger.
+        # Measured, the trapped cat came out 24% oversized and the trapped mouse 14%
+        # undersized against their own walk sheets. renderScale is the correction, set
+        # from head width, which is the one measure a crouch does not change.
+        'charHeight': round(float(np.median(heights)) / size / render_scale, 4)
+                      if heights else 1.0,
+        'renderScale': render_scale,
         'idleFrame': {CAMEL[d]: int(idle.get(CAMEL[d], idle.get(CAMEL[MIRROR.get(d, d)], 0)))
                       for d in ROWS},
         'mirrored': {CAMEL[k]: CAMEL[v] for k, v in MIRROR.items()},

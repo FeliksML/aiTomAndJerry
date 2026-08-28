@@ -268,7 +268,7 @@
     // `cells` is how tall the CHARACTER should be, in map cells — not how tall the frame
     // is. The trapped sheet is padded more generously than the walk sheet, so sizing by
     // the frame would shrink the character the moment it stepped in a trap.
-    var cells = (opts && opts.cells) || 1.56;
+    var cells = (opts && opts.cells) || 1.38;
     var size = S * cells / (sheet.meta().charHeight || 0.8);
     var ax = (cx + 0.5) * S, ay = (cy + 0.5 + ((opts && opts.footOffset) || 0.34)) * S;
     var dir = sheet.fromFacing(st.facing);
@@ -390,10 +390,12 @@
       });
       return s === null ? fallback(x, y, CS, accent, ag) : s;
     };
+    // 1.38 and 0.95 cells are the vector pair's own measured heights, so swapping skins
+    // changes the drawing and nothing else — the cat stays exactly as large as the cat.
     p.push(skin('jerry', mouseSvg, mx, my, opts.mouseAccent, v.mouse,
-                opts.mouseMoving, opts.mouseCells || 1.16));
+                opts.mouseMoving, opts.mouseCells || 0.95));
     p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat,
-                opts.catMoving, opts.catCells || 1.56));
+                opts.catMoving, opts.catCells || 1.38));
     p.push('</svg>');
     return p.join('');
   }

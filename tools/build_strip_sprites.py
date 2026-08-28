@@ -52,6 +52,11 @@ DEFAULTS = {
     # 'ground' keeps whatever is on the floor still — for the trapped strips that is the
     # trap, and it is the only fixed thing in the shot.
     'pivot': 'torso',
+    # Multiplies the character's size on screen without touching how the frames are laid
+    # out. Kept apart from `scale` on purpose: `scale` changes the art inside the frame
+    # and the metadata then measures the result, so `scale` alone can never change the
+    # rendered size — it cancels itself out.
+    'renderScale': 1.0,
 }
 
 
@@ -149,8 +154,11 @@ def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation:
         # touching the floor. On the cat that distinction matters: his free paw rests on
         # the ground beside the trap in some poses and not others, and the centroid
         # follows it, sliding the trap 15px across the cycle.
-        pivots = [g['foot_cx'] for _, _, g in cut[d]]
+        # A walk anchors on the torso and lets the feet move; taking the feet here
+        # instead makes the body swing with every step, which is what a walk cycle is.
+        pivots = [g['torso_cx'] for _, _, g in cut[d]]
         if cfg.get('pivot') == 'ground':
+            pivots = [g['foot_cx'] for _, _, g in cut[d]]
             profs = [band_profile(al, g) for _, al, g in cut[d]]
             # Each frame's own rough anchor, corrected by however far its floor profile
             # sits from the first frame's. Correcting frame 0's anchor instead would
@@ -175,7 +183,7 @@ def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation:
     meta = SH.write(canvases, out, stem + '.png', stem + '.json', size,
                     cfg['fps'], {'x': cfg['anchorX'], 'y': cfg['groundY']}, cfg['idle'],
                     {'strips': cfg['source'], 'config': config_name},
-                    frames_dir=animation)
+                    frames_dir=animation, render_scale=cfg.get('renderScale', 1.0))
     (BUILD / 'qa').mkdir(parents=True, exist_ok=True)
     (BUILD / 'qa' / (stem + '-build-report.json')).write_text(json.dumps(report, indent=2) + '\n')
     log('sheet %dx%d -> %s' % (size * 4, size * len(SH.ROWS), out / meta['image']))

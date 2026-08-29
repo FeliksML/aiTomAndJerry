@@ -26,6 +26,40 @@
 
   var P = global.Paint;
 
+  /* The same sheets the arena draws from — not a second set of art. A diagram that says
+     "48 slightly different Toms" is worth far more when they are the Tom the viewer has
+     been watching hunt for the last five minutes.
+     Both fall back to the plain shape they replace: the sheets are fetched once at
+     startup, long before anyone presses `w`, but a missing PNG must cost a silhouette,
+     not a diagram. */
+  function cat() { return global.CatSprite; }
+  function mouse() { return global.MouseSprite; }
+
+  /* Sized by how tall the CHARACTER should be, never by the frame: both sheets pad the
+     cell generously and the padding is not the same on both, so sizing by the frame
+     would draw Jerry and Tom at two different scales for the same number. */
+  function spriteBox(sheet, direction, frame, charPx, extra) {
+    if (!sheet || !sheet.ready()) return null;
+    var m = sheet.meta();
+    var size = charPx / (m.charHeight || 0.8);
+    var b = sheet.backgroundStyle(direction, frame, size);
+    return '<div style="width:' + b.width + ';height:' + b.height
+      + ';background-image:' + b.backgroundImage + ';background-size:' + b.backgroundSize
+      + ';background-position:' + b.backgroundPosition + ';background-repeat:no-repeat'
+      + (extra ? ';' + extra : '') + '"></div>';
+  }
+
+  /* Placed by the ground point, the way the arena places them: (ax, ay) is where the feet
+     stand. Centring the frame instead would float the character above its own spot. */
+  function spriteAt(sheet, direction, frame, ax, ay, charPx, extra) {
+    if (!sheet || !sheet.ready()) return null;
+    var m = sheet.meta();
+    var size = charPx / (m.charHeight || 0.8);
+    return spriteBox(sheet, direction, frame, charPx,
+      'position:absolute;left:' + (ax - size * m.anchor.x).toFixed(1) + 'px;top:'
+        + (ay - size * m.anchor.y).toFixed(1) + 'px' + (extra ? ';' + extra : ''));
+  }
+
   function esc(s) {
     return String(s === undefined ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -129,8 +163,10 @@
     var rnd = function () { return ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648); };
     var i;
 
+    // Each of the 48 gets its own opacity and its own walk phase, so a crowd of the same
+    // sprite still reads as forty-eight individuals rather than one Tom stamped out.
     d.pop = [];
-    for (i = 0; i < 48; i++) d.pop.push((0.4 + rnd() * 0.6).toFixed(2));
+    for (i = 0; i < 48; i++) d.pop.push({ o: (0.4 + rnd() * 0.6).toFixed(2), f: i % 4 });
 
     d.tape = [
       { tag: 'CAUGHT HER', bg: 'rgba(61,220,132,.12)', color: '#7ee6a8', delay: '0s' },
@@ -294,8 +330,12 @@
       + '<div style="width:286px;height:216px;position:relative;border-radius:13px;background:#0a0d13;border:1px solid rgba(130,160,200,.16);overflow:hidden">'
       + '<div style="' + GRID26 + '"></div>'
       + '<div style="position:absolute;left:64px;top:26px;width:150px;height:140px;background:linear-gradient(115deg,rgba(255,122,84,.4),rgba(255,122,84,0));clip-path:polygon(0% 100%,100% 16%,100% 84%);animation:xPulse 2.6s ease-in-out infinite"></div>'
-      + '<div style="position:absolute;left:30px;top:150px;width:42px;height:42px;border-radius:12px;background:#7e90ad;border:2px solid #ff8a5c;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:15px;color:#0b1018">T</div>'
-      + '<div style="position:absolute;left:210px;top:52px;width:26px;height:26px;border-radius:50%;background:#d09b6a;border:2px solid #6ee2ff;animation:xFlick 1.9s ease-in-out infinite"></div>'
+      // Tom stands at the apex of his own vision cone and faces along it; Jerry is the
+      // thing at the far end of it. Both by the feet, so they stand on the floor.
+      + (spriteAt(cat(), 'up-right', 0, 52, 194, 54)
+         || '<div style="position:absolute;left:30px;top:150px;width:42px;height:42px;border-radius:12px;background:#7e90ad;border:2px solid #ff8a5c;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:15px;color:#0b1018">T</div>')
+      + (spriteAt(mouse(), 'up-right', 1, 223, 80, 32, 'animation:xFlick 1.9s ease-in-out infinite')
+         || '<div style="position:absolute;left:210px;top:52px;width:26px;height:26px;border-radius:50%;background:#d09b6a;border:2px solid #6ee2ff;animation:xFlick 1.9s ease-in-out infinite"></div>')
       + '<div style="position:absolute;right:10px;bottom:8px;font-family:var(--mono);font-size:10px;color:#5f7392">walls · cone · scent</div>'
       + '</div></div>'
       + '<div style="font-size:28px;color:#4ea8ff;flex:0 0 auto;animation:xUp .34s .08s ease-out both">→</div>'
@@ -325,8 +365,12 @@
         + '<div style="flex:1 1 auto;position:relative">'
         + '<div style="position:absolute;inset:0;background-image:linear-gradient(rgba(120,160,220,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(120,160,220,.06) 1px,transparent 1px);background-size:22px 22px"></div>'
         + '<div style="position:absolute;left:22px;top:26px;right:26px;bottom:44px;border-left:2px dashed rgba(255,138,92,.5);border-top:2px dashed rgba(255,138,92,.5);border-top-left-radius:34px"></div>'
-        + '<div style="position:absolute;left:18px;top:20px;width:16px;height:16px;border-radius:5px;background:#7e90ad;border:1.5px solid #ff8a5c"></div>'
-        + '<div style="position:absolute;right:20px;bottom:38px;width:13px;height:13px;border-radius:50%;background:#d09b6a;border:1.5px solid #6ee2ff"></div></div>'
+        // Standing at the two ends of the dashed trail rather than beside it: Tom where the
+        // episode started, Jerry where it ended, so the line reads as the chase itself.
+        + (spriteAt(cat(), 'up', 1, 26, 182, 34)
+           || '<div style="position:absolute;left:18px;bottom:32px;width:16px;height:16px;border-radius:5px;background:#7e90ad;border:1.5px solid #ff8a5c"></div>')
+        + (spriteAt(mouse(), 'right', 3, 186, 42, 24)
+           || '<div style="position:absolute;right:20px;top:20px;width:13px;height:13px;border-radius:50%;background:#d09b6a;border:1.5px solid #6ee2ff"></div>') + '</div>'
         + '<div style="flex:0 0 auto;height:40px;display:flex;align-items:center;justify-content:center;gap:8px;background:' + e.bg + ';border-top:1px solid rgba(130,160,200,.12)">'
         + '<span style="font-family:var(--display);font-size:12px;letter-spacing:1.8px;color:' + e.color + '">' + e.tag + '</span>'
         + '</div></div>';
@@ -445,8 +489,11 @@
 
   /* GA 1 — forty-eight of them, and one opened up to show it is only a list of numbers. */
   FIG.ga1 = function (d) {
-    var crowd = d.pop.map(function (o) {
-      return '<div style="width:38px;height:38px;border-radius:11px;border:1.5px solid rgba(61,220,132,.35);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:12px;color:#0b1018;background:#7e90ad;opacity:' + o + '">T</div>';
+    var crowd = d.pop.map(function (p) {
+      var tom = spriteAt(cat(), 'down', p.f, 28, 52, 40);
+      return '<div style="width:56px;height:56px;position:relative;overflow:hidden;border-radius:12px;border:1.5px solid rgba(61,220,132,.35);background:rgba(8,40,25,.3);opacity:' + p.o + '">'
+        + (tom || '<div style="position:absolute;inset:9px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:14px;color:#0b1018;background:#7e90ad">T</div>')
+        + '</div>';
     }).join('');
     var genome = d.geneA.map(function (g) {
       return '<div style="flex:1 1 0;height:' + g.h + ';border-radius:4px;background:#3ddc84;transform-origin:bottom;animation:xRise .4s ' + g.delay + ' ease-out both"></div>';
@@ -454,7 +501,7 @@
     return '<div style="width:100%;height:100%;display:flex;align-items:center;gap:44px">'
       + '<div style="flex:1 1 auto;display:flex;flex-direction:column;gap:18px;animation:xUp .34s ease-out both">'
       + '<div style="' + CAP + '">GENERATION 1 · 48 TOMS, ALL RANDOM</div>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:11px;max-width:520px">' + crowd + '</div></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:11px;max-width:560px">' + crowd + '</div></div>'
       + '<div style="width:420px;flex:0 0 auto;display:flex;flex-direction:column;gap:16px;animation:xSlideR .38s .12s ease-out both">'
       + '<div style="' + CAP + '">ONE TOM, OPENED UP</div>'
       + '<div style="padding:24px;border-radius:16px;border:1px solid rgba(61,220,132,.28);background:rgba(8,40,25,.4);display:flex;flex-direction:column;gap:14px">'
@@ -469,7 +516,8 @@
     var rows = d.board.map(function (b) {
       return '<div style="display:flex;align-items:center;gap:15px;animation:xUp .3s ' + b.delay + ' ease-out both">'
         + '<div style="width:52px;font-family:var(--mono);font-size:13px;color:#6d80a0">' + b.name + '</div>'
-        + '<div style="width:30px;height:30px;border-radius:9px;background:#7e90ad;border:1.5px solid rgba(61,220,132,.4);flex:0 0 auto"></div>'
+        + '<div style="width:38px;height:38px;flex:0 0 auto;position:relative;overflow:hidden;border-radius:10px;border:1.5px solid rgba(61,220,132,.4);background:rgba(8,40,25,.3)">'
+        + (spriteAt(cat(), 'down', 0, 19, 35, 30) || '') + '</div>'
         + '<div style="flex:1 1 auto;height:20px;border-radius:8px;background:rgba(255,255,255,.05);overflow:hidden">'
         + '<div style="height:100%;width:' + b.w + ';border-radius:8px;background:' + b.bg + ';transform-origin:left;animation:xBar .5s ' + b.d2 + ' ease-out both"></div></div>'
         + '<div style="width:48px;text-align:right;font-family:var(--mono);font-size:14px;font-weight:700;color:' + b.color + '">' + b.score + '</div></div>';
@@ -488,7 +536,8 @@
     var rows = d.cull.map(function (b) {
       return '<div style="display:flex;align-items:center;gap:15px;animation:' + b.anim + '">'
         + '<div style="width:52px;font-family:var(--mono);font-size:13px;color:#6d80a0">' + b.name + '</div>'
-        + '<div style="width:30px;height:30px;border-radius:9px;background:#7e90ad;border:1.5px solid ' + b.ring + ';flex:0 0 auto"></div>'
+        + '<div style="width:38px;height:38px;flex:0 0 auto;position:relative;overflow:hidden;border-radius:10px;border:1.5px solid ' + b.ring + ';background:rgba(8,40,25,.3)">'
+        + (spriteAt(cat(), 'down', 0, 19, 35, 30) || '') + '</div>'
         + '<div style="flex:1 1 auto;height:20px;border-radius:8px;background:rgba(255,255,255,.05);overflow:hidden">'
         + '<div style="height:100%;width:' + b.w + ';border-radius:8px;background:' + b.bg + '"></div></div>'
         + '<div style="width:48px;text-align:right;font-family:var(--mono);font-size:14px;font-weight:700;color:' + b.color + '">' + b.score + '</div>'
@@ -578,7 +627,13 @@
       + '<div style="position:absolute;left:232px;top:190px;font-family:var(--display);font-size:11.5px;letter-spacing:1.6px;color:#e2d9ff">CENTRE · BEST GUESS</div>'
       + '<div style="position:absolute;left:210px;top:220px;width:125px;height:2px;background:linear-gradient(90deg,rgba(205,178,255,.9),rgba(205,178,255,.25))"></div>'
       + '<div style="position:absolute;left:256px;top:230px;font-family:var(--display);font-size:11.5px;letter-spacing:1.6px;color:#cdb2ff">SPREAD · HOW WIDE TO LOOK</div>'
-      + '<div style="position:absolute;left:16px;bottom:12px;font-family:var(--mono);font-size:11px;color:#5f7392">every point on this map is one complete Tom</div></div>'
+      // The one line of this figure a viewer can misread — that the dots are just dots.
+      // Spelling it out as dot = Tom costs one sprite and removes the whole ambiguity.
+      + '<div style="position:absolute;left:16px;bottom:8px;display:flex;align-items:center;gap:9px">'
+      + '<div style="width:11px;height:11px;flex:0 0 auto;border-radius:50%;background:#a97cff;box-shadow:0 0 12px rgba(169,124,255,.8)"></div>'
+      + '<div style="font-family:var(--mono);font-size:12px;color:#8b7bb8">=</div>'
+      + (spriteBox(cat(), 'down', 0, 28, 'flex:0 0 auto;margin:0 -2px') || '')
+      + '<div style="font-family:var(--mono);font-size:11px;color:#5f7392">every point on this map is one complete Tom</div></div></div>'
       + '<div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:20px;animation:xSlideR .38s .1s ease-out both">'
       + '<div style="padding:22px;border-radius:15px;border:1px solid rgba(169,124,255,.28);background:rgba(38,19,77,.42);display:flex;flex-direction:column;gap:9px">'
       + '<div style="font-family:var(--display);font-size:11px;letter-spacing:1.8px;color:#cdb2ff">THE ENTIRE MEMORY OF THE ALGORITHM</div>'

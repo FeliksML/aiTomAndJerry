@@ -26,17 +26,46 @@ score() {
   $PY trainer/scripts/highlights.py --run "runs/$tag" --episodes 400
 }
 
+# A port already in use is the one failure that looks exactly like a bug in the app:
+# the page loads from the OLD server still on 8778 and then sits there saying TRAINER
+# OFFLINE, with nothing anywhere saying why. Check first and say so.
+port_owner() {
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
+require_free() {
+  local port="$1" what="$2" pid
+  pid="$(port_owner "$port")"
+  [ -z "$pid" ] && return 0
+  echo "  port $port ($what) is already taken by pid $pid:" >&2
+  ps -o command= -p "$pid" 2>/dev/null | sed 's/^/    /' >&2
+  echo "  stop it first:  kill $pid" >&2
+  return 1
+}
+
 serve() {
   local tag="${1:-$TAG_DEFAULT}"
+  echo
+  require_free 8765 "trainer" || exit 1
+  require_free 8778 "app" || exit 1
   $PY trainer/scripts/serve.py --run "runs/$tag" &
   local ws=$!
-  python3 tools/serve_app.py --port 8778 >/dev/null 2>&1 &
+  python3 tools/serve_app.py --port 8778 &
   local http=$!
   trap 'kill $ws $http 2>/dev/null || true' EXIT INT TERM
+  # Both have to actually be up. `serve.py` imports torch, which is not instant.
+  local i=0
+  while [ $i -lt 40 ]; do
+    [ -n "$(port_owner 8765)" ] && [ -n "$(port_owner 8778)" ] && break
+    kill -0 $ws 2>/dev/null || { echo "  the trainer exited on start-up — see above" >&2; exit 1; }
+    sleep 0.5
+    i=$((i + 1))
+  done
   echo
   echo "  app      http://localhost:8778"
-  echo "  trainer  ws://127.0.0.1:8765   (run runs/$tag)"
-  echo "  keys     1 2 3 schools · l lesson · h highlights · f final · b leaderboard · r REVEAL"
+  echo "  trainer  ws://localhost:8765   (run runs/$tag)"
+  echo "  keys     n TRAINING (budget, train all three, score) · 1 2 3 schools · l lesson"
+  echo "           h highlights · f final · b leaderboard · x side by side · r REVEAL"
   echo
   wait $ws
 }

@@ -11,8 +11,14 @@
 (function (global) {
   'use strict';
 
+  /* `?ws=8799` or `?ws=ws://host:port` points this window at a different trainer.
+     Two runs can be up at once — a long one training overnight and a short one being
+     shot — and without this the second window silently attaches to the first server. */
   function Net(url) {
-    this.url = url || ('ws://' + (location.hostname || '127.0.0.1') + ':8765');
+    var q = null;
+    try { q = new URLSearchParams(location.search).get('ws'); } catch (e) { q = null; }
+    if (q) q = /^wss?:\/\//.test(q) ? q : ('ws://' + (location.hostname || '127.0.0.1') + ':' + q);
+    this.url = q || url || ('ws://' + (location.hostname || '127.0.0.1') + ':8765');
     this.ws = null;
     this.status = 'offline';
     this.handlers = {};

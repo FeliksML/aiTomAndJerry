@@ -11,6 +11,10 @@ Writes into the run directory:
 
 Nothing here trains. It only measures, on arenas that appear in no training set and in
 no evaluation used during training.
+
+By default each school enters the policy it FINISHED on. `--checkpoint best` enters the
+strongest policy it reached instead — the one `best.json` records, chosen by a run-off
+between the run's high-water mark and its finish on a seed neither was picked on.
 """
 
 from __future__ import annotations
@@ -32,6 +36,9 @@ def main() -> None:
     ap.add_argument("--device", default="auto")
     ap.add_argument("--nests", default=None,
                     help="hole count(s); defaults to what the run's config.json records")
+    ap.add_argument("--checkpoint", default="trained", choices=("trained", "best"),
+                    help="which policy each school enters: the one it finished on "
+                         "(default), or the strongest it reached — see best.json")
     a = ap.parse_args()
 
     from catmouse import arena, nets, tournament
@@ -47,7 +54,10 @@ def main() -> None:
     nests = arena.spread(arena.parse_nests(a.nests if a.nests is not None
                                            else cfg.get("nests")), len(arena.FINAL_SEEDS))
     print(f"  holes per room: {sorted(set(nests))}", flush=True)
-    t = tournament.run_tournament(run_dir, dev, reps=a.reps, nests=nests)
+    print(f"  entering each school's {a.checkpoint.upper()} policy", flush=True)
+    t = tournament.run_tournament(run_dir, dev, reps=a.reps, nests=nests,
+                                  checkpoint=a.checkpoint)
+    t["checkpoint"] = a.checkpoint
     (run_dir / "tournament.json").write_text(json.dumps(t, indent=2))
     print(f"  cross-play + anchor: {time.time() - t0:.0f}s", flush=True)
 

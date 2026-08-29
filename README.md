@@ -19,25 +19,94 @@ runs/         checkpoints, telemetry, journals, tournament results (git-ignored)
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch numpy pillow websockets
-
-# train all three schools in parallel — same wall-clock, same machine, same load
-.venv/bin/python trainer/scripts/train.py --minutes 45 --tag v4
-
-# decide the championship on arenas nobody trained on
-.venv/bin/python trainer/scripts/tournament_run.py --run runs/v4
-
-# serve the app
-.venv/bin/python trainer/scripts/serve.py --run runs/v4 &
-python3 tools/serve_app.py
+./run.sh serve
 ```
 
-Then open <http://localhost:8778>. **[SHOOT.md](SHOOT.md) is the run of show** — a
-suggested recording order tied to the keys, with the data beats worth pointing at.
+That is the only command you need. Open <http://localhost:8778>, press **`n`**, and the
+TRAINING screen does the rest: set the step budget, start all three schools, watch them,
+stop them, score the run, switch between runs. **[SHOOT.md](SHOOT.md) is the run of
+show** — a suggested recording order tied to the keys.
+
+The same three things from a terminal, if you prefer one:
+
+```bash
+.venv/bin/python trainer/scripts/train.py --steps 500M --tag v4     # or --minutes 45
+.venv/bin/python trainer/scripts/tournament_run.py --run runs/v4    # the championship
+.venv/bin/python trainer/scripts/serve.py --run runs/v4             # the live link
+```
+
+Either route runs the same code and writes the same files — the app launches
+`train.py` in three processes exactly as a terminal would, and tails the telemetry each
+child already writes.
 
 **Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `w` how the algorithm works · `v` verdict · `esc` menu · `space` pause ·
 `s` skip an episode · `[` `]` speed ·
-`h` highlight reel · `t` train live on camera · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
+`h` highlight reel · **`n` the TRAINING screen** · `t` train the current school on camera,
+`shift+S` end a live run early · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
+
+## The TRAINING screen · `n`
+
+Everything a run needs, in one place, so the terminal is only ever used to start the app:
+
+| | |
+|---|---|
+| **The budget** | step presets from 5M to 2B, a free-text field (`500M`, `1.5B`, `2e8`), an optional minutes cap, and an estimate of how long it will take on this machine |
+| **The run** | tag, holes per room, seed, and PPO's batch width |
+| **TRAIN ALL THREE** | launches the real trainer — three processes, identical budget — with a live bar, iteration, steps-against-target, steps per second and an ETA for each school |
+| **TRAIN … ON CAMERA** | the single-school take, on the same budget |
+| **STOP** | a request, not a kill: every school finishes its iteration, picks its best pair and saves |
+| **SCORE THE RUN** | the cross-play tournament and the highlight scan, streamed onto the screen; the leaderboard and grand final are live the moment it finishes |
+| **RUNS ON DISK** | every run, with what it holds and whether it has been scored — one click to watch a different one |
+
+The budget is shared: whatever is set here is what `t` spends too. Settings survive a
+reload, so a crash mid-shoot does not lose them.
+
+## How long, and how far in
+
+`--minutes` and `--steps` are the two budget clocks. Give either, or both — with both,
+a run ends at whichever arrives first, which is the safe way to start something
+overnight. `--steps` takes what you would actually type: `500M`, `1.5B`, `2e8`.
+
+```bash
+.venv/bin/python trainer/scripts/train.py --steps 500M --tag v4          # ~1h35m for all three
+.venv/bin/python trainer/scripts/train.py --steps 500M --minutes 120     # ... but never past 2h
+.venv/bin/python trainer/scripts/train.py --steps 500M --envs 2048       # PPO's batch, ~35% faster
+```
+
+The console prints a live line per school — percentage, iteration, steps against the
+target, steps per second and an ETA — and the app draws the same four numbers plus a
+progress bar while `t` is running. Press `shift+T` to pick the budget before you start
+and `shift+S` to end a run early; a stopped run still snapshots, still picks its best
+pair and still saves.
+
+**On an M2 Max**, all three schools together sustain about **270k environment steps per
+second** (~90k each) at `--envs 2048`, which puts 500M steps each at roughly **1h35m**.
+That is about 46% of the twelve CPU cores; the GPU is deliberately idle, because at
+2,853 parameters the MPS round-trip costs more than the arithmetic saves — `pick_device`
+benchmarks the real call and picks the CPU on purpose. More threads do not help either:
+the environment is one single-threaded NumPy loop per process, so the batch width is the
+only lever that turns more of the chip into steps.
+
+## The best Tom and the best Jerry
+
+Self-play is not monotone — a cat can be walked backwards by a mouse that got good after
+it did — so the policy a run *finishes* on is not always the best one it *reached*. Every
+run therefore keeps a high-water mark per role, ranked on the **lower end** of the
+confidence interval so a single lucky evaluation cannot claim the title, and at the end
+re-scores the peak against the finish on a seed neither was picked on. The winner is
+written as a fourth checkpoint:
+
+```
+runs/<tag>/<school>/checkpoints.npz    ... plus best_cat / best_mouse
+runs/<tag>/<school>/best.json          which one won, both readings, and where the peak was
+```
+
+The app gets a **BEST** chip next to UNTRAINED / HALF-TRAINED / TRAINED, and
+`tournament_run.py --checkpoint best` enters those policies into the championship
+instead of the ones each school happened to end on. A live take saves the same way, into
+`runs/<tag>/live/<stamp>/`, so an hour of training on camera is not lost when the server
+stops.
 
 ## The reveal
 

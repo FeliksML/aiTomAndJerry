@@ -26,6 +26,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
+import signal
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -40,7 +44,15 @@ from .scripted import ScriptedPair
 from .tournament import LABELS, SCHOOLS, load_run
 from .vec import MapSet, VecEnv
 
-CHECKPOINTS = ("untrained", "half", "trained")
+ROOT = Path(__file__).resolve().parents[2]
+RUNS = ROOT / "runs"
+TRAIN_PY = ROOT / "trainer" / "scripts" / "train.py"
+SCORE_STEPS = (("tournament_run.py", ["--reps", "40"]), ("highlights.py", ["--episodes", "400"]))
+
+# BEST is written by the trainer alongside the three Academy checkpoints: the policy
+# each role was actually strongest at, which is not always the one it finished on. It is
+# absent from older runs, and `load_run` simply returns nothing for it in that case.
+CHECKPOINTS = ("untrained", "half", "trained", "best")
 
 
 def _json(o):
@@ -75,21 +87,20 @@ class Session:
     """One recording session. Owns the environment, the policies and the clock."""
 
     def __init__(self, run_dir: Path, device: torch.device, journal: Journal | None = None):
-        self.run_dir = run_dir
         self.device = device
         self.journal = journal
-        # How many holes this run was trained with. A room with one hole plays a
-        # completely different game from a room with two, so the server takes it from
-        # the run rather than assuming.
-        cfg = self._load_json("config.json") or {}
-        self.nests = arena.parse_nests(cfg.get("nests", arena.DEFAULT_NESTS))
-        self.maps = MapSet(arena.TRAIN_SEEDS, arena.spread(self.nests, len(arena.TRAIN_SEEDS)))
-        self.final_maps = MapSet(arena.FINAL_SEEDS, arena.spread(self.nests, len(arena.FINAL_SEEDS)))
-        self.policies = {ck: load_run(run_dir, ck) for ck in CHECKPOINTS}
-        self.tournament = self._load_json("tournament.json")
-        self.progression = self._load_json("progression.json")
-        self.budgets = self._load_json("budgets.json")
-        self.highlights = self._load_json("highlights.json")
+        self.load_run_dir(run_dir)
+
+        # The offline trainer, driven from the app. One supervisor process at a time; the
+        # per-school telemetry is tailed out of the JSONL each child already writes, so
+        # a run started from the app and a run started from a terminal produce byte-for-
+        # byte the same artefacts.
+        self.runner: subprocess.Popen | None = None
+        self.runner_meta: dict = {}
+        self.runner_schools: dict = {}
+        self.scorer: subprocess.Popen | None = None
+        self._runner_task = None
+        self._scorer_task = None
 
         self.mode = "idle"
         self.speed = 4.0
@@ -110,6 +121,24 @@ class Session:
         self._shadow_at = 0
         self.race: list[str] = []
         self._race_done: list = []
+
+    def load_run_dir(self, run_dir: Path) -> None:
+        """Point the session at a run. Called at start-up and again whenever the app
+        switches runs, so a run trained on camera can be watched without a restart."""
+        self.run_dir = run_dir
+        # How many holes this run was trained with. A room with one hole plays a
+        # completely different game from a room with two, so the server takes it from
+        # the run rather than assuming.
+        cfg = self._load_json("config.json") or {}
+        self.config = cfg
+        self.nests = arena.parse_nests(cfg.get("nests", arena.DEFAULT_NESTS))
+        self.maps = MapSet(arena.TRAIN_SEEDS, arena.spread(self.nests, len(arena.TRAIN_SEEDS)))
+        self.final_maps = MapSet(arena.FINAL_SEEDS, arena.spread(self.nests, len(arena.FINAL_SEEDS)))
+        self.policies = {ck: load_run(run_dir, ck) for ck in CHECKPOINTS}
+        self.tournament = self._load_json("tournament.json")
+        self.progression = self._load_json("progression.json")
+        self.budgets = self._load_json("budgets.json")
+        self.highlights = self._load_json("highlights.json")
 
     def _load_json(self, name: str):
         p = self.run_dir / name
@@ -136,7 +165,180 @@ class Session:
             "budgets": self.budgets,
             "highlights": self.highlights,
             "runDir": str(self.run_dir),
+            "runTag": self.run_dir.name,
+            "runs": self.list_runs(),
+            "config": self.config,
+            "training": self.runner_state(),
         }
+
+    def list_runs(self) -> list[dict]:
+        """Every run on disk, newest first, with enough for the app to say what it is."""
+        out = []
+        if not RUNS.exists():
+            return out
+        for d in RUNS.iterdir():
+            if not d.is_dir() or d.name == "journals":
+                continue
+            schools = sorted(x.name for x in d.iterdir()
+                             if x.is_dir() and (x / "checkpoints.npz").exists())
+            if not schools and not (d / "config.json").exists():
+                continue
+            cfg = {}
+            with contextlib.suppress(Exception):
+                cfg = json.loads((d / "config.json").read_text())
+            out.append({
+                "tag": d.name, "schools": schools,
+                "budget": cfg.get("budget"), "startedAt": cfg.get("startedAt"),
+                "scored": (d / "tournament.json").exists(),
+                "current": d == self.run_dir,
+                "mtime": d.stat().st_mtime,
+            })
+        return sorted(out, key=lambda r: r["mtime"], reverse=True)
+
+    # ---------- the offline trainer, driven from the app ----------
+
+    def runner_state(self) -> dict:
+        live = self.train_school
+        return {
+            "full": self.runner is not None and self.runner.poll() is None,
+            "live": bool(self._train_task and not self._train_task.done()),
+            "liveSchool": live.key if live is not None else None,
+            "scoring": self.scorer is not None and self.scorer.poll() is None,
+            **self.runner_meta,
+        }
+
+    def start_train_all(self, loop, steps=None, minutes=None, envs=None, seed=7,
+                        tag="v5", nests="2", device="auto") -> dict:
+        """Run the real trainer — three schools, three processes — and stream it back.
+
+        This is exactly `train.py` as a terminal would launch it, not a re-implementation:
+        the app should not be able to produce a run that differs from a hand-typed one.
+        Its telemetry is read from the `events.jsonl` each child already writes.
+        """
+        if self.runner is not None and self.runner.poll() is None:
+            return {"type": "error", "message": "a full run is already going"}
+        if self._train_task and not self._train_task.done():
+            return {"type": "error", "message": "a live run is going — stop it first"}
+        if not steps and not minutes:
+            return {"type": "error", "message": "a run needs a budget: steps, minutes, or both"}
+        tag = "".join(c for c in str(tag) if c.isalnum() or c in "-_.") or "v5"
+        out = RUNS / tag
+        cmd = [sys.executable, str(TRAIN_PY), "--tag", tag, "--seed", str(int(seed)),
+               "--nests", str(nests), "--device", device]
+        if steps:
+            cmd += ["--steps", str(steps)]
+        if minutes:
+            cmd += ["--minutes", str(minutes)]
+        if envs:
+            cmd += ["--envs", str(int(envs))]
+        # Its own process group, so stopping the run reaches all three children rather
+        # than only the supervisor.
+        self.runner = subprocess.Popen(cmd, cwd=str(ROOT), start_new_session=True)
+        self.runner_meta = {"tag": tag, "steps": steps, "minutes": minutes,
+                            "envs": envs, "seed": seed, "nests": nests,
+                            "startedAt": time.strftime("%H:%M:%S")}
+        self.runner_schools = {}
+        self._runner_task = loop.create_task(self._follow_run(out, tag))
+        return {"type": "trainAllStarted", **self.runner_meta,
+                "schools": list(SCHOOLS), "out": str(out)}
+
+    async def _follow_run(self, out: Path, tag: str) -> None:
+        """Tail each school's JSONL and forward every event, then report the exit."""
+        handles: dict[str, object] = {}
+        try:
+            while True:
+                for school in SCHOOLS:
+                    f = handles.get(school)
+                    if f is None:
+                        path = out / school / "events.jsonl"
+                        if not path.exists():
+                            continue
+                        f = handles[school] = path.open()
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        with contextlib.suppress(Exception):
+                            ev = json.loads(line)
+                            ev.setdefault("school", school)
+                            self.runner_schools[school] = ev
+                            await self._train_events.put({"type": "train", "run": tag, **ev})
+                done = self.runner is None or self.runner.poll() is not None
+                if done and all(s in handles for s in SCHOOLS):
+                    # One last sweep, so the closing events are not lost to the poll gap.
+                    await asyncio.sleep(0.4)
+                    for school, f in handles.items():
+                        for line in f:
+                            with contextlib.suppress(Exception):
+                                ev = json.loads(line)
+                                ev.setdefault("school", school)
+                                await self._train_events.put({"type": "train", "run": tag, **ev})
+                    break
+                if done:
+                    break
+                await asyncio.sleep(0.35)
+        finally:
+            for f in handles.values():
+                with contextlib.suppress(Exception):
+                    f.close()
+            code = self.runner.poll() if self.runner else None
+            await self._train_events.put({"type": "trainAllDone", "run": tag, "code": code,
+                                          "out": str(out)})
+
+    def stop_train_all(self) -> dict:
+        """Ask, do not kill. The children finish the iteration they are on and save."""
+        if self.runner is None or self.runner.poll() is not None:
+            return {"type": "error", "message": "no full run is going"}
+        with contextlib.suppress(Exception):
+            os.killpg(os.getpgid(self.runner.pid), signal.SIGTERM)
+        return {"type": "trainStopping", "scope": "all"}
+
+    # ---------- scoring, also from the app ----------
+
+    def start_score(self, loop, tag: str | None = None, checkpoint: str = "trained") -> dict:
+        if self.scorer is not None and self.scorer.poll() is None:
+            return {"type": "error", "message": "already scoring"}
+        if self.runner is not None and self.runner.poll() is None:
+            return {"type": "error", "message": "wait for the run to finish before scoring it"}
+        run = RUNS / (tag or self.run_dir.name)
+        if not run.exists():
+            return {"type": "error", "message": f"no run at {run}"}
+        self._scorer_task = loop.create_task(self._run_score(run, checkpoint))
+        return {"type": "scoreStarted", "run": run.name, "checkpoint": checkpoint}
+
+    async def _run_score(self, run: Path, checkpoint: str) -> None:
+        """The tournament and the highlight scan, in order, with their output relayed.
+
+        Both take minutes, and both used to be terminal-only — which meant a run trained
+        on camera had no leaderboard and no grand final until somebody typed something.
+        """
+        ok = True
+        for script, extra in SCORE_STEPS:
+            args = [sys.executable, str(ROOT / "trainer" / "scripts" / script),
+                    "--run", str(run)] + extra
+            if script == "tournament_run.py":
+                args += ["--checkpoint", checkpoint]
+            await self._train_events.put({"type": "scoreStep", "step": script, "run": run.name})
+            proc = await asyncio.create_subprocess_exec(
+                *args, cwd=str(ROOT), stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT)
+            self.scorer = proc
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip()
+                if line:
+                    await self._train_events.put({"type": "scoreLine", "line": line})
+            code = await proc.wait()
+            if code != 0:
+                ok = False
+                await self._train_events.put(
+                    {"type": "scoreLine", "line": f"{script} exited {code}"})
+                break
+        self.scorer = None
+        # Re-read whatever the scan just wrote, so the leaderboard and the grand final
+        # are live without a reload.
+        with contextlib.suppress(Exception):
+            self.load_run_dir(run)
+        await self._train_events.put({"type": "scoreDone", "run": run.name, "ok": ok})
 
     # ---------- PLAY ----------
 
@@ -398,12 +600,18 @@ class Session:
 
     # ---------- TRAIN ----------
 
-    def start_train(self, school: str, minutes: float, seed: int = 11) -> dict:
+    def start_train(self, school: str, minutes: float | None, seed: int = 11,
+                    steps: int | None = None) -> dict:
+        """`minutes`, `steps`, or both — both means whichever runs out first."""
         if self._train_task and not self._train_task.done():
             return {"type": "error", "message": "training already running"}
+        if not minutes and not steps:
+            return {"type": "error", "message": "a live run needs a budget: minutes, steps, or both"}
         self.mode = "train"
         self.level_seeds = None
-        self.ctx = {"school": school, "minutes": minutes}
+        self.ctx = {"school": school, "minutes": minutes, "steps": steps,
+                    "budget": Budget(seconds=None if minutes is None else minutes * 60,
+                                     steps=steps).describe()}
         self.train_school = None
         # A shadow episode, replayed from the policy as it currently stands. Training
         # itself runs thousands of episodes a second across a batch; showing one of them
@@ -419,10 +627,11 @@ class Session:
         self._begin_episode()
         loop = asyncio.get_running_loop()
         self._train_task = loop.run_in_executor(
-            None, self._train_blocking, school, minutes, seed, loop)
+            None, self._train_blocking, school, minutes, seed, loop, steps)
         return {"type": "state", **self.state()}
 
-    def _train_blocking(self, school: str, minutes: float, seed: int, loop) -> None:
+    def _train_blocking(self, school: str, minutes: float | None, seed: int, loop,
+                        steps: int | None = None) -> None:
         """Runs in a worker thread; telemetry is handed back through the event queue."""
         from .cmaes import CMAESSchool
         from .ga import GASchool
@@ -434,14 +643,28 @@ class Session:
             with contextlib.suppress(Exception):
                 asyncio.run_coroutine_threadsafe(self._train_events.put(msg), loop)
 
+        # A live take is a real run — at a step budget it can be hours of work — so it
+        # writes its checkpoints like any other. Under `live/<stamp>/` rather than
+        # `<school>/`, because the run directory being served belongs to the offline
+        # trainer and a take must never overwrite what the leaderboard is reading.
+        out = self.run_dir / "live" / time.strftime("%Y-%m-%dT%H-%M-%S")
         s = cls(self.maps, MapSet(arena.EVAL_SEEDS[:8],
                                   arena.spread(self.nests, 8)), self.device,
-                Budget(seconds=minutes * 60), seed=seed, on_event=on_event)
+                Budget(seconds=None if minutes is None else minutes * 60, steps=steps),
+                seed=seed, on_event=on_event, out_dir=out)
         s.setup()
         self.train_school = s
         s.train(eval_every=0.02)
+        # The live run picked a best cat and a best mouse of its own. Hand them to the
+        # session so `play best` right after a take plays what was just watched being
+        # trained, rather than the last run scored off disk.
+        with contextlib.suppress(Exception):
+            self.policies.setdefault("best", {})[school] = {
+                r: np.array(v, np.float32, copy=True)
+                for r, v in s.checkpoints["best"].items()}
         self.train_school = None
-        on_event({"kind": "trainDone", "school": school})
+        on_event({"kind": "trainDone", "school": school, "savedTo": str(out),
+                  "best": {r: v.get("pick") for r, v in (s.best_report or {}).items()}})
 
 
 async def replay(path: Path, send) -> None:

@@ -393,8 +393,9 @@
      *
      * env.js is right here in the browser and castCone takes fractional coordinates, so
      * the honest answer is simply to cast it properly. Measured penetration drops from
-     * 0.498 cells to 0.034 — a graze along a wall face, which is where a ray is supposed
-     * to stop. Twenty-one rays twice a frame is nothing.
+     * 0.498 cells to 0 — the caster walks cell boundaries and stops on the wall face,
+     * which is where a ray is supposed to stop. About seventy rays a cone at 0.011 ms,
+     * two cones a frame, against a 16.7 ms budget.
      */
     var coneAt = function (px, py, st, fallback) {
       if (!map.grid || !E.castCone) return fallback;

@@ -297,8 +297,20 @@ interpolation of it, and both wall bugs lived there:
   body, hanging an exact shape off the wrong anchor and spilling light through cover —
   up to half a cell deep. It is now cast at the tweened position; `env.js` is in the
   browser and takes fractional coordinates, so this is both exact and smooth. Measured
-  penetration fell from 0.498 cells to 0.045, which is the ray-caster's own step
-  tolerance.
+  penetration fell from 0.498 cells to 0.045, and then to a flat 0 once the caster
+  stopped marching in fixed steps (below).
+- **The cone was ray-marched in 0.18 steps and backed off a whole one on contact**, so
+  every ray stopped somewhere in the last 0.18 cells before the wall and by a different
+  amount each: a flat wall came out as a 4px saw, and an unobstructed ray reached 8.64
+  of a nominal 8.5, feeding the policy readings of 1.016 on a [0,1] input. It now walks
+  cell boundaries and returns the exact crossing.
+- **Twenty-one rays over 100 degrees sample the world every 0.74 cells at full range**,
+  so the fan almost never landed on the corner a shadow pivots around and the polygon
+  bridged a near hit and a far miss with one straight edge — the spikes. 13% of
+  neighbouring ray pairs differed by over a cell, the worst by 7.9. The drawn shape now
+  gets a ray a hair either side of every wall corner in view; against the true
+  visibility region its error falls from 9.2% of the lit area to 1.2%, and the 21
+  readings a policy consumes are untouched.
 
 `tools/check_render.js` replays a journal through the real painter and fails on either.
 

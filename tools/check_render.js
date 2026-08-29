@@ -54,12 +54,13 @@ function wallAtPoint(grid, x, y) {
 
 /* How far past a wall face a ray reaches, in cells.
  *
- * A binary "does it touch a wall" test is the wrong question: the caster walks in 0.18
- * steps and backs off one, so an exact cone still grazes wall faces by a few hundredths
- * of a cell — measured, 0.034 at worst. What matters is whether the light visibly
- * covers a block, so the gate measures depth and allows a graze. For reference, the
+ * A binary "does it touch a wall" test is the wrong question: a ray is meant to stop ON
+ * a wall face, and floating point leaves the endpoint on either side of it. So the gate
+ * measures depth and allows a hair. The allowance used to be 0.12 because the caster
+ * walked in 0.18 steps and grazed 0.034 at worst; it now walks cell boundaries and
+ * measures a flat 0 across 2,600 cones, tweened apexes included. For reference, the
  * translate bug reached 0.5 cells and was obvious on screen. */
-const GRAZE = 0.12;      // cells; about 5px at the arena's 44px cell
+const GRAZE = 0.02;      // cells; about 1px at the arena's 44px cell
 
 function rayDepthIntoWall(grid, ax, ay, bx, by) {
   let worst = 0;

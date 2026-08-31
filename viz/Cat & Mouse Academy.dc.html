@@ -1638,8 +1638,8 @@ class Component extends DCLogic {
 
   syncView(run, init) {
     const E = this.E, s = run.s;
-    const cc = E.castCone(s.grid, s.cat.x, s.cat.y, s.cat.facing);
-    const cm = E.castCone(s.grid, s.mouse.x, s.mouse.y, s.mouse.facing);
+    const cc = E.castCone(s.grid, s.cat.x, s.cat.y, s.cat.facing, 'cat');
+    const cm = E.castCone(s.grid, s.mouse.x, s.mouse.y, s.mouse.facing, 'mouse');
     const scent = [];
     for (let y = 1; y < E.H - 1; y++) for (let x = 1; x < E.W - 1; x++) {
       const v = s.scent[E.idx(x, y)];

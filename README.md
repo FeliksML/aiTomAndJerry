@@ -22,9 +22,10 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch nu
 ./run.sh serve
 ```
 
-That is the only command you need. Open <http://localhost:8778>, press **`n`**, and the
-TRAINING screen does the rest: set the step budget, start all three schools, watch them,
-stop them, score the run, switch between runs. **[SHOOT.md](SHOOT.md) is the run of
+That is the only command you need. Open <http://localhost:8778>, pick a school, and
+press **`n`** — its academy screen sets the budget, the shaping and the algorithm's own
+knobs, trains it while you watch, and lets you drag back through the run to any set of
+weights it had. **[SHOOT.md](SHOOT.md) is the run of
 show** — a suggested recording order tied to the keys.
 
 The same three things from a terminal, if you prefer one:
@@ -42,25 +43,53 @@ child already writes.
 **Keys.** `1 2 3` schools · `x` side by side · `g` level generator · `f` grand final · `b` leaderboard ·
 `l` full-screen lesson · `w` how the algorithm works · `v` verdict · `esc` menu · `space` pause ·
 `s` skip an episode · `[` `]` speed ·
-`h` highlight reel · **`n` the TRAINING screen** · `t` train the current school on camera,
-`shift+S` end a live run early · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
+`h` highlight reel · **`n` this academy** (budget, shaping, its knobs, train it) ·
+`t` train the school on screen · `shift+S` end a run early · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
 
-## The TRAINING screen · `n`
+## Inside an academy · `n`
 
-Everything a run needs, in one place, so the terminal is only ever used to start the app:
+Each school is trained from its own screen, because that is where you are looking at it.
+Press `1`, `2` or `3` for a school, then `n`:
 
 | | |
 |---|---|
-| **The budget** | step presets from 5M to 2B, a free-text field (`500M`, `1.5B`, `2e8`), an optional minutes cap, and an estimate of how long it will take on this machine |
-| **The run** | tag, holes per room, seed, and PPO's batch width |
-| **TRAIN ALL THREE** | launches the real trainer — three processes, identical budget — with a live bar, iteration, steps-against-target, steps per second and an ETA for each school |
-| **TRAIN … ON CAMERA** | the single-school take, on the same budget |
-| **STOP** | a request, not a kill: every school finishes its iteration, picks its best pair and saves |
-| **SCORE THE RUN** | the cross-play tournament and the highlight scan, streamed onto the screen; the leaderboard and grand final are live the moment it finishes |
-| **RUNS ON DISK** | every run, with what it holds and whether it has been scored — one click to watch a different one |
+| **How much work this academy gets** | a slider in millions of steps, presets from 5M to 2B, and an estimate of how long that is on this machine |
+| **How it is taught** | the three shaping numbers — how hard Jerry is pulled toward a hole, how hard Tom is pulled when he can see her, and when he cannot |
+| **The rules of the game** | +1 for a catch, −1 for letting her home, −0.05 for a trap. Shown, and locked: the scoreboard counts these directly, so a school taught under different ones would not be playing the same sport as the other two |
+| **Its own knobs** | whatever its config actually has — PPO's batch, rollout, learning rate, clip and entropy; the GA's population, elites, mutation; CMA-ES's samples, step size, episodes per sample |
+| **TRAIN THIS ACADEMY** | trains it live, on its own budget, with a bar, iteration, steps-against-target, rate and ETA — and the arena keeps playing the brain the optimiser holds right now |
 
-The budget is shared: whatever is set here is what `t` spends too. Settings survive a
-reload, so a crash mid-shoot does not lose them.
+The run card and the reel belong to the *run*, not to what the arena happens to be
+playing: click UNTRAINED or drag the reel back to an early checkpoint and the card stays
+up, still ticking, so "here is what it was, and it is still training behind us" is one
+screen rather than two.
+
+Every academy keeps its own settings, and they survive a reload.
+
+## The reel
+
+Every time a school is scored, the weights it was measured on are kept. That turns a run
+into something you can drag through: pick a step and the arena is replayed by the brain
+the school had *then*. Early frames wander; late ones hunt.
+
+Under the arena, the reel draws Tom's catch rate and Jerry's escape rate across the run
+on **one 0–100% axis** — they are both rates, and scaling each to its own maximum (which
+is what it did first) made every crossing an artefact — with a legend, the current pair of
+numbers, and a dashed mark where each one peaked. Rarely the same place. The handle pins a
+frame, `LIVE` goes back to the policy the optimiser holds now, and it all keeps working
+while the run carries on behind it: the caption says `PINNED · the brain at 4M steps ·
+Tom 12% · Jerry 5% · training continues behind it`.
+
+A reload, a second window, or a socket that drops and comes back all rebuild the same
+screen — the greeting carries the reel, which run is training and which frame is pinned. Frames are written to `runs/<tag>/<school>/timeline.npz`, so a
+finished run is just as scrubbable as a live one.
+
+## The run screen · `n` from the Academy
+
+What is left at the run level: which run is being watched, the three academies as a
+summary, and **SCORE THE RUN** — the cross-play tournament and the highlight scan,
+streamed onto the screen, with the leaderboard and grand final live the moment it
+finishes. Each school can enter the championship as it finished or at its best.
 
 ## How long, and how far in
 

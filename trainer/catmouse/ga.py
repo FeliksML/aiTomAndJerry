@@ -32,6 +32,7 @@ import numpy as np
 
 from .evo import EvoSchool, fingerprint
 from .nets import FLAT_DIM, init_flat
+from .school import apply_hyper
 
 
 @dataclass
@@ -50,9 +51,22 @@ class GASchool(EvoSchool):
     key = "ga"
     label = "Genetic Algorithm"
 
+    TUNABLES = (
+        {"key": "pop_size", "label": "POPULATION", "min": 8, "max": 256, "step": 8,
+         "hint": "brains per generation; each one costs a batch of episodes"},
+        {"key": "elite", "label": "ELITES KEPT", "min": 1, "max": 32, "step": 1,
+         "hint": "survive untouched into the next generation"},
+        {"key": "mutation_rate", "label": "MUTATION RATE", "min": 0.01, "max": 0.5,
+         "step": 0.01, "hint": "fraction of weights nudged in a child"},
+        {"key": "sigma", "label": "MUTATION SIZE", "min": 0.005, "max": 0.25,
+         "step": 0.005, "hint": "how hard they are nudged"},
+        {"key": "tournament", "label": "TOURNAMENT SIZE", "min": 2, "max": 8, "step": 1,
+         "hint": "how many compete to be a parent"},
+    )
+
     def __init__(self, *a, cfg: GAConfig | None = None, **kw):
         super().__init__(*a, **kw)
-        self.cfg = cfg or GAConfig()
+        self.cfg = apply_hyper(cfg or GAConfig(), self.hyper)
         self.pop_size = self.cfg.pop_size
 
     def setup_optimiser(self) -> None:

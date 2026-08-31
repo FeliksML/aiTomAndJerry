@@ -8,8 +8,37 @@
 #   ./run.sh all   [minutes] [tag]   train, score, then serve
 set -euo pipefail
 cd "$(dirname "$0")"
-PY=.venv/bin/python
-TAG_DEFAULT=v4
+# The newest run on disk, so `./run.sh serve` with no argument shows something. A fixed
+# default went stale the first time a run was tagged anything else: the trainer came up
+# green on a directory that did not exist and all three schools read NOT IN THIS RUN.
+newest_tag() {
+  local d
+  d="$(ls -1dt runs/*/ 2>/dev/null | grep -v '/journals/$' | head -1)"
+  [ -n "$d" ] && basename "$d" || echo v5
+}
+TAG_DEFAULT="$(newest_tag)"
+
+# The interpreter. `.venv` is git-ignored, so a git worktree does not have one — it has
+# the repository's, next to the main checkout. Falling back to it means a worktree runs
+# without a second multi-gigabyte torch install, and a missing venv says so plainly
+# instead of failing as "no such file or directory" three lines into a script.
+find_python() {
+  local common main
+  if [ -x .venv/bin/python ]; then echo .venv/bin/python; return 0; fi
+  common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$common" ]; then
+    main="$(cd "$common/.." 2>/dev/null && pwd)"
+    if [ -n "$main" ] && [ -x "$main/.venv/bin/python" ]; then echo "$main/.venv/bin/python"; return 0; fi
+  fi
+  return 1
+}
+
+PY="$(find_python || true)"
+if [ -z "$PY" ]; then
+  echo "no virtualenv found — expected .venv/bin/python here or beside the main checkout" >&2
+  echo "  create one:  uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python torch numpy pillow websockets" >&2
+  exit 1
+fi
 
 # Extra flags after [minutes] [tag] are forwarded, so the --nests in the README is the
 # --nests that runs. They used to be dropped silently, which is the worst way to be wrong
@@ -62,15 +91,21 @@ serve() {
     i=$((i + 1))
   done
   echo
+  echo "  python   $PY"
   echo "  app      http://localhost:8778"
   echo "  trainer  ws://localhost:8765   (run runs/$tag)"
-  echo "  keys     n TRAINING (budget, train all three, score) · 1 2 3 schools · l lesson"
+  echo "  keys     1 2 3 a school · n ITS ACADEMY (budget, shaping, knobs, train it)"
+  echo "           the reel under the arena drags back through the run's own weights"
   echo "           h highlights · f final · b leaderboard · x side by side · r REVEAL"
   echo
   wait $ws
 }
 
 verify() {
+  # The two env.js copies are a line-for-line mirror of each other and of env.py, and
+  # nothing enforced it: the parity gate drives viz/env.js while the app ships
+  # app/js/env.js. Split one and everything stays green while the app keeps the old rules.
+  cmp -s app/js/env.js viz/env.js || { echo "app/js/env.js and viz/env.js have diverged" >&2; exit 1; }
   $PY trainer/scripts/check_arenas.py
   # Both hole counts: the generator branches on it, so one is not evidence for the other.
   for n in 1 2; do

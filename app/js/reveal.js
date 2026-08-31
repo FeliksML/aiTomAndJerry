@@ -82,9 +82,27 @@
      a stray keypress mid-take must not unseal the rest of the video. */
   function bindKeys() {
     window.addEventListener('keydown', function (e) {
-      if (e.key === 'r') { set(level + 1); e.preventDefault(); }
-      else if (e.key === 'R') { set(level - 1); e.preventDefault(); }
-      else if (e.key === ')' || (e.key === '0' && e.shiftKey)) { set(0); e.preventDefault(); }
+      /* This is a second window listener, separate from the app's. It used to run with no
+         guards at all, which had three consequences:
+
+           * it fired while a text field had focus, and because it calls preventDefault
+             the characters `r`, `R` and `)` could not be typed into the run tag or the
+             academy seed field at all — the letter was swallowed AND a school was
+             unsealed;
+           * it fired while the six-step explainer was open, the one state that is
+             supposed to swallow the whole keyboard;
+           * `r` was tested by character rather than by modifier, so with caps lock on an
+             unshifted `r` arrived as 'R' and re-sealed instead of revealing.
+
+         The guards below are the same ones the app's own handler uses, and the shift
+         tests are on the modifier. */
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (window.App && window.App.explain) return;
+      var k = (e.key || '').toLowerCase();
+      if (k === 'r' && !e.shiftKey) { set(level + 1); e.preventDefault(); }
+      else if (k === 'r' && e.shiftKey) { set(level - 1); e.preventDefault(); }
+      else if (e.key === ')' || (k === '0' && e.shiftKey)) { set(0); e.preventDefault(); }
     });
   }
 

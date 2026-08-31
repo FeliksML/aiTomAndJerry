@@ -77,7 +77,7 @@ class EvoSchool(School):
         from .vec import VecEnv
         if self._eval_env is None or self._eval_env.n != n:
             # Learning-strength shaping: this env produces FITNESS, not scores.
-            self._eval_env = VecEnv(self.maps, n, seed=seed).training_shaping()
+            self._eval_env = VecEnv(self.maps, n, seed=seed).training_shaping(self.shaping)
             self._eval_env.noise_tile = self.eps_per_genome
             self._bot = ScriptedPair(self._eval_env, 0.5, seed=seed + 77)
         return self._eval_env

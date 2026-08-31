@@ -30,6 +30,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .evo import EvoSchool
+from .school import apply_hyper
 from .nets import FLAT_DIM, init_flat
 
 
@@ -44,9 +45,18 @@ class CMAESSchool(EvoSchool):
     key = "cmaes"
     label = "Covariance Matrix Adaptation"
 
+    TUNABLES = (
+        {"key": "lam", "label": "SAMPLES PER GENERATION", "min": 8, "max": 128, "step": 4,
+         "hint": "the classic default at this size is about 30"},
+        {"key": "sigma0", "label": "INITIAL STEP SIZE", "min": 0.005, "max": 0.2,
+         "step": 0.005, "hint": "how wide the first cloud of brains is"},
+        {"key": "eps_per_genome", "label": "EPISODES PER SAMPLE", "min": 4, "max": 32,
+         "step": 2, "hint": "more is a quieter fitness and a slower generation"},
+    )
+
     def __init__(self, *a, cfg: CMAConfig | None = None, **kw):
         super().__init__(*a, **kw)
-        self.cfg = cfg or CMAConfig()
+        self.cfg = apply_hyper(cfg or CMAConfig(), self.hyper)
         self.pop_size = self.cfg.lam
         self.eps_per_genome = self.cfg.eps_per_genome
 

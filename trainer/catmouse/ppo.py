@@ -29,7 +29,7 @@ import torch.nn.functional as F
 from . import arena
 from .nets import Critic, FlatActor, PolicyNet, init_flat
 from .league import Promotion, calibrated_bars, ladder_for, scripted_share
-from .school import School
+from .school import School, apply_hyper
 from .scripted import ScriptedPair
 from .vec import VecEnv
 
@@ -58,9 +58,22 @@ class PPOSchool(School):
     key = "ppo"
     label = "Proximal Policy Optimization"
 
+    TUNABLES = (
+        {"key": "n_envs", "label": "PARALLEL ENVIRONMENTS", "min": 128, "max": 8192,
+         "step": 128, "hint": "the batch. 2048 is ~35% more steps a second than 512 here"},
+        {"key": "horizon", "label": "ROLLOUT LENGTH", "min": 32, "max": 512, "step": 32,
+         "hint": "steps per environment before each update"},
+        {"key": "lr", "label": "LEARNING RATE", "min": 1e-5, "max": 3e-3, "step": 1e-5,
+         "hint": "how far Adam moves"},
+        {"key": "clip", "label": "CLIP eps", "min": 0.05, "max": 0.4, "step": 0.01,
+         "hint": "the leash: how far one update may move the policy"},
+        {"key": "ent_start", "label": "ENTROPY AT THE START", "min": 0.0, "max": 0.08,
+         "step": 0.002, "hint": "how much it is paid to keep trying things"},
+    )
+
     def __init__(self, *a, cfg: PPOConfig | None = None, **kw):
         super().__init__(*a, **kw)
-        self.cfg = cfg or PPOConfig()
+        self.cfg = apply_hyper(cfg or PPOConfig(), self.hyper)
 
     # ---------- setup ----------
 
@@ -80,7 +93,7 @@ class PPOSchool(School):
 
         n = c.n_envs
         # Learning-strength shaping. Scoring envs keep the spec's coefficients.
-        self.env = VecEnv(self.maps, n, seed=self.seed).training_shaping()
+        self.env = VecEnv(self.maps, n, seed=self.seed).training_shaping(self.shaping)
         self.env.reset(map_idx=np.arange(n) % len(self.maps))
         half, quarter = n // 2, n // 4
         self.grp = np.zeros(n, np.int8)      # 0 = A, 1 = B, 2 = C

@@ -397,13 +397,16 @@
      * which is where a ray is supposed to stop. About seventy rays a cone at 0.011 ms,
      * two cones a frame, against a 16.7 ms budget.
      */
-    var coneAt = function (px, py, st, fallback) {
+    var coneAt = function (px, py, st, role, fallback) {
+      // The browser re-casts the cone whenever it has the grid, so the server's polygon
+      // is only a fallback. Without the role here the screen would keep drawing one
+      // shared angle over a cat catching from outside it.
       if (!map.grid || !E.castCone) return fallback;
-      return E.castCone(map.grid, px, py, st.facing).poly;
+      return E.castCone(map.grid, px, py, st.facing, role).poly;
     };
     if (showV) {
-      var mCone = coneAt(mx, my, v.mouse, v.mouse.cone);
-      var cCone = coneAt(cx, cy, v.cat, v.cat.cone);
+      var mCone = coneAt(mx, my, v.mouse, 'mouse', v.mouse.cone);
+      var cCone = coneAt(cx, cy, v.cat, 'cat', v.cat.cone);
       if (mCone) p.push('<polygon points="' + poly(mCone) + '" fill="url(#acm-' + key + ')" stroke="rgba(150,235,255,' + (v.mouse.sees ? 0.5 : 0.22) + ')" stroke-width="1"/>');
       if (cCone) p.push('<polygon points="' + poly(cCone) + '" fill="url(#ack-' + key + ')" stroke="rgba(255,155,115,' + (v.cat.sees ? 0.66 : 0.28) + ')" stroke-width="1"/>');
     }

@@ -130,8 +130,13 @@ class School:
     key = "base"
     label = "Base"
 
+    #: What the academy screen offers as knobs, so the app does not hardcode a list that
+    #: can drift from the dataclass. Each entry is one field of the school's config.
+    TUNABLES: tuple = ()
+
     def __init__(self, maps: MapSet, eval_maps: MapSet, device: torch.device,
-                 budget: Budget, seed: int = 0, on_event=None, out_dir: Path | None = None):
+                 budget: Budget, seed: int = 0, on_event=None, out_dir: Path | None = None,
+                 shaping: dict | None = None, hyper: dict | None = None):
         self.maps = maps
         self.eval_maps = eval_maps
         self.device = device
@@ -140,6 +145,12 @@ class School:
         self.rng = np.random.default_rng(seed)
         self.on_event = on_event or (lambda ev: None)
         self.out = out_dir
+        # How hard to pull each side toward its goal while learning. None means the
+        # school's own default; the app passes a dict when the academy screen has been
+        # edited. Scoring never sees it.
+        self.shaping = shaping
+        #: Overrides for this school's own config, straight off the academy screen.
+        self.hyper = hyper
         self.run = RunState()
         self.checkpoints: dict[str, dict[str, np.ndarray]] = {}
         self.history: list[dict] = []
@@ -153,6 +164,11 @@ class School:
         # returns. A high-water-mark dict under the same name silently replaced those
         # arrays the first time a run scored itself.
         self.peak: dict[str, dict] = {}
+        # Every policy this run has been at, one entry per evaluation. Small enough to
+        # keep in memory — 2,853 floats a role — and it is what makes the run scrubbable:
+        # pick a step, watch the brain it had then. Without it "you can see them start
+        # stupid" is a claim rather than something the screen can show.
+        self.timeline: list[dict] = []
         self.best_report: dict = {}
         self._sps = 0.0
         self._last_progress = 0.0
@@ -217,8 +233,30 @@ class School:
         }
         self.history.append({**row, "steps": self.run.steps, "wall": self.run.elapsed})
         self.emit("eval", **row)
+        self._remember(row)
         self._consider_best(row)
         return row
+
+    def _remember(self, row: dict) -> None:
+        """Keep the weights this score was measured on, and say a frame exists.
+
+        The event carries the numbers, not the 5,706 floats — the app only needs to draw
+        the slider and label its stops; asking for a frame's weights is the server's job
+        when one is actually pinned."""
+        # The half-way checkpoint scores at whatever step the loop happened to be on,
+        # which is usually a step a regular evaluation just scored. Two handle positions
+        # holding byte-identical weights is a worse reel than one.
+        if self.timeline and self.timeline[-1]["steps"] == self.run.steps:
+            return
+        self.timeline.append({
+            "i": len(self.timeline), "tag": row["tag"], "steps": self.run.steps,
+            "iter": self.run.iters, "wall": round(self.run.elapsed, 2),
+            "catExam": row["catExam"], "mouseExam": row["mouseExam"],
+            "cat": np.array(self.params("cat"), np.float32, copy=True),
+            "mouse": np.array(self.params("mouse"), np.float32, copy=True),
+        })
+        self.emit("snapshot", **{k: v for k, v in self.timeline[-1].items()
+                                 if k not in ("cat", "mouse")})
 
     ROLE_KEYS = {"cat": ("catExam", "catExamCi"), "mouse": ("mouseExam", "mouseExamCi")}
 
@@ -298,6 +336,15 @@ class School:
         and an empty directory."""
         self._stop = True
 
+    #: Extra evaluations early on, in environment steps. The budget-fraction schedule is
+    #: even across the run, which is right for the curve but wrong for the reel: on a
+    #: 500M-step budget the first stop after 0 is at 10M, and by then a policy has
+    #: already stopped wandering. Everything worth watching — walking into walls, then
+    #: pacing, then the first real chase — happens inside the first few million steps, so
+    #: that stretch gets its own doubling ladder. Eight extra scores cost a second or two.
+    EARLY_LADDER = (250_000, 500_000, 1_000_000, 2_000_000, 4_000_000,
+                    8_000_000, 16_000_000, 32_000_000)
+
     def train(self, eval_every: float = 0.05, progress_every: float = 1.0) -> dict:
         """Run to the budget, snapshotting at 0%, 50% and 100%."""
         self.setup()
@@ -308,6 +355,10 @@ class School:
         half_done = False
         self._next_eval = eval_every
         self._last_progress = 0.0
+        # Only the rungs that fall inside this budget; a short run should not spend its
+        # whole time scoring itself.
+        cap = self.budget.steps or float("inf")
+        early = [x for x in self.EARLY_LADDER if x < cap]
 
         while True:
             frac = self.budget.fraction(self.run.elapsed, self.run.steps)
@@ -329,7 +380,12 @@ class School:
                 half_done = True
                 self.snapshot("half")
                 self.score("half")
-            if frac >= self._next_eval:
+            if early and self.run.steps >= early[0]:
+                at = early.pop(0)
+                while early and self.run.steps >= early[0]:
+                    early.pop(0)          # one iteration can clear several rungs
+                self.score(f"{human_steps(at)}")
+            elif frac >= self._next_eval:
                 self._next_eval = frac + eval_every
                 self.score(f"{frac:.0%}")
 
@@ -354,6 +410,15 @@ class School:
             **{f"{name}_{role}": v[role]
                for name, v in self.checkpoints.items() for role in ("cat", "mouse")},
         )
+        if self.timeline:
+            np.savez_compressed(
+                d / "timeline.npz",
+                index=np.array([[t["steps"], t["iter"]] for t in self.timeline], np.int64),
+                scores=np.array([[t["catExam"], t["mouseExam"], t["wall"]]
+                                 for t in self.timeline], np.float32),
+                cat=np.stack([t["cat"] for t in self.timeline]),
+                mouse=np.stack([t["mouse"] for t in self.timeline]),
+            )
         (d / "history.json").write_text(json.dumps({
             "school": self.key, "label": self.label, "seed": self.seed,
             "budget": {"seconds": self.budget.seconds, "steps": self.budget.steps},
@@ -364,6 +429,39 @@ class School:
         if self.best_report:
             (d / "best.json").write_text(json.dumps(
                 {"school": self.key, "label": self.label, **self.best_report}, indent=2))
+
+
+def apply_hyper(cfg, overrides: dict | None):
+    """A copy of a config dataclass with only the fields the caller actually named.
+
+    Unknown keys are ignored rather than raising: the academy screen sends whatever it
+    has on it, and a build with a different set of knobs should degrade to "that one is
+    not tunable here" instead of refusing to start a run.
+    """
+    if not overrides:
+        return cfg
+    import dataclasses
+    names = {f.name for f in dataclasses.fields(cfg)}
+    kw = {}
+    for k, v in overrides.items():
+        if k not in names or v is None:
+            continue
+        kw[k] = type(getattr(cfg, k))(v)
+    return dataclasses.replace(cfg, **kw) if kw else cfg
+
+
+def load_timeline(path: Path) -> list[dict]:
+    """Read a saved scrub timeline back. Absent in runs made before it existed, which is
+    why every caller treats an empty list as normal rather than as an error."""
+    if not path.exists():
+        return []
+    z = np.load(path)
+    idx, sc = z["index"], z["scores"]
+    return [{"i": i, "tag": f"{int(idx[i][0]):d}", "steps": int(idx[i][0]),
+             "iter": int(idx[i][1]), "wall": float(sc[i][2]),
+             "catExam": float(sc[i][0]), "mouseExam": float(sc[i][1]),
+             "cat": z["cat"][i], "mouse": z["mouse"][i]}
+            for i in range(len(idx))]
 
 
 def load_checkpoints(path: Path) -> dict[str, dict[str, np.ndarray]]:

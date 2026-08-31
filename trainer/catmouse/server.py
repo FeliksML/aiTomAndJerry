@@ -37,9 +37,10 @@ import numpy as np
 import torch
 
 from . import arena
+from . import env
 from .league import EXAMINER_SKILL
 from .nets import FlatActor
-from .school import Budget
+from .school import Budget, load_timeline
 from .scripted import ScriptedPair
 from .tournament import LABELS, SCHOOLS, load_run
 from .vec import MapSet, VecEnv
@@ -116,11 +117,29 @@ class Session:
         self.ctx: dict = {}
         self._map_sent = None
         self._train_task = None
+        self._loop = None
         self._train_events: asyncio.Queue = asyncio.Queue(maxsize=512)
         self.train_school = None
+        # Which frame of which school's timeline the arena is playing. None means
+        # "whatever the optimiser has right now", which is the live shadow. The school is
+        # kept with the index because `frames()` otherwise answers for whichever school
+        # happens to be training, and an index validated against one reel would then load
+        # weights out of another.
+        self.pinned: int | None = None
+        self.pinned_school: str | None = None
         self._shadow_at = 0
         self.race: list[str] = []
         self._race_done: list = []
+
+    def busy_reason(self) -> str | None:
+        """Why a run-level action must wait. Both of these rebind `self.maps` and
+        `self.policies` underneath a School that is mid-run, and the live take would then
+        write its result into whichever run happened to be loaded when it finished."""
+        if self._train_task is not None and not self._train_task.done():
+            return "a live run is going — stop it first"
+        if self.runner is not None and self.runner.poll() is None:
+            return "a full run is going — stop it first"
+        return None
 
     def load_run_dir(self, run_dir: Path) -> None:
         """Point the session at a run. Called at start-up and again whenever the app
@@ -135,10 +154,33 @@ class Session:
         self.maps = MapSet(arena.TRAIN_SEEDS, arena.spread(self.nests, len(arena.TRAIN_SEEDS)))
         self.final_maps = MapSet(arena.FINAL_SEEDS, arena.spread(self.nests, len(arena.FINAL_SEEDS)))
         self.policies = {ck: load_run(run_dir, ck) for ck in CHECKPOINTS}
+        # One scrub timeline per school, read off disk here and replaced in memory by a
+        # live run as it goes, so the slider works on a finished run and on one that is
+        # still training without the screen knowing the difference.
+        self.timelines = {s: self._reel_for(run_dir, s) for s in SCHOOLS}
+        # A pin addresses a frame of the run being left behind.
+        self.pinned = None
+        self.pinned_school = None
         self.tournament = self._load_json("tournament.json")
         self.progression = self._load_json("progression.json")
         self.budgets = self._load_json("budgets.json")
         self.highlights = self._load_json("highlights.json")
+
+    @staticmethod
+    def _reel_for(run_dir: Path, school: str) -> list[dict]:
+        """The scrub reel for one school: the offline run's own, else the newest take.
+
+        A take trained from the academy writes under `live/<stamp>/`, so after a restart
+        the run being served had no reel at all and the slider the author had just been
+        dragging was simply gone. A reel carries its own weights, so playing the last
+        take's frames is self-contained and true — it is that take's brains, at that
+        take's steps.
+        """
+        own = load_timeline(run_dir / school / "timeline.npz")
+        if own:
+            return own
+        takes = sorted((run_dir / "live").glob(f"*/{school}/timeline.npz")) if (run_dir / "live").exists() else []
+        return load_timeline(takes[-1]) if takes else []
 
     def _load_json(self, name: str):
         p = self.run_dir / name
@@ -164,12 +206,57 @@ class Session:
             "progression": self.progression,
             "budgets": self.budgets,
             "highlights": self.highlights,
+            "academies": self.academies(),
+            "shapingDefaults": dict(VecEnv.SHAPING_TRAINING),
+            "rewards": self.reward_rules(),
             "runDir": str(self.run_dir),
             "runTag": self.run_dir.name,
             "runs": self.list_runs(),
             "config": self.config,
             "training": self.runner_state(),
+            "pinnedAt": self.pinned,
+            **self.pin_info(),
         }
+
+    def academies(self) -> dict:
+        """Per school: the knobs its screen offers and the values they start at.
+
+        Sent rather than hardcoded in the app, so a knob added to a config dataclass
+        appears on the screen instead of quietly not existing."""
+        from .cmaes import CMAESSchool, CMAConfig
+        from .ga import GASchool, GAConfig
+        from .ppo import PPOConfig, PPOSchool
+        out = {}
+        for cls, cfg in ((PPOSchool, PPOConfig()), (GASchool, GAConfig()),
+                         (CMAESSchool, CMAConfig())):
+            out[cls.key] = {
+                "label": cls.label,
+                "tunables": [dict(t, value=getattr(cfg, t["key"])) for t in cls.TUNABLES],
+                # `frames()`, not `self.timelines` — a run in progress keeps its reel on
+                # the School object, and a window that joins mid-run needs those frames
+                # or its slider starts empty and then indexes into holes.
+                "timeline": [
+                    {k: v for k, v in f.items() if k not in ("cat", "mouse")}
+                    for f in self.frames(cls.key)],
+            }
+        return out
+
+    def reward_rules(self) -> list[dict]:
+        """The terminal rewards, shown but not editable.
+
+        These are the rules of the game and the scoreboard counts them directly, so a
+        school trained under different ones is not playing the same sport as the others.
+        The shaping above them is the part that is safe to tune, and the screen says
+        which is which rather than presenting nine numbers as equally yours to move.
+        """
+        return [
+            {"key": "R_CAT_CATCH", "label": "Tom catches her", "value": env.R_CAT_CATCH},
+            {"key": "R_CAT_ESCAPED", "label": "Tom lets her home", "value": env.R_CAT_ESCAPED},
+            {"key": "R_MOUSE_NEST", "label": "Jerry reaches a hole", "value": env.R_MOUSE_NEST},
+            {"key": "R_MOUSE_CAUGHT", "label": "Jerry is caught", "value": env.R_MOUSE_CAUGHT},
+            {"key": "R_TRAP", "label": "either one snaps a trap", "value": env.R_TRAP},
+            {"key": "R_CAT_STEP", "label": "cost of a step", "value": env.R_CAT_STEP},
+        ]
 
     def list_runs(self) -> list[dict]:
         """Every run on disk, newest first, with enough for the app to say what it is."""
@@ -197,12 +284,42 @@ class Session:
 
     # ---------- the offline trainer, driven from the app ----------
 
+    def training_msg(self) -> dict:
+        """The one message that answers "is anything running".
+
+        This fact used to travel only inside `hello`, which is sent on connect, after a run
+        switch and after a scoring scan — never on the two events that change it. So a run
+        could start and finish without any window being told, and every screen but one had
+        no way to know.
+        """
+        return {"type": "training", **self.runner_state()}
+
+    def push(self, msg: dict) -> None:
+        """Queue a message for the broadcast pump from anywhere, including a worker
+        thread. The pump drains this queue every tick."""
+        loop = self._loop
+        if loop is None:
+            return
+        # Always the threadsafe call. Deciding first whether we are on the loop's thread
+        # meant asking for the current event loop from a worker thread, which raises —
+        # and the suppression then swallowed the push itself, so the message announcing
+        # that a run had FINISHED was the one message that never went out.
+        with contextlib.suppress(Exception):
+            asyncio.run_coroutine_threadsafe(self._train_events.put(msg), loop)
+
     def runner_state(self) -> dict:
+        # `train_school` is only published once the School object exists, which is a beat
+        # after the take is launched — so the very first announcement said "live, school
+        # unknown" and every reader that tested both fields concluded nothing was running.
+        # `ctx["school"]` is set synchronously by `start_train` and is the honest answer
+        # for that beat.
         live = self.train_school
+        running = bool(self._train_task and not self._train_task.done())
         return {
             "full": self.runner is not None and self.runner.poll() is None,
-            "live": bool(self._train_task and not self._train_task.done()),
-            "liveSchool": live.key if live is not None else None,
+            "live": running,
+            "liveSchool": (live.key if live is not None
+                           else (self.ctx.get("school") if running else None)),
             "scoring": self.scorer is not None and self.scorer.poll() is None,
             **self.runner_meta,
         }
@@ -238,7 +355,9 @@ class Session:
                             "envs": envs, "seed": seed, "nests": nests,
                             "startedAt": time.strftime("%H:%M:%S")}
         self.runner_schools = {}
+        self._loop = loop
         self._runner_task = loop.create_task(self._follow_run(out, tag))
+        self.push(self.training_msg())
         return {"type": "trainAllStarted", **self.runner_meta,
                 "schools": list(SCHOOLS), "out": str(out)}
 
@@ -284,6 +403,7 @@ class Session:
             code = self.runner.poll() if self.runner else None
             await self._train_events.put({"type": "trainAllDone", "run": tag, "code": code,
                                           "out": str(out)})
+            await self._train_events.put(self.training_msg())
 
     def stop_train_all(self) -> dict:
         """Ask, do not kill. The children finish the iteration they are on and save."""
@@ -298,12 +418,15 @@ class Session:
     def start_score(self, loop, tag: str | None = None, checkpoint: str = "trained") -> dict:
         if self.scorer is not None and self.scorer.poll() is None:
             return {"type": "error", "message": "already scoring"}
-        if self.runner is not None and self.runner.poll() is None:
-            return {"type": "error", "message": "wait for the run to finish before scoring it"}
+        busy = self.busy_reason()
+        if busy:
+            return {"type": "error", "message": busy}
         run = RUNS / (tag or self.run_dir.name)
         if not run.exists():
             return {"type": "error", "message": f"no run at {run}"}
+        self._loop = loop
         self._scorer_task = loop.create_task(self._run_score(run, checkpoint))
+        self.push(self.training_msg())
         return {"type": "scoreStarted", "run": run.name, "checkpoint": checkpoint}
 
     async def _run_score(self, run: Path, checkpoint: str) -> None:
@@ -339,6 +462,7 @@ class Session:
         with contextlib.suppress(Exception):
             self.load_run_dir(run)
         await self._train_events.put({"type": "scoreDone", "run": run.name, "ok": ok})
+        await self._train_events.put(self.training_msg())
 
     # ---------- PLAY ----------
 
@@ -367,6 +491,7 @@ class Session:
                 return {"type": "error",
                         "message": f"no {mouse_school} @ {checkpoint} in this run"}
         self.mode = "play"
+        self.unpin()
         self.ctx = {"school": school, "checkpoint": checkpoint, "opponent": opponent,
                     "mouseSchool": mouse_school or school}
         self.level_order = levels if levels is not None else list(range(len(self.maps)))
@@ -392,6 +517,7 @@ class Session:
             return {"type": "error", "message": "no tournament.json — run the tournament first"}
         ck, mk = t["champion"]["cat"], t["champion"]["mouse"]
         self.mode = "final"
+        self.unpin()
         self.level_seeds = None
         self.ctx = {"catSchool": ck, "mouseSchool": mk, "rounds": rounds,
                     "wins": {"cat": 0, "mouse": 0, "draw": 0}}
@@ -421,6 +547,7 @@ class Session:
         if len(have) < 2:
             return {"type": "error", "message": f"need at least two schools at {checkpoint}"}
         self.mode = "race"
+        self.unpin()
         self.level_seeds = None
         self.race = have
         self.ctx = {"schools": have, "checkpoint": checkpoint,
@@ -494,14 +621,101 @@ class Session:
 
     def _refresh_shadow(self) -> None:
         """Re-read the policies at the start of each shadow episode, so the arena shows
-        this minute's brain rather than the one training started with."""
+        this minute's brain rather than the one training started with — unless a frame of
+        the timeline is pinned, in which case it shows exactly that brain and holds it
+        while the optimiser carries on behind.
+
+        TRAIN MODE ONLY. `_begin_episode` calls this at the top of every episode, and
+        `start_play`, `start_final` and `start_race` all end by beginning an episode — so
+        without this guard, clicking UNTRAINED while a run was training silently played
+        the optimiser's *current* weights under a caption naming the untrained ones, and
+        the grand final played the trainee instead of the champion.
+        """
+        if self.mode != "train":
+            return
         sch = self.train_school
+        frame = self.frame_at(self.pinned, self.pinned_school) if self.pinned is not None else None
+        if frame is not None:
+            self.actors = {r: FlatActor(frame[r], self.device) for r in ("cat", "mouse")}
+            return
         if sch is None:
+            # The run has ended but the shadow keeps cycling arenas. Falling through here
+            # left LIVE as a no-op that lit the chip and changed nothing on screen, so
+            # come back to the last brain the run produced.
+            last = self.frames(self.pinned_school)
+            if last:
+                self.actors = {r: FlatActor(last[-1][r], self.device) for r in ("cat", "mouse")}
             return
         try:
             self.actors = {r: FlatActor(sch.params(r), self.device) for r in ("cat", "mouse")}
         except Exception:
             pass                    # mid-update; the previous episode's actors will do
+
+    # ---------- the scrub timeline ----------
+
+    def frames(self, school: str | None = None) -> list[dict]:
+        """The reel for a school: the live run's own, or the last one, or disk.
+
+        A run in progress does not blank the reel the moment it starts. Its own timeline
+        is empty until the first evaluation lands a couple of seconds later, and until
+        then the previous reel is still the true answer to "what can I scrub" — otherwise
+        pressing train wiped the checkpoint that was on screen mid-sentence.
+        """
+        sch = self.train_school
+        key = school or (sch.key if sch is not None else self.ctx.get("school"))
+        if sch is not None and sch.key == key and sch.timeline:
+            return sch.timeline
+        return self.timelines.get(key, [])
+
+    def frame_at(self, i: int | None, school: str | None = None):
+        fr = self.frames(school)
+        if not fr or i is None:
+            return None
+        return fr[max(0, min(len(fr) - 1, int(i)))]
+
+    def unpin(self) -> None:
+        """Leave the reel. Every mode that takes the arena over calls this, because a pin
+        that outlives its screen quietly replaces the policy the new screen names."""
+        self.pinned = None
+        self.pinned_school = None
+
+    def pin(self, i, school: str | None = None) -> dict:
+        """Play the arena on the weights of one frame — or go back to live with None.
+
+        This is the whole point of keeping every evaluation's brain: pick a step and the
+        same rooms are played by the policy the run had at that step, so "they start
+        stupid and learn to hunt" is something the screen shows rather than claims.
+        """
+        if i is None:
+            self.unpin()
+            self._refresh_shadow()
+            return {"type": "pinned", "at": None, **self.pin_info()}
+        key = school or (self.train_school.key if self.train_school is not None
+                         else self.ctx.get("school"))
+        if not key:
+            return {"type": "error", "message": "pin needs a school — none is on screen yet"}
+        fr = self.frames(key)
+        if not fr:
+            return {"type": "error", "message": f"{key} has no scrub timeline in this run yet"}
+        # The reel only drives the arena in train mode — `_refresh_shadow` returns early
+        # anywhere else. Recording the pin and answering "pinned" over an arena that went
+        # on playing something else was the worst kind of lie: a control that reports
+        # success and changes nothing.
+        if self.mode != "train":
+            return {"type": "error", "message":
+                    "the reel plays into the training arena — press train, or open this "
+                    "school's academy, to scrub it"}
+        self.pinned = max(0, min(len(fr) - 1, int(i)))
+        self.pinned_school = key
+        self._refresh_shadow()
+        return {"type": "pinned", "at": self.pinned, **self.pin_info()}
+
+    def pin_info(self) -> dict:
+        f = self.frame_at(self.pinned, self.pinned_school)
+        return {"pinnedSchool": self.pinned_school,
+                "frame": None if f is None else
+                {k: v for k, v in f.items() if k not in ("cat", "mouse")},
+                "frames": len(self.frames(self.pinned_school))}
 
     def _actions(self):
         e = self.env
@@ -601,15 +815,25 @@ class Session:
     # ---------- TRAIN ----------
 
     def start_train(self, school: str, minutes: float | None, seed: int = 11,
-                    steps: int | None = None) -> dict:
-        """`minutes`, `steps`, or both — both means whichever runs out first."""
+                    steps: int | None = None, shaping: dict | None = None,
+                    hyper: dict | None = None) -> dict:
+        """One academy, on its own budget, with its own shaping and its own knobs.
+
+        `minutes`, `steps`, or both — both means whichever runs out first.
+        """
         if self._train_task and not self._train_task.done():
             return {"type": "error", "message": "training already running"}
+        if self.runner is not None and self.runner.poll() is None:
+            return {"type": "error", "message": "a full run is going — stop it first"}
         if not minutes and not steps:
             return {"type": "error", "message": "a live run needs a budget: minutes, steps, or both"}
         self.mode = "train"
         self.level_seeds = None
+        # A new run means a new timeline, but it does not exist yet — see `frames()`. The
+        # pin does have to go: it addresses a frame of the run being replaced.
+        self.unpin()
         self.ctx = {"school": school, "minutes": minutes, "steps": steps,
+                    "shaping": shaping, "hyper": hyper,
                     "budget": Budget(seconds=None if minutes is None else minutes * 60,
                                      steps=steps).describe()}
         self.train_school = None
@@ -626,13 +850,44 @@ class Session:
         self.actors = {"cat": None, "mouse": None}
         self._begin_episode()
         loop = asyncio.get_running_loop()
+        self._loop = loop
         self._train_task = loop.run_in_executor(
-            None, self._train_blocking, school, minutes, seed, loop, steps)
+            None, self._train_blocking, school, minutes, seed, loop, steps, shaping, hyper)
+        self._train_task.add_done_callback(lambda _f: self.push(self.training_msg()))
+        # Say so immediately, to every window, on every screen.
+        self.push(self.training_msg())
         return {"type": "state", **self.state()}
 
-    def _train_blocking(self, school: str, minutes: float | None, seed: int, loop,
-                        steps: int | None = None) -> None:
-        """Runs in a worker thread; telemetry is handed back through the event queue."""
+    def _train_blocking(self, *a, **kw) -> None:
+        """Runs in a worker thread. Nothing awaits the future it returns, so an exception
+        in here used to be invisible: the arena froze on the last actors, the HUD held its
+        last numbers, and STOP cheerfully answered "the run still saves its checkpoints"
+        about a thread that had been dead for ten minutes."""
+        school = a[0] if a else kw.get("school", "?")
+        loop = a[3] if len(a) > 3 else kw.get("loop")
+        try:
+            self._train_body(*a, **kw)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            msg = f"{type(exc).__name__}: {exc}"
+            for ev in ({"type": "error", "message": f"the {school} run stopped: {msg}"},
+                       {"type": "train", "kind": "trainDone", "school": school,
+                        "failed": True, "message": msg}):
+                with contextlib.suppress(Exception):
+                    asyncio.run_coroutine_threadsafe(self._train_events.put(ev), loop)
+        finally:
+            self.train_school = None
+            # The announcement is NOT made here: this still runs inside the worker, and
+            # the executor future is not `done()` until the function returns — so a
+            # message sent from here reports the run as still live. `start_train` hangs a
+            # done-callback on the future instead, which fires on the loop, after.
+            pass
+
+    def _train_body(self, school: str, minutes: float | None, seed: int, loop,
+                    steps: int | None = None, shaping: dict | None = None,
+                    hyper: dict | None = None) -> None:
+        """Telemetry is handed back through the event queue."""
         from .cmaes import CMAESSchool
         from .ga import GASchool
         from .ppo import PPOSchool
@@ -651,8 +906,12 @@ class Session:
         s = cls(self.maps, MapSet(arena.EVAL_SEEDS[:8],
                                   arena.spread(self.nests, 8)), self.device,
                 Budget(seconds=None if minutes is None else minutes * 60, steps=steps),
-                seed=seed, on_event=on_event, out_dir=out)
-        s.setup()
+                seed=seed, on_event=on_event, out_dir=out, shaping=shaping, hyper=hyper)
+        # `train()` calls `setup()` itself. Building it here as well made every live take
+        # construct two complete vector environments and two optimisers — at the academy
+        # slider's top setting that is a real doubling of peak memory — and put a policy
+        # in the arena that was then thrown away. Publish the school first instead, so the
+        # shadow has something to ask for the moment setup finishes.
         self.train_school = s
         s.train(eval_every=0.02)
         # The live run picked a best cat and a best mouse of its own. Hand them to the
@@ -662,8 +921,11 @@ class Session:
             self.policies.setdefault("best", {})[school] = {
                 r: np.array(v, np.float32, copy=True)
                 for r, v in s.checkpoints["best"].items()}
-        self.train_school = None
+        # Keep the timeline reachable after the school object goes: the slider is the
+        # point of the run and it must still work once the run has stopped.
+        self.timelines[school] = list(s.timeline)
         on_event({"kind": "trainDone", "school": school, "savedTo": str(out),
+                  "frames": len(s.timeline),
                   "best": {r: v.get("pick") for r, v in (s.best_report or {}).items()}})
 
 

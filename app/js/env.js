@@ -16,6 +16,11 @@
   var MAX_NESTS = 3;
   var MIN_NEST_SEP = 10;
 
+  // How far either side of a wall corner the silhouette rays are aimed. At full
+  // range 1e-4 rad puts them 0.0009 cells apart — past the corner, but far closer
+  // than a pixel, so nothing is visibly rounded off.
+  var CORNER_EPS = 1e-4;
+
   var CFG = {
     vision: { halfAngleDeg: 50, range: 8.5, rays: 21 },
     hearing: { range: 12, baseNoise: 0.10, distNoise: 0.055 }, // mouse only
@@ -269,39 +274,150 @@
 
   /* ---------- sensors ---------- */
 
-  // Vision cone with wall occlusion. Returns render polygon + per-ray readings.
+  /* One ray, walked cell boundary to cell boundary, to the first wall face it meets
+   * or to `range` if it meets none. The distance returned is the exact crossing.
+   *
+   * The old caster advanced in 0.18 steps and, on contact, backed off a whole step,
+   * so every ray stopped somewhere within the last 0.18 cells before the wall and by
+   * a different amount each: one flat wall came back with 0.17 cells of wobble along
+   * it, a visible 4px saw at the arena's cell size. It also tested one step BEYOND
+   * the range, which let an unobstructed ray reach 8.64 of a nominal 8.5 (readings of
+   * 1.016 on a [0,1] input) and let a wall standing past the range shorten a ray.
+   *
+   * A ray crossing exactly through a lattice corner passes only if at least one of the
+   * two cells sharing that corner is open: light never squeezes through a zero-width
+   * diagonal gap, but it does graze the tip of a single block.
+   *
+   * Agents stand on cell centres, so an exact 45-degree sightline is common, not a
+   * measure-zero curiosity, and the two halves of that rule are the two ways to be
+   * wrong. Grazing the tip lets sight through the odd corner-to-corner slit: 1 pair in
+   * 4,788 sampled. Refusing it instead punches a blind line through the middle of a
+   * region the cone correctly draws as lit, which is eight times more common and is
+   * the failure a viewer actually notices — the mouse standing in the light, unseen.
+   */
+  function castRay(grid, ox, oy, dx, dy, range) {
+    var cx = Math.floor(ox), cy = Math.floor(oy);
+    if (!passable(grid, cx, cy)) return { t: 0, hit: 1 };
+    var sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+    var dtx = dx === 0 ? Infinity : Math.abs(1 / dx);
+    var dty = dy === 0 ? Infinity : Math.abs(1 / dy);
+    var tx = dx === 0 ? Infinity : ((dx > 0 ? cx + 1 : cx) - ox) / dx;
+    var ty = dy === 0 ? Infinity : ((dy > 0 ? cy + 1 : cy) - oy) / dy;
+    for (var guard = 2 * (W + H); guard > 0; guard--) {
+      var t;
+      if (tx < ty) { t = tx; tx += dtx; cx += sx; }
+      else if (ty < tx) { t = ty; ty += dty; cy += sy; }
+      else {
+        t = tx;
+        if (t >= range) break;
+        if (!passable(grid, cx + sx, cy) && !passable(grid, cx, cy + sy)) return { t: t, hit: 1 };
+        tx += dtx; ty += dty; cx += sx; cy += sy;
+      }
+      if (t >= range) break;
+      if (!passable(grid, cx, cy)) return { t: t, hit: 1 };
+    }
+    return { t: range, hit: 0 };
+  }
+
+  /* The lattice points inside the cone where a wall silhouette pivots.
+   *
+   * Twenty-one rays over 100 degrees is one every five, which at full range samples
+   * the world every 0.74 cells, so the fan almost never lands ON the corner a shadow
+   * turns around. The polygon then had to bridge a near hit and a far miss with a
+   * single straight edge, and that edge is the spike: 13% of neighbouring ray pairs
+   * differed by more than a cell, the worst pair by 7.9. Firing a ray a hair either
+   * side of every corner puts a real vertex where the silhouette actually turns.
+   * It costs about fifty extra rays and no observation change at all.
+   */
+  function coneCorners(grid, ox, oy, base, half, range) {
+    var out = [];
+    var x0 = Math.max(0, Math.ceil(ox - range)), x1 = Math.min(W, Math.floor(ox + range));
+    var y0 = Math.max(0, Math.ceil(oy - range)), y1 = Math.min(H, Math.floor(oy + range));
+    for (var py = y0; py <= y1; py++) {
+      for (var px = x0; px <= x1; px++) {
+        var dx = px - ox, dy = py - oy;
+        var dd = dx * dx + dy * dy;
+        if (dd < 1e-12 || dd > range * range) continue;
+        var da = Math.atan2(dy, dx) - base;
+        da = Math.atan2(Math.sin(da), Math.cos(da));
+        if (da < -half || da > half) continue;
+        // only a corner with solid on one side and open on the other casts an edge
+        var k = (passable(grid, px - 1, py - 1) ? 0 : 1) + (passable(grid, px, py - 1) ? 0 : 1)
+          + (passable(grid, px - 1, py) ? 0 : 1) + (passable(grid, px, py) ? 0 : 1);
+        if (k === 0 || k === 4) continue;
+        out.push(da);
+      }
+    }
+    return out;
+  }
+
+  /* Vision cone with wall occlusion.
+   *
+   * `reads` is what a policy consumes and is always exactly cfg.rays evenly spaced
+   * rays in fan order — the observation vector's shape is a contract. `poly` is what
+   * the screen consumes and carries the extra corner vertices on top, which is why
+   * the two are built separately. Callers that only need the readings should use
+   * castRays and skip the corner sweep entirely.
+   */
   function castCone(grid, ax, ay, facing, opt) {
     var cfg = opt || CFG.vision;
     var half = (cfg.halfAngleDeg || 50) * Math.PI / 180;
     var range = cfg.range, n = cfg.rays;
     var base = facing * Math.PI / 2 - Math.PI / 2; // facing 0=N
-    var poly = [[ax + 0.5, ay + 0.5]], reads = [];
-    for (var i = 0; i < n; i++) {
-      var a = base - half + (2 * half) * (i / (n - 1));
-      var dx = Math.sin(a + Math.PI / 2) * 0, dy = 0;
-      dx = Math.cos(a); dy = Math.sin(a);
-      var t = 0, hit = 0, step = 0.18;
-      while (t < range) {
-        t += step;
-        var px = ax + 0.5 + dx * t, py = ay + 0.5 + dy * t;
-        var cx = Math.floor(px), cy = Math.floor(py);
-        if (!inB(cx, cy) || grid[idx(cx, cy)] === WALL) { t -= step; hit = 1; break; }
+    var ox = ax + 0.5, oy = ay + 0.5;
+    var reads = [], verts = [], i, a, r;
+
+    for (i = 0; i < n; i++) {
+      a = base - half + (2 * half) * (i / (n - 1));
+      r = castRay(grid, ox, oy, Math.cos(a), Math.sin(a), range);
+      reads.push({ angle: a, dist: r.t / range, blocked: r.hit });
+      verts.push([a, r.t]);
+    }
+
+    var corners = coneCorners(grid, ox, oy, base, half, range);
+    for (i = 0; i < corners.length; i++) {
+      for (var s = -1; s <= 1; s += 2) {
+        var da = corners[i] + s * CORNER_EPS;
+        if (da <= -half || da >= half) continue;   // the rim rays already stand here
+        a = base + da;
+        r = castRay(grid, ox, oy, Math.cos(a), Math.sin(a), range);
+        verts.push([a, r.t]);
       }
-      poly.push([ax + 0.5 + dx * t, ay + 0.5 + dy * t]);
-      reads.push({ angle: a, dist: t / range, blocked: hit });
+    }
+    // every angle lies inside base +- half, a span under a half turn, so raw order
+    // is fan order and no wrap handling is needed
+    verts.sort(function (p, q) { return p[0] - q[0]; });
+
+    var poly = [[ox, oy]];
+    for (i = 0; i < verts.length; i++) {
+      poly.push([ox + Math.cos(verts[i][0]) * verts[i][1], oy + Math.sin(verts[i][0]) * verts[i][1]]);
     }
     return { poly: poly, reads: reads, half: half, base: base, range: range };
   }
 
-  function lineOfSight(grid, x0, y0, x1, y1) {
-    var dx = x1 - x0, dy = y1 - y0, n = Math.max(Math.abs(dx), Math.abs(dy)) * 3;
-    if (n === 0) return true;
-    for (var i = 1; i < n; i++) {
-      var px = x0 + 0.5 + dx * (i / n), py = y0 + 0.5 + dy * (i / n);
-      var cx = Math.floor(px), cy = Math.floor(py);
-      if (!inB(cx, cy) || grid[idx(cx, cy)] === WALL) return false;
+  // The readings alone, for the callers that never draw the cone. Same rays, same
+  // order, same values as castCone().reads — just without the corner sweep.
+  function castRays(grid, ax, ay, facing, opt) {
+    var cfg = opt || CFG.vision;
+    var half = (cfg.halfAngleDeg || 50) * Math.PI / 180;
+    var range = cfg.range, n = cfg.rays;
+    var base = facing * Math.PI / 2 - Math.PI / 2;
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var a = base - half + (2 * half) * (i / (n - 1));
+      out.push(castRay(grid, ax + 0.5, ay + 0.5, Math.cos(a), Math.sin(a), range).t / range);
     }
-    return true;
+    return out;
+  }
+
+  /* Centre to centre sight, walked with the very ray the cone is drawn from, so the
+   * cone on screen and the targetVisible bit in the observation can no longer
+   * disagree. The old test interpolated three samples per cell along the major axis
+   * and stepped over walls it clipped diagonally. */
+  function lineOfSight(grid, x0, y0, x1, y1) {
+    var dx = x1 - x0, dy = y1 - y0, d = Math.sqrt(dx * dx + dy * dy);
+    if (d === 0) return true;
+    return castRay(grid, x0 + 0.5, y0 + 0.5, dx / d, dy / d, d).hit === 0;
   }
 
   function seesTarget(grid, ax, ay, facing, tx, ty, opt) {
@@ -443,7 +559,8 @@
     DIRS: DIRS, ACTIONS: ACTIONS, CFG: CFG,
     rng: rng, idx: idx, inB: inB, passable: passable, bfs: bfs,
     genMap: genMap, reset: reset, step: step, observe: observe,
-    castCone: castCone, lineOfSight: lineOfSight, seesTarget: seesTarget
+    castCone: castCone, castRays: castRays, castRay: castRay,
+    lineOfSight: lineOfSight, seesTarget: seesTarget
   };
   global.CatMouseEnv = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

@@ -13,11 +13,17 @@ Commands the app sends:
      "opponent":"self|examiner-mouse|examiner-cat"}     run the shared level set
     {"cmd":"final"}                                     champion vs champion, 5 rounds
     {"cmd":"race","checkpoint":"trained"}               all three schools, same room, side by side
+    {"cmd":"trainAll","steps":"500M","envs":2048,"tag":"v5"}  the real three-school run
+    {"cmd":"stopAll"}                                   ... ended early, but saved
+    {"cmd":"score","tag":"v5","checkpoint":"best"}      tournament + highlight scan
+    {"cmd":"useRun","tag":"v5"}                         watch a different run
     {"cmd":"train","school":"ga","minutes":10}          train live, on camera
+    {"cmd":"train","school":"ga","minutes":null,"steps":"500M"}   ... to a step budget
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
     {"cmd":"next"}                                      jump to the next arena
-    {"cmd":"reset"}                                     drop every weight back to a random init\n    {"cmd":"stop"}
+    {"cmd":"reset"}                                     drop every weight back to a random init
+    {"cmd":"stop"}                                      idle; a live run finishes cleanly
 
 Every outgoing message is journalled first, so any take can be replayed frame for frame.
 """
@@ -37,6 +43,8 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "trainer"))
+
+from catmouse.school import parse_steps      # noqa: E402  (needs the path above)
 
 BASE_STEPS_PER_SEC = 9.0     # matches the Academy's default pace
 
@@ -70,7 +78,13 @@ async def _pump(session, send, stop: asyncio.Event) -> None:
         dt, last = now - last, now
 
         while not session._train_events.empty():
-            await send(session._train_events.get_nowait())
+            msg = session._train_events.get_nowait()
+            await send(msg)
+            # The scan rewrites tournament.json / highlights.json, and switching runs
+            # replaces the whole catalogue. Push the new greeting rather than making the
+            # app guess when to ask for it.
+            if msg.get("type") in ("scoreDone", "trainAllDone"):
+                await send(session.hello())
 
         if session.mode not in ("play", "final", "train", "race") or not session.playing:
             continue
@@ -135,10 +149,40 @@ async def handler(ws, session, journal, clients, send):
                 await send(session.start_race(m.get("checkpoint", "trained"), m.get("levels")))
             elif cmd == "final":
                 await send(session.start_final(int(m.get("rounds", 5))))
+            elif cmd == "trainAll":
+                await send(session.start_train_all(
+                    asyncio.get_running_loop(),
+                    steps=parse_steps(m.get("steps")),
+                    minutes=m.get("minutes") or None,
+                    envs=m.get("envs") or None,
+                    seed=int(m.get("seed", 7)),
+                    tag=m.get("tag", "v5"),
+                    nests=str(m.get("nests", "2")),
+                    device=m.get("device", "auto")))
+            elif cmd == "stopAll":
+                await send(session.stop_train_all())
+            elif cmd == "score":
+                await send(session.start_score(asyncio.get_running_loop(),
+                                               m.get("tag"),
+                                               m.get("checkpoint", "trained")))
+            elif cmd == "useRun":
+                tag = str(m.get("tag", "")).strip()
+                target = (ROOT / "runs" / tag) if tag else None
+                if not target or not target.exists():
+                    await send({"type": "error", "message": f"no run called {tag!r}"})
+                else:
+                    session.mode = "idle"
+                    session.load_run_dir(target)
+                    await send({"type": "runSwitched", "tag": tag})
+                    await send(session.hello())
             elif cmd == "train":
+                # A live take can be budgeted in minutes, in environment steps, or both.
+                # `minutes: null` with a step budget is the overnight form.
+                mins = m.get("minutes", 5)
                 await send(session.start_train(m.get("school", "ppo"),
-                                               float(m.get("minutes", 5)),
-                                               int(m.get("seed", 11))))
+                                               None if mins is None else float(mins),
+                                               int(m.get("seed", 11)),
+                                               steps=parse_steps(m.get("steps"))))
             elif cmd == "speed":
                 session.speed = max(0.25, float(m.get("value", 4)))
                 await send({"type": "state", **session.state()})
@@ -169,6 +213,15 @@ async def handler(ws, session, journal, clients, send):
                 await send(session.reset_to_zero(int(m.get("seed", 0))))
                 await send({"type": "state", **session.state()})
             elif cmd == "stop":
+                # A live run is a background thread on its own budget; leaving the
+                # screen does not end it. Ask it to finish at the next iteration so it
+                # still snapshots and still picks its best cat and mouse.
+                sch = session.train_school
+                if sch is not None:
+                    sch.request_stop()
+                    await send({"type": "trainStopping", "school": sch.key})
+                if session.runner is not None and session.runner.poll() is None:
+                    await send(session.stop_train_all())
                 session.mode = "idle"
                 await send({"type": "state", **session.state()})
     finally:
@@ -180,6 +233,10 @@ def main() -> None:
     ap.add_argument("--run", default="runs/latest")
     ap.add_argument("--replay", default=None)
     ap.add_argument("--port", type=int, default=8765)
+    # "localhost" binds both 127.0.0.1 and ::1. Binding only the IPv4 address meant a
+    # browser that resolved `localhost` to ::1 first — which Chrome does, and not
+    # predictably — could not reach a server that was plainly running.
+    ap.add_argument("--host", default="localhost")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--no-journal", action="store_true")
     a = ap.parse_args()
@@ -196,9 +253,9 @@ def main() -> None:
                     await ws.send(json.dumps(msg))
                 await replay(path, send)
 
-            async with websockets.serve(serve_replay, "127.0.0.1", a.port,
+            async with websockets.serve(serve_replay, a.host, a.port,
                                         max_size=None, compression=None):
-                print(f"replaying {path} on ws://127.0.0.1:{a.port}", flush=True)
+                print(f"replaying {path} on ws://{a.host}:{a.port}", flush=True)
                 await asyncio.Future()
             return
 
@@ -207,7 +264,7 @@ def main() -> None:
         stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
         journal = None if a.no_journal else Journal(ROOT / "runs" / "journals" / f"{stamp}.jsonl")
         session = Session(run_dir, dev, journal)
-        print(f"serving {run_dir} on ws://127.0.0.1:{a.port}  (device {dev})", flush=True)
+        print(f"serving {run_dir} on ws://{a.host}:{a.port}  (device {dev})", flush=True)
         if journal:
             print(f"journalling to runs/journals/{stamp}.jsonl", flush=True)
 
@@ -232,7 +289,7 @@ def main() -> None:
         try:
             async with websockets.serve(
                     lambda ws: handler(ws, session, journal, clients, broadcast),
-                    "127.0.0.1", a.port, max_size=None, compression=None):
+                    a.host, a.port, max_size=None, compression=None):
                 await asyncio.Future()
         finally:
             stop.set()

@@ -53,8 +53,34 @@
   };
   var ORDER = ['ppo', 'ga', 'cmaes'];
   var CP = ['untrained', 'half', 'trained'];
-  var CP_NAME = { untrained: 'UNTRAINED', half: 'HALF-TRAINED', trained: 'TRAINED' };
+  var CP_NAME = { untrained: 'UNTRAINED', half: 'HALF-TRAINED', trained: 'TRAINED',
+                  // Not a fourth point on the timeline: the strongest policy the run
+                  // reached, wherever that was. Usually the end; not always.
+                  best: 'BEST' };
   var CS = 44;
+
+  /* The run settings live here rather than in a command line. Defaults are the ones the
+     README documents; `envs: 2048` is the measured sweet spot for PPO on this machine
+     (~35% more steps per second than 512), not a guess. */
+  var SETUP_DEFAULTS = { tag: 'v5', steps: 500e6, minutes: null, envs: 2048, nests: '2', seed: 7,
+                         // Which policy each school enters into the championship: the one
+                         // it finished on, or the strongest it reached.
+                         scoreWith: 'trained' };
+
+  function loadSetup() {
+    var out = {}, k;
+    for (k in SETUP_DEFAULTS) out[k] = SETUP_DEFAULTS[k];
+    try {
+      var raw = JSON.parse(localStorage.getItem('cma.setup') || '{}');
+      for (k in SETUP_DEFAULTS) if (raw[k] !== undefined && raw[k] !== null) out[k] = raw[k];
+      if (raw.minutes !== undefined) out.minutes = raw.minutes;
+    } catch (e) { /* a private window, or a value from an older build */ }
+    return out;
+  }
+
+  function saveSetup() {
+    try { localStorage.setItem('cma.setup', JSON.stringify(App.setup)); } catch (e) {}
+  }
 
   var App = {
     screen: 'menu',
@@ -69,7 +95,27 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
-    trainInfo: null, showKeys: false, resetArmed: 0,
+    // Two-press arming for RESET TO ZERO, so the one destructive control on screen
+    // cannot fire on a single stray click during a take.
+    resetArmed: 0,
+    // The last beat of an episode. The server sends one final frame and then holds the
+    // arena still for about nine tenths of a second, which is what the catch and escape
+    // sheets are played over; `at` is the stopwatch they run on.
+    ending: null, raceDoneAt: {},
+    trainInfo: null, showKeys: false, setupNote: null,
+    // Everything the trainer says about where it is: iteration, both clocks, the rate,
+    // and the high-water mark each role has reached. Null until a run starts.
+    train: null,
+    // The three-school run, when one is going: same shape per school, keyed by school.
+    runAll: null,
+    // The tournament + highlight scan, which is the other thing that used to need a
+    // terminal. `lines` is its console output, tailed onto the screen.
+    scoring: null,
+    // What the next run will be given. Wall-clock and environment steps are the same two
+    // clocks the offline trainer takes, and a run ends on whichever arrives first — so
+    // a step budget set here is a promise about the work done, not about the time.
+    // Survives a reload, because losing it mid-shoot means re-typing a budget.
+    setup: loadSetup(),
     // The six-step explainer (explain.js). 0 is closed; 1..6 is the step being read.
     // While it is open the run behind it is paused, and closing puts playback back the
     // way it was rather than unconditionally resuming.
@@ -86,7 +132,7 @@
 
   if (window.WalkSprite) {
     [window.WalkSprite.tom, window.WalkSprite.jerry].forEach(function (ch) {
-      window.WalkSprite.ANIMATIONS.forEach(function (a) {
+      ch.animations.forEach(function (a) {
         ch[a].load(null, function (err, st) {
           if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
           if (a !== 'walk') return;
@@ -99,13 +145,64 @@
       });
     });
   }
+
+  // The painted trap and the painted hole. Until they arrive the vector pair is drawn,
+  // exactly as with the characters — but the map layer is cached, and it is the layer
+  // that decides whether to draw the vector arch, so it has to be told to draw again.
+  if (window.PropSprite) {
+    window.PropSprite.load(null, function (err) {
+      if (err) { console.warn('prop atlas unavailable:', err.message); return; }
+      App.mapKey = null;
+      if (document.getElementById('screens')) render();
+    });
+  }
   App.livePanel = window.Panels.live();
   App.mode = 'play';           // 'play' shows the live decision, 'train' the explainer
 
   /* ---------------- helpers ---------------- */
 
+  /* One budget, used by every kind of run the app can start — the three-school run and
+     the single-school take on camera. Steps and minutes are both real clocks; setting
+     both means "this many steps, but never longer than that", which is how an overnight
+     run is kept from overrunning the morning. */
+  var STEP_PRESETS = [5e6, 25e6, 100e6, 250e6, 500e6, 1e9, 2e9];
+  var ENV_PRESETS = [512, 1024, 2048, 4096];
+
+  /* Measured on this machine: three schools training at once sustain about 90k
+     environment steps per second EACH at 2048 envs (~270k in total), and about 70k each
+     at the old 512. The estimate is labelled as measured-on-an-M2-Max rather than
+     presented as a promise, and it is the only honest way to answer "how long will 500M
+     take" before the run has produced a rate of its own. */
+  function estimateSeconds(stepsPerSchool, envs) {
+    if (!stepsPerSchool) return null;
+    var rate = envs >= 2048 ? 90e3 : envs >= 1024 ? 80e3 : 70e3;
+    return stepsPerSchool / rate;
+  }
+
   function el(id) { return document.getElementById(id); }
   function pct(v) { return (v === undefined || v === null || isNaN(v)) ? '—' : Math.round(v * 100) + '%'; }
+
+  /* 1_500_000 -> "1.5M". The same rule as the trainer's `human_steps`, so a number read
+     off the screen matches the one in the console and in the run's JSON. */
+  function steps(n) {
+    if (n === undefined || n === null || isNaN(n)) return '—';
+    var u = [[1e9, 'B'], [1e6, 'M'], [1e3, 'k']];
+    for (var i = 0; i < u.length; i++) {
+      if (Math.abs(n) >= u[i][0]) {
+        var v = n / u[i][0];
+        return (v >= 100 || v === Math.round(v) ? Math.round(v) : v.toFixed(1)) + u[i][1];
+      }
+    }
+    return String(Math.round(n));
+  }
+
+  function hms(sec) {
+    if (sec === undefined || sec === null || isNaN(sec)) return '—';
+    sec = Math.max(0, Math.round(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+    var p2 = function (v) { return String(v).padStart(2, '0'); };
+    return h ? h + ':' + p2(m) + ':' + p2(s2) : m + ':' + p2(s2);
+  }
   function esc(s) { return String(s === undefined ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -230,18 +327,27 @@
       + '<div style="display:flex;gap:10px;align-items:center">' + revealChip() + statusChip() + '</div></div>'
       + '<div style="position:relative;display:flex;gap:18px;margin-top:18px;flex:1">' + cards + '</div>'
       + '<div style="position:relative;display:flex;gap:12px;align-items:center;margin-top:16px">'
-      + '<div class="btn" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
+      + '<div class="btn" data-act="setup">TRAINING · N</div>'
+      + '<div class="btn ghost" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
       + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
       + '<div class="btn ghost" data-act="race">SIDE BY SIDE · X</div>'
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
       + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
           ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
       + resetButton()
-      + '<div class="dim" style="margin-left:auto;font-size:13px">'
-      + (App.cat && App.cat.zeroed
-         ? 'Every weight is a fresh random init — nothing has been trained yet. Enter a school and press t to train one on camera.'
-         : ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
-                 : 'Generate the shared level set first') + '</div></div></div>';
+      + '<div class="dim" style="margin-left:auto;font-size:13px;text-align:right">'
+      + (App.link !== 'live'
+        // The trainer is a separate process and the app talks to it over a socket, so
+        // it cannot be started from in here. Saying only TRAINER OFFLINE left the one
+        // question that matters — what do I type — unanswered on screen.
+        ? 'The trainer is not running, so nothing can train or play.<br>'
+          + 'Start it with <span class="mono" style="color:#c9d8ee">./run.sh serve</span>'
+          + ' in the project folder — this page reconnects on its own.'
+        : App.cat && App.cat.zeroed
+          ? 'Every weight is a fresh random init — nothing has been trained yet. Enter a school and press t to train one on camera.'
+          : ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
+                  : 'Generate the shared level set first')
+      + '</div></div></div>';
   }
 
   /* Two presses, because this is the one control on screen that destroys something, and
@@ -337,15 +443,20 @@
     var catch_ = done.filter(function (r) { return r === 'catch'; }).length;
     var esc_ = done.filter(function (r) { return r === 'escape'; }).length;
 
-    // A zeroed run has not been trained, so there is no half and no trained checkpoint
-    // to choose between — three identical pills would invite a comparison of one thing
-    // with itself.
-    var pills = (App.cat && App.cat.zeroed ? ['untrained'] : CP).map(function (c) {
-      var on = App.checkpoint === c;
-      return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
-        + (on ? 'background:' + P.rgba(accent, .18) + ';border-color:' + P.rgba(accent, .45) + ';color:#dceaff' : '') + '">'
-        + CP_NAME[c] + '</div>';
-    }).join('');
+    /* BEST is offered only when this run actually has one. It is written by the trainer
+       alongside the other three, so a run made before it existed has three chips and
+       nothing to explain — better than a fourth chip that answers with an error.
+       A zeroed run has none of them: nothing has trained, so three identical pills would
+       invite a comparison of one thing with itself. */
+    var have = App.cat && App.cat.available;
+    var pills = (App.cat && App.cat.zeroed ? ['untrained']
+                 : CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : []))
+      .map(function (c) {
+        var on = App.checkpoint === c;
+        return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
+          + (on ? 'background:' + P.rgba(accent, .18) + ';border-color:' + P.rgba(accent, .45) + ';color:#dceaff' : '') + '">'
+          + CP_NAME[c] + '</div>';
+      }).join('');
 
     var strip = [];
     for (var i = 0; i < n; i++) {
@@ -397,10 +508,10 @@
       + scoreBox(training ? 'TOM · CAUGHT HER, THIS LAP' : 'TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
       + scoreBox(training ? 'JERRY · GOT HOME, THIS LAP' : 'JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
       + scoreBox('ARENA', ((st.level || 0) + 1) + ' / ' + n, 'var(--gold)') + '</div>'
-      /* The first question anyone asks on pressing `t` is what the animals are doing,
-         because the arena starts moving and nothing says why. They are not being tested:
-         the optimiser is running thousands of episodes a second in a batch nobody could
-         watch, and this is one of them, pulled out and replayed at a speed you can see. */
+      /* The HUD says how the run is going. This says what the ARENA is, which is the
+         first thing anyone asks on pressing `t`: it starts moving and nothing explains
+         why. They are not being tested — the optimiser is running thousands of episodes
+         a second in a batch nobody could watch, and this is one of them. */
       + (training
          ? '<div class="card" style="padding:13px 18px;border-color:rgba(255,209,102,.28)">'
            + '<div class="mono" style="font-size:10px;letter-spacing:1.6px;color:var(--gold)">SHADOW EPISODE · NOT A TEST</div>'
@@ -411,6 +522,7 @@
            + 'better while you watch. The lap runs the twelve rooms and starts again.'
            + '</div></div>'
          : '')
+      + (training ? trainHud(accent) : '')
       + '<div class="card" style="padding:14px 18px">'
       + '<div class="faint mono" style="font-size:10px;letter-spacing:1.6px">WHAT THEY CAN SENSE RIGHT NOW</div>'
       + '<div id="thought" class="mono" style="font-size:15px;margin-top:6px;color:#c9d8ee">' + esc(mode) + '</div></div>'
@@ -425,7 +537,12 @@
       + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
       + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
       + '<div class="btn ghost" data-act="skip">SKIP EPISODE · S</div>'
-      + '<div class="btn ghost" data-act="train">TRAIN LIVE · T</div>'
+      + '<div class="btn ghost" data-act="train">TRAIN LIVE · ' + budgetLabel() + ' · T</div>'
+      + (App.mode === 'train'
+        // Only while there is a run to end. A long budget has to be interruptible, and
+        // ESC does not do it — leaving the screen deliberately leaves the run going.
+        ? '<div class="btn ghost" data-act="train-stop">STOP RUN · SHIFT+S</div>'
+        : '<div class="btn ghost" data-act="setup">TRAINING · N</div>')
       + '<div class="dim" style="margin-left:auto;font-size:12px;text-align:right">'
       + (hl ? '<span class="mono" style="color:var(--gold);letter-spacing:2px">' + esc(hl.kind.toUpperCase())
               + '</span> &nbsp;·&nbsp; ' + esc(hl.why) + '<br>' : '')
@@ -437,6 +554,253 @@
          : 'Frames are streaming from the ' + CP_NAME[App.checkpoint].toLowerCase()
            + ' policy — nothing here is scripted.')
       + '</div></div></div>';
+  }
+
+  /* Where the live run actually is.
+   *
+   * The arena already showed that *something* was happening; nothing on screen said
+   * which iteration, how far through the budget, how fast, or when it would end. Every
+   * number here is off the trainer's own telemetry — `steps`, `iter`, `sps` and `eta`
+   * ride on every training event — and a field the trainer has not sent yet reads as a
+   * dash rather than a zero, because "0 steps/s" is a measurement and absence is not.
+   */
+  function trainHud(accent) {
+    var t = App.train;
+    var frac = t && t.frac !== undefined ? Math.max(0, Math.min(1, t.frac)) : 0;
+    var target = t && t.targetSteps ? steps(t.targetSteps) : null;
+
+    function cell(k, v, sub, col) {
+      return '<div style="flex:1;min-width:0">'
+        + '<div class="mono faint" style="font-size:9px;letter-spacing:1.5px">' + k + '</div>'
+        + '<div class="mono" style="font-size:20px;line-height:1.25;color:' + (col || '#f2f7ff') + '">' + v + '</div>'
+        + (sub ? '<div class="mono faint" style="font-size:10px">' + sub + '</div>' : '')
+        + '</div>';
+    }
+
+    // The high-water mark, and where in the run it was reached. This is the pair the
+    // run-off at the end chooses between, so naming it while the run is going means the
+    // final "best cat / best mouse" card is not the first time it is mentioned.
+    function peak(role, col) {
+      var p2 = t && t.best && t.best[role];
+      if (!p2) return cell('BEST ' + role.toUpperCase() + ' SO FAR', '—', 'no evaluation yet', col);
+      return cell('BEST ' + role.toUpperCase() + ' SO FAR', pct(p2.rate),
+                  'at ' + steps(p2.steps) + ' steps · lower bound ' + pct(p2.lo), col);
+    }
+
+    return '<div class="card" style="padding:14px 18px;border-color:' + P.rgba(accent, .3) + '">'
+      + '<div style="display:flex;align-items:baseline;gap:10px">'
+      + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">LIVE TRAINING RUN</div>'
+      + '<div class="mono" style="font-size:10px;letter-spacing:1.4px;color:' + accent + '">BUDGET '
+      + esc((t && t.budget) || budgetLabel()) + '</div>'
+      + '<div class="mono" style="margin-left:auto;font-size:19px;color:' + accent + '">' + pct(frac) + '</div></div>'
+      + '<div style="height:6px;border-radius:3px;background:rgba(255,255,255,.06);margin:8px 0 12px;overflow:hidden">'
+      + '<div style="height:100%;width:' + (frac * 100).toFixed(2) + '%;background:' + accent + ';transition:width .35s linear"></div></div>'
+      + '<div style="display:flex;gap:14px">'
+      + cell('ITERATION', t ? String(t.iter) : '—')
+      + cell('ENV STEPS', t ? steps(t.steps) : '—', target ? 'of ' + target : 'no step budget')
+      + cell('SPEED', t && t.sps ? steps(t.sps) + '/s' : '—', 'environment steps per second')
+      + cell('ELAPSED', t ? hms(t.wall) : '—', t && t.eta !== null && t.eta !== undefined ? hms(t.eta) + ' left' : 'no estimate yet')
+      + '</div>'
+      + '<div style="display:flex;gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">'
+      + peak('cat', 'var(--cat)') + peak('mouse', 'var(--mouse)') + '</div></div>';
+  }
+
+  /* ---------------- the training screen ----------------
+   *
+   * Everything a run needs, set here rather than on a command line: the budget, PPO's
+   * batch, the holes per room, the seed and the tag it writes under. The same settings
+   * drive both kinds of run — the full three-school one, which is the real trainer in
+   * three processes, and the single school trained on camera — so there is exactly one
+   * place where "how much work" is decided.
+   */
+
+  function field(label, key, value, sub, width) {
+    return '<div style="width:' + (width || 120) + 'px">'
+      + '<div class="mono faint" style="font-size:9px;letter-spacing:1.5px">' + label + '</div>'
+      + '<input data-setup="' + key + '" value="' + esc(value === null || value === undefined ? '' : value) + '"'
+      + ' spellcheck="false" style="width:100%;margin-top:5px;background:rgba(255,255,255,.05);'
+      + 'border:1px solid var(--line);border-radius:8px;color:#f2f7ff;font-family:JetBrains Mono,monospace;'
+      + 'font-size:16px;padding:8px 10px;outline:none">'
+      + (sub ? '<div class="mono faint" style="font-size:10px;margin-top:4px">' + sub + '</div>' : '')
+      + '</div>';
+  }
+
+  function chips(key, values, current, fmt) {
+    return values.map(function (v) {
+      var on = String(current) === String(v);
+      return '<div class="chip" data-setup-set="' + key + '" data-value="' + v + '"'
+        + ' style="cursor:pointer;padding:7px 12px;' + (on
+          ? 'background:rgba(124,188,255,.18);border-color:rgba(124,188,255,.5);color:#dceaff' : '') + '">'
+        + (fmt ? fmt(v) : v) + '</div>';
+    }).join('');
+  }
+
+  /* One school's row in the full run. Deliberately the same four numbers as the live
+     HUD — iteration, steps against the target, rate, elapsed and what is left — because
+     they answer the same question and should not be learned twice. */
+  function schoolRow(key) {
+    var v = view(key);
+    var t = App.runAll && App.runAll.schools[key];
+    var frac = t && t.frac !== undefined ? Math.max(0, Math.min(1, t.frac)) : 0;
+    var name = v.sealed ? 'SCHOOL ' + (ORDER.indexOf(key) + 1) : v.short;
+    var col = v.sealed ? '#8494ad' : v.color;
+    var best = t && t.best ? t.best : null;
+    return '<div class="card" style="padding:12px 16px;border-color:' + P.rgba(col, .28) + '">'
+      + '<div style="display:flex;align-items:baseline;gap:10px">'
+      + '<div class="mono" style="font-size:13px;letter-spacing:1.6px;color:' + col + '">' + esc(name) + '</div>'
+      + '<div class="mono faint" style="font-size:10px">' + (t ? esc(t.tag || '') : 'waiting to start') + '</div>'
+      + '<div class="mono" style="margin-left:auto;font-size:17px;color:' + col + '">' + pct(frac) + '</div></div>'
+      + '<div style="height:5px;border-radius:3px;background:rgba(255,255,255,.06);margin:7px 0 9px;overflow:hidden">'
+      + '<div style="height:100%;width:' + (frac * 100).toFixed(2) + '%;background:' + col + ';transition:width .4s linear"></div></div>'
+      + '<div class="mono" style="display:flex;gap:16px;font-size:12px;color:#c9d8ee;flex-wrap:wrap">'
+      + '<span>it <b>' + (t ? t.iter : '—') + '</b></span>'
+      + '<span>' + (t ? steps(t.steps) : '—') + (t && t.targetSteps ? ' / ' + steps(t.targetSteps) : '') + '</span>'
+      + '<span>' + (t && t.sps ? steps(t.sps) + '/s' : '—') + '</span>'
+      + '<span>' + (t ? hms(t.wall) : '—') + (t && t.eta !== null && t.eta !== undefined ? ' · ' + hms(t.eta) + ' left' : '') + '</span>'
+      + (best && best.cat ? '<span style="color:var(--cat)">Tom ' + pct(best.cat.rate) + '</span>' : '')
+      + (best && best.mouse ? '<span style="color:var(--mouse)">Jerry ' + pct(best.mouse.rate) + '</span>' : '')
+      + '</div></div>';
+  }
+
+  function runProgressHtml() {
+    var r = App.runAll, sc = App.scoring;
+    if (sc) {
+      var tail = (sc.lines || []).slice(-14).map(esc).join('<br>');
+      return '<div class="card" style="padding:16px 18px;flex:1;display:flex;flex-direction:column;min-height:0">'
+        + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">'
+        + (sc.done ? 'SCAN FINISHED' : 'SCORING · CROSS-PLAY, THEN THE HIGHLIGHT SCAN') + '</div>'
+        + '<div class="mono" style="margin-top:10px;font-size:12px;line-height:1.7;color:#8fa4c4;overflow:hidden">'
+        + (tail || 'starting…') + '</div>'
+        + (sc.done ? '<div class="dim" style="margin-top:auto;font-size:13px">'
+            + (sc.ok ? 'The leaderboard and the grand final are live — press B or F.'
+                     : 'The scan did not finish. The lines above say where it stopped.')
+            + '</div>' : '')
+        + '</div>';
+    }
+    if (r) {
+      return '<div style="display:flex;flex-direction:column;gap:10px">'
+        + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">'
+        + (r.done ? 'RUN FINISHED · ' + esc(r.tag) : 'TRAINING · ' + esc(r.tag)
+            + ' · three processes, one budget each') + '</div>'
+        + ORDER.map(schoolRow).join('')
+        + (r.done
+          ? '<div class="dim" style="font-size:13px;line-height:1.6">Each school kept the best Tom '
+            + 'and the best Jerry it reached, not only the ones it finished on. Score the run to '
+            + 'settle the championship on arenas nobody trained on.</div>'
+          : '') + '</div>';
+    }
+    // Idle: the runs that exist, so switching to one is a click rather than a restart.
+    var runs = (App.cat && App.cat.runs) || [];
+    return '<div style="display:flex;flex-direction:column;gap:10px">'
+      + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">RUNS ON DISK</div>'
+      + (runs.length ? runs.map(function (x) {
+          return '<div class="card" style="padding:11px 15px;display:flex;align-items:center;gap:12px;'
+            + (x.current ? 'border-color:rgba(124,188,255,.45)' : '') + '">'
+            + '<div class="mono" style="font-size:14px;color:#f2f7ff;width:120px">' + esc(x.tag) + '</div>'
+            + '<div class="mono faint" style="font-size:11px;flex:1">'
+            + (x.schools.length ? x.schools.join(' · ') : 'no checkpoints yet')
+            + (x.budget ? ' · ' + esc(x.budget) : '') + '</div>'
+            + '<div class="chip" style="font-size:10px">' + (x.scored ? 'SCORED' : 'NOT SCORED') + '</div>'
+            + (x.current ? '<div class="chip" style="font-size:10px;color:#7cbcff">WATCHING</div>'
+                         : '<div class="btn ghost" data-act="use-run" data-tag="' + esc(x.tag)
+                           + '" style="padding:6px 12px;font-size:11px">WATCH</div>')
+            + '</div>';
+        }).join('') : '<div class="dim" style="font-size:13px">Nothing has been trained yet.</div>')
+      + '</div>';
+  }
+
+  function renderSetup() {
+    var S2 = App.setup;
+    var busy = App.runAll && !App.runAll.done;
+    var scoring = App.scoring && !App.scoring.done;
+    var eta = estimateSeconds(S2.steps, S2.envs);
+    var liveOn = App.mode === 'train' && App.train && !App.train.finished;
+
+    return '<div class="screen">' + backdrop('bg-academy', .42)
+      + '<div style="position:relative;display:flex;align-items:center;gap:18px">'
+      + '<div><div class="kicker">Everything a run needs</div>'
+      + '<div class="title" style="font-size:44px;margin-top:4px">TRAINING</div></div>'
+      + '<div style="margin-left:auto;display:flex;gap:10px;align-items:center">'
+      + '<span class="chip">RUN ' + esc((App.cat && App.cat.runTag) || '—') + '</span>'
+      + revealChip() + statusChip() + '</div></div>'
+
+      + '<div style="position:relative;display:flex;gap:20px;margin-top:18px;flex:1;min-height:0">'
+
+      + '<div style="width:720px;display:flex;flex-direction:column;gap:16px">'
+      + '<div class="card" style="padding:20px 22px">'
+      + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">THE BUDGET · USED BY EVERY RUN THIS APP STARTS</div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+      + chips('steps', STEP_PRESETS, S2.steps, function (v) { return steps(v); }) + '</div>'
+      + '<div style="display:flex;gap:18px;margin-top:16px;align-items:flex-start">'
+      // Shown the way it is written, not as nine digits: `steps()` and `setSetup` are
+      // inverses, so what comes back out of the field is what would be typed in.
+      + field('ENV STEPS PER SCHOOL', 'steps', S2.steps === null ? '' : steps(S2.steps),
+              '500M, 1.5B and 2e8 all work', 210)
+      + field('MINUTES CAP', 'minutes', S2.minutes, 'optional — ends whichever comes first', 190)
+      + '</div>'
+      + '<div class="dim" style="margin-top:14px;font-size:13px;line-height:1.6">'
+      + (S2.steps
+        ? '≈ <b class="mono" style="color:#f2f7ff">' + hms(eta) + '</b> for all three schools, '
+          + 'measured on this machine at ' + steps(S2.envs >= 2048 ? 90e3 : S2.envs >= 1024 ? 80e3 : 70e3)
+          + ' steps a second each. The run reports its own rate once it starts.'
+        : 'No step budget — the run will end on the minutes cap alone.')
+      + '</div></div>'
+
+      + '<div class="card" style="padding:20px 22px">'
+      + '<div class="mono faint" style="font-size:10px;letter-spacing:1.6px">THE RUN</div>'
+      + '<div style="display:flex;gap:18px;margin-top:12px;align-items:flex-start;flex-wrap:wrap">'
+      + field('TAG · WRITES TO runs/', 'tag', S2.tag, 'a new name keeps the old run', 170)
+      + field('HOLES PER ROOM', 'nests', S2.nests, "'2', or a mix like '1,2,3'", 150)
+      + field('SEED', 'seed', S2.seed, 'same seed, same rooms', 110)
+      + '<div style="flex:1;min-width:200px">'
+      + '<div class="mono faint" style="font-size:9px;letter-spacing:1.5px">PPO BATCH · PARALLEL ENVIRONMENTS</div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px">' + chips('envs', ENV_PRESETS, S2.envs) + '</div>'
+      + '<div class="mono faint" style="font-size:10px;margin-top:6px">2048 is ~35% more steps a second than 512 here</div>'
+      + '</div></div></div>'
+
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      + (busy
+        ? '<div class="btn" data-act="stop-all">STOP THE RUN · IT STILL SAVES</div>'
+        : '<div class="btn" data-act="train-all"' + (App.link === 'live' ? '' : ' style="opacity:.4"')
+          + '>TRAIN ALL THREE</div>')
+      + (liveOn
+        ? '<div class="btn ghost" data-act="train-stop">STOP THE LIVE TAKE</div>'
+        : '<div class="btn ghost" data-act="train">TRAIN ' + esc(view(App.school).short)
+          + ' ON CAMERA · T</div>')
+      + '<div class="btn ghost" data-act="score"' + (busy || scoring ? ' style="opacity:.45"' : '')
+      + '>SCORE THE RUN</div>'
+      + '<div style="display:flex;gap:6px;align-items:center">'
+      + '<span class="mono faint" style="font-size:9px;letter-spacing:1.4px">ENTER</span>'
+      + chips('scoreWith', ['trained', 'best'], S2.scoreWith, function (v) {
+          return v === 'best' ? 'BEST REACHED' : 'AS FINISHED'; })
+      + '</div>'
+      + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
+      + '</div>'
+      + (App.setupNote ? '<div class="mono" style="font-size:12.5px;color:#ff9a72;line-height:1.5">'
+          + esc(App.setupNote) + '</div>' : '')
+      + '<div class="dim" style="font-size:12.5px;line-height:1.6">'
+      + (App.link === 'live'
+        ? 'TRAIN ALL THREE launches the real trainer — three processes, identical budget, '
+          + 'pinned to their own cores. Stopping it is a request, not a kill: every school '
+          + 'finishes the iteration it is on and writes its checkpoints.'
+        : '<span style="color:#ff9a72">Nothing here can start until the trainer is running.</span> '
+          + 'It is a separate process — this page only talks to it — so start it from the '
+          + 'project folder with <span class="mono" style="color:#c9d8ee">./run.sh serve</span>. '
+          + 'The page reconnects by itself; these buttons come alive when it does.')
+      + '</div>'
+      + '</div>'
+
+      + '<div id="run-progress" style="flex:1;min-width:0;display:flex;flex-direction:column">'
+      + runProgressHtml() + '</div>'
+      + '</div></div>';
+  }
+
+  /* Progress arrives a couple of times a second, and this screen has text fields in it.
+     A full re-render would take the caret out of whatever the author was typing, so the
+     right-hand column is repainted on its own. */
+  function paintRunProgress() {
+    var host = el('run-progress');
+    if (host) host.innerHTML = runProgressHtml();
   }
 
   function renderFinal() {
@@ -632,7 +996,7 @@
       if (!mh || !fh) continue;
       if (mh.getAttribute('data-k') !== String(App.map.seed)) {
         mh.setAttribute('data-k', String(App.map.seed));
-        mh.innerHTML = P.mapSvg(local, RCS);
+        mh.innerHTML = P.mapSvg(local, RCS, { sprites: App.sprites });
       }
       var v = view(k);
       var fr = App.raceFrames[k], pv = (App.racePrev && App.racePrev[k]) || fr;
@@ -642,7 +1006,9 @@
         key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color,
         sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
         catMoving: App.alpha < 1 && (fr.cat.x !== pv.cat.x || fr.cat.y !== pv.cat.y),
-        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y)
+        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y),
+        ending: App.raceDone && App.raceDone[k]
+          ? { result: App.raceDone[k], ms: now - (App.raceDoneAt[k] || now) } : null
       });
     }
   }
@@ -679,7 +1045,8 @@
       + '</div></div></div>'
       + '<div style="position:relative;display:flex;gap:10px;margin-top:14px">'
       + '<div class="btn" data-act="school">BACK TO THE ARENA · L</div>'
-      + '<div class="btn ghost" data-act="train">TRAIN LIVE · T</div>'
+      + '<div class="btn ghost" data-act="train">TRAIN LIVE · ' + budgetLabel() + ' · T</div>'
+      + '<div class="btn ghost" data-act="train-budget">BUDGET · SHIFT+T</div>'
       + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div></div></div>';
   }
 
@@ -941,7 +1308,7 @@
     ['h', 'the highlight reel'], ['f', 'the grand final'],
     ['b', 'the leaderboard'], ['v', 'this school\'s verdict'],
     ['space', 'pause / resume'], ['s', 'skip this episode'],
-    ['[  ]', 'slower / faster'], ['t', 'train live, on camera'],
+    ['[  ]', 'slower / faster'], ['t', 'train live, on camera'], ['n / shift+t', 'training settings and the full run'], ['shift+s', 'end the live run early'],
     ['esc', 'back to the academy'], ['?', 'this card'],
     ['r', 'REVEAL the next school'], ['shift+R', 're-seal one (for a re-shoot)'],
     ['shift+0', 're-seal everything — back to PPO only'],
@@ -1009,10 +1376,32 @@
     render();
   }
 
+  /* What the settings screen's *form* depends on. Frames, episode results and progress
+     all call render() several times a second; rebuilding the form on each of them takes
+     the caret out of whatever is being typed and swaps the buttons out from under a
+     click. When only the run's progress has moved, repaint just the progress column. */
+  function setupSignature() {
+    return JSON.stringify([App.setup,
+      !!(App.runAll && !App.runAll.done), !!(App.scoring && !App.scoring.done),
+      !!(App.scoring), !!(App.runAll),
+      App.mode === 'train' && !!App.train, App.school,
+      App.cat && App.cat.runTag, ((App.cat && App.cat.runs) || []).length,
+      // `live` or not — the screen branches on nothing finer, and the socket flips
+      // between 'offline' and 'connecting' every couple of seconds while it retries,
+      // which would rebuild the form on each attempt.
+      App.link === 'live', App.setupNote]);
+  }
+  var _setupSig = null;
+
   function render() {
+    if (App.screen === 'setup' && _setupSig !== null) {
+      var sig = setupSignature();
+      if (sig === _setupSig) { paintRunProgress(); return; }
+    }
+    _setupSig = App.screen === 'setup' ? setupSignature() : null;
     var html = { menu: renderMenu, gen: renderGen, school: renderSchool, lesson: renderLesson,
                  race: renderRace, verdict: renderVerdict, final: renderFinal,
-                 board: renderBoard }[App.screen]();
+                 board: renderBoard, setup: renderSetup }[App.screen]();
     el('screens').innerHTML = html + keyCard();
     renderExplain();
     App.mapKey = null;                 // force a repaint into the new DOM
@@ -1025,7 +1414,7 @@
     var key = App.map.seed + ':' + App.map.nest.join(',');
     if (App.mapKey !== key) {
       App.mapKey = key;
-      host.innerHTML = P.mapSvg(localMap(App.map), CS);
+      host.innerHTML = P.mapSvg(localMap(App.map), CS, { sprites: App.sprites });
     }
     if (!App.frame) return;
     var v = view(App.screen === 'final' ? (App.runState && App.runState.catSchool) || App.school : App.school);
@@ -1034,7 +1423,8 @@
       frame: App.frame, prev: App.prev, alpha: App.alpha, cs: CS, map: App.map,
       key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color,
       sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
-      catMoving: App.catMoving, mouseMoving: App.mouseMoving
+      catMoving: App.catMoving, mouseMoving: App.mouseMoving,
+      ending: App.ending ? { result: App.ending, ms: now - App.bannerAt } : null
     });
     var b = el('arena-banner');
     if (b) {
@@ -1195,17 +1585,104 @@
   }
 
   function trainLive() {
+    var b = { label: budgetLabel(), minutes: App.setup.minutes || null,
+              steps: App.setup.steps || null };
+    if (App.link !== 'live') {
+      App.screen = 'setup';
+      return note('The trainer is not running — start it with ./run.sh serve.');
+    }
+    if (!b.steps && !b.minutes) {
+      App.screen = 'setup';
+      return note('Set a budget first: a step count, a minutes cap, or both.');
+    }
+    App.setupNote = null;
     App.mode = 'train';
+    // `t` is a global key, so it can be pressed from the verdict or the leaderboard.
+    // Starting a run and leaving the viewer on a screen that cannot show it is the one
+    // outcome nobody wants.
+    App.screen = 'school';
     // Not "training live" yet — the optimiser takes a couple of seconds to set up, and
     // the arena holds still until it exists rather than being filled by anything else.
     App.trainReady = false;
+    // A fresh run, so the previous take's iteration count and high-water marks go with
+    // it. Leaving them up would have the HUD reporting the last run's peak under a bar
+    // that just went back to zero.
+    App.train = { iter: 0, steps: 0, wall: 0, frac: 0, sps: 0, eta: null,
+                  targetSteps: null, budget: b.label, best: {} };
     App.trainInfo = 'Starting the optimiser — the arena waits for the first real policy.';
-    App.net.send({ cmd: 'train', school: App.school, minutes: 10 });
+    App.net.send({ cmd: 'train', school: App.school, minutes: b.minutes, steps: b.steps });
     render();
   }
 
+  /* The budget in words, for buttons and captions. Both clocks, when both are set. */
+  function budgetLabel() {
+    var p2 = [];
+    if (App.setup.steps) p2.push(steps(App.setup.steps) + ' STEPS');
+    if (App.setup.minutes) p2.push(App.setup.minutes + ' MIN CAP');
+    return p2.length ? p2.join(' · ') : 'NO BUDGET SET';
+  }
+
+  /* The arena banner is drawn into the arena, which the settings screen does not have —
+     a refusal announced there would be invisible. This puts it under the buttons, where
+     the click that was refused actually happened. */
+  function note(msg) {
+    App.setupNote = msg;
+    render();
+  }
+
+  function trainAll() {
+    if (App.link !== 'live') {
+      return note('The trainer is not running — start it with ./run.sh serve, and this '
+                  + 'button comes alive on its own.');
+    }
+    if (!App.setup.steps && !App.setup.minutes) {
+      return note('Set a budget first: a step count, a minutes cap, or both.');
+    }
+    App.setupNote = null;
+    App.runAll = { tag: App.setup.tag, schools: {}, done: false, code: null };
+    App.net.send({
+      cmd: 'trainAll', tag: App.setup.tag, steps: App.setup.steps,
+      minutes: App.setup.minutes || null, envs: App.setup.envs,
+      nests: String(App.setup.nests), seed: App.setup.seed
+    });
+    App.screen = 'setup';
+    render();
+  }
+
+  /* Coerce what was typed into what the trainer wants. A step field takes 500M or 2e8
+     as happily as 500000000; an empty minutes field means "no cap", not zero. */
+  function setSetup(key, raw) {
+    var v = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (key === 'tag') App.setup.tag = v.replace(/[^A-Za-z0-9._-]/g, '') || 'v5';
+    else if (key === 'nests') App.setup.nests = v || '2';
+    else if (key === 'minutes') App.setup.minutes = v === '' ? null : Math.max(0, +v || 0) || null;
+    else if (key === 'seed') App.setup.seed = Math.max(0, Math.round(+v || 0));
+    else if (key === 'envs') App.setup.envs = Math.max(64, Math.round(+v || 512));
+    else if (key === 'scoreWith') App.setup.scoreWith = v === 'best' ? 'best' : 'trained';
+    else if (key === 'steps') {
+      var m = /^([0-9.eE+-]+)\s*([kKmMbBgG]?)$/.exec(v.replace(/[_,\s]/g, ''));
+      var n = m ? parseFloat(m[1]) : NaN;
+      var mult = m ? ({ k: 1e3, m: 1e6, b: 1e9, g: 1e9 }[m[2].toLowerCase()] || 1) : 1;
+      App.setup.steps = isNaN(n) ? null : Math.round(n * mult) || null;
+    }
+    saveSetup();
+  }
+
   function bind() {
+    // Typing must not re-render — the caret would jump out of the field on every key.
+    // The value is parsed as it is typed and only drawn back on blur.
+    el('root').addEventListener('input', function (e) {
+      var t = e.target.closest('[data-setup]');
+      if (t) setSetup(t.dataset.setup, t.value);
+    });
+    el('root').addEventListener('change', function (e) {
+      var t = e.target.closest('[data-setup]');
+      if (t && App.screen === 'setup') render();
+    });
+
     el('root').addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-setup-set]');
+      if (chip) { setSetup(chip.dataset.setupSet, chip.dataset.value); render(); return; }
       var t = e.target.closest('[data-act],[data-school],[data-cp],[data-xstep]');
       if (!t) return;
       if (t.dataset.xstep) { App.explain = +t.dataset.xstep; render(); return; }
@@ -1219,6 +1696,17 @@
       else if (a === 'pause') { App.playing = !App.playing; App.net.send({ cmd: App.playing ? 'resume' : 'pause' }); render(); }
       else if (a === 'skip') App.net.send({ cmd: 'skip' });
       else if (a === 'train') trainLive();
+      else if (a === 'setup') go('setup');
+      else if (a === 'train-all') trainAll();
+      else if (a === 'stop-all') App.net.send({ cmd: 'stopAll' });
+      else if (a === 'score') {
+        App.scoring = { lines: [], done: false, ok: false };
+        App.net.send({ cmd: 'score', tag: (App.runAll && App.runAll.tag) || App.setup.tag,
+                       checkpoint: App.setup.scoreWith });
+        render();
+      }
+      else if (a === 'use-run') App.net.send({ cmd: 'useRun', tag: t.dataset.tag });
+      else if (a === 'train-stop') App.net.send({ cmd: 'stop' });
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
       else if (a === 'reset') {
@@ -1272,10 +1760,16 @@
       else if (k === 'v' && App.results.length) { App.screen = 'verdict'; render(); }
       else if (k === 'c') { App.sprites = !App.sprites; App.mapKey = null; }
       else if (k === 'f') { App.screen = 'final'; render(); App.net.send({ cmd: 'final' }); }
-      else if (k === 't') trainLive();
+      // `e.key` is already 'T' when shift is held; `shiftKey` is checked too because a
+      // remapped or on-screen keyboard can send one without the other.
+      // shift+T opens the settings the run will use; plain t starts one with them.
+      else if (k === 't') { if (e.shiftKey || e.key === 'T') go('setup'); else trainLive(); }
+      else if (k === 'n') go('setup');
       else if (k === 'l') { App.screen = App.screen === 'lesson' ? 'school' : 'lesson'; render(); }
       else if (k === 'w') openExplain();
-      else if (k === 's') App.net.send({ cmd: 'skip' });
+      // shift+S ends a live run; plain s skips the episode on screen. The two are very
+      // different sizes of action, so they are not the same key press.
+      else if (k === 's') App.net.send({ cmd: (e.shiftKey || e.key === 'S') ? 'stop' : 'skip' });
       else if (e.code === 'Space') {
         e.preventDefault();
         App.playing = !App.playing;
@@ -1305,7 +1799,13 @@
     fitStage();
     App.net = new window.Net();
     App.net
-      .on('status', function (m) { App.link = m.status; render(); })
+      .on('status', function (m) {
+        // A note saying "the trainer is not running" must not outlive the trainer
+        // starting — the caption underneath it has already gone back to normal.
+        if (m.status === 'live' && App.link !== 'live') App.setupNote = null;
+        App.link = m.status;
+        render();
+      })
       .on('hello', function (m) {
         App.cat = m;
         if (!App.levels.length && m.levels) {
@@ -1327,6 +1827,9 @@
         App.alpha = joins ? 0 : 1;
         App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
+        // A frame that does not join the last one is a new episode, and the ending it
+        // was holding on is over.
+        if (!joins) App.ending = null;
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
         if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
@@ -1384,18 +1887,21 @@
         if ((App.runState || {}).level !== m.level) {
           App.runState = Object.assign({}, App.runState, { level: m.level });
           App.raceDone = {};
+          App.raceDoneAt = {};
           render();
         }
       })
       .on('laneEnd', function (m) {
         App.raceDone = App.raceDone || {};
         App.raceDone[m.school] = m.result;
+        App.raceDoneAt[m.school] = performance.now();
         App.raceGrid = App.raceGrid || {};
         (App.raceGrid[m.school] = App.raceGrid[m.school] || [])[m.level] = m.result;
         render();
       })
       .on('episodeEnd', function (m) {
         App.results[m.level] = m.result;
+        App.ending = m.result === 'catch' || m.result === 'escape' ? m.result : null;
         App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
           : m.result === 'escape' ? { t: 'JERRY GOT HOME', c: '#ffd166' }
           : { t: 'TIME OUT', c: '#8fa4c4' };
@@ -1409,6 +1915,10 @@
         // sits on the menu while the recorded episodes play into a screen nobody is
         // looking at. It also means the trainer can drive the app from Python.
         var to = { play: 'school', final: 'final', race: 'race', train: 'school' }[m.mode];
+        // ...except when the settings screen is open. That screen is where a run is
+        // configured and watched, and an episode still playing behind it would otherwise
+        // drag the author off it mid-sentence.
+        if (App.screen === 'setup') to = null;
         if (to && App.screen !== to) {
           App.screen = to;
           if (m.school) App.school = m.school;
@@ -1425,7 +1935,126 @@
         if (App.screen === 'school') App.screen = 'verdict';
         render();
       })
+      /* The server refuses some commands — a second live run while one is still going,
+         a checkpoint this run does not have — and until now the app dropped the reply on
+         the floor. On camera that read as a key doing nothing, and worse: the HUD had
+         already been reset to the budget of the run that was never started. */
+      .on('error', function (m) {
+        App.banner = { t: String(m.message || 'the trainer refused that').toUpperCase(), c: '#ff9a72' };
+        App.bannerAt = performance.now();
+        if (App.train && App.train.iter === 0) { App.train = null; App.mode = 'play'; }
+        App.trainInfo = m.message || null;
+        render();
+      })
+      .on('trainStopping', function () {
+        App.trainInfo = 'Stopping after this iteration — the run still saves its checkpoints '
+          + 'and still picks its best Tom and Jerry.';
+        render();
+      })
+      .on('trainAllStarted', function (m) {
+        App.runAll = { tag: m.tag, schools: {}, done: false, code: null };
+        App.scoring = null;
+        App.screen = 'setup';
+        render();
+      })
+      .on('trainAllDone', function (m) {
+        if (App.runAll) { App.runAll.done = true; App.runAll.code = m.code; }
+        App.banner = { t: 'RUN FINISHED · ' + String(m.run || '').toUpperCase(), c: '#ffd166' };
+        App.bannerAt = performance.now();
+        render();
+      })
+      .on('scoreStarted', function () {
+        App.scoring = { lines: [], done: false, ok: false };
+        render();
+      })
+      .on('scoreStep', function (m) {
+        if (!App.scoring) App.scoring = { lines: [], done: false, ok: false };
+        App.scoring.lines.push('— ' + m.step);
+        if (App.screen === 'setup') paintRunProgress(); else render();
+      })
+      .on('scoreLine', function (m) {
+        if (!App.scoring) App.scoring = { lines: [], done: false, ok: false };
+        App.scoring.lines.push(m.line);
+        if (App.screen === 'setup') paintRunProgress();
+      })
+      .on('scoreDone', function (m) {
+        if (!App.scoring) App.scoring = { lines: [], done: false, ok: false };
+        App.scoring.done = true;
+        App.scoring.ok = !!m.ok;
+        render();
+      })
+      .on('runSwitched', function (m) {
+        // A different run means different policies, so nothing on screen from the old
+        // one is still true. Back to the Academy rather than leaving a stale arena up.
+        App.runAll = null; App.scoring = null; App.results = [];
+        App.frame = App.prev = null; App.trainInfo = null; App.mode = 'play';
+        App.screen = 'menu';
+        App.banner = { t: 'WATCHING ' + String(m.tag || '').toUpperCase(), c: '#7cbcff' };
+        App.bannerAt = performance.now();
+        render();
+      })
       .on('train', function (m) {
+        /* Two sources, one event shape. `run` is set when the event was tailed out of
+           the three-school trainer, and then it belongs to that school's row rather
+           than to the single-school HUD — otherwise three schools would take turns
+           overwriting one set of numbers. */
+        if (m.run) {
+          if (!App.runAll) App.runAll = { tag: m.run, schools: {}, done: false, code: null };
+          var row = App.runAll.schools[m.school] || (App.runAll.schools[m.school] = { best: {} });
+          row.iter = m.iter; row.steps = m.steps; row.wall = m.wall; row.frac = m.frac;
+          if (m.targetSteps !== undefined) row.targetSteps = m.targetSteps;
+          if (m.sps) row.sps = m.sps;
+          if (m.eta !== undefined) row.eta = m.eta;
+          if (m.kind === 'best') row.best[m.role] = { rate: m.rate, lo: m.lo, steps: m.steps };
+          if (m.kind === 'bestFinal') row.best[m.role] = { rate: m.rate, lo: m.lo, steps: m.fromSteps, settled: m.pick };
+          if (App.screen === 'setup') paintRunProgress();
+          // The explainers are worth watching during a full run too, but only for the
+          // school whose panel is on screen.
+          if (m.kind === 'algo' && App.panels[m.school] && App.screen !== 'setup') {
+            App.panels[m.school].update(Object.assign({ gen: m.iter, role: m.cat ? 'cat' : 'mouse' },
+                                                      m.cat || m, { year: (m.cat || {}).year }));
+          }
+          return;
+        }
+        // Every training event carries the run's position on both clocks, so the HUD is
+        // updated from all of them rather than only from the ones that happen to be
+        // frequent. `algo` fires once per iteration — which for the population schools
+        // is tens of seconds — so on its own it would leave the bar visibly stalled.
+        // A window that joins mid-run — a reload during a shoot, a second monitor — gets
+        // the HUD from the next event rather than staying blank until the run ends.
+        if (!App.train) App.train = { best: {}, budget: null, targetSteps: null };
+        {
+          App.train.iter = m.iter;
+          App.train.steps = m.steps;
+          App.train.wall = m.wall;
+          App.train.frac = m.frac;
+          if (m.targetSteps !== undefined) App.train.targetSteps = m.targetSteps;
+          if (m.sps) App.train.sps = m.sps;
+          if (m.eta !== undefined) App.train.eta = m.eta;
+          if (m.budget) App.train.budget = m.budget;
+        }
+        // Never a full re-render while the settings screen is up: it has text fields,
+        // and a repaint mid-word takes the caret with it.
+        if (m.kind === 'progress') { if (App.screen !== 'setup') render(); return; }
+        if (m.kind === 'best') {
+          // The trainer ranks candidates on the lower end of the confidence interval,
+          // so that is what the HUD reports alongside the headline rate — a peak that
+          // is only a lucky evaluation should not read as a new champion.
+          if (App.train) App.train.best[m.role] = { rate: m.rate, lo: m.lo, steps: m.steps };
+          render();
+          return;
+        }
+        if (m.kind === 'bestFinal') {
+          if (App.train) {
+            App.train.best[m.role] = { rate: m.rate, lo: m.lo, steps: m.fromSteps, settled: m.pick };
+          }
+          App.banner = { t: 'BEST ' + (m.role === 'cat' ? 'TOM' : 'JERRY') + ' · '
+                            + (m.pick === 'peak' ? 'THE PEAK, NOT THE FINISH' : 'THE FINAL POLICY'),
+                         c: m.role === 'cat' ? '#ff9a72' : '#7ee0ff' };
+          App.bannerAt = performance.now();
+          render();
+          return;
+        }
         if (m.kind === 'algo') {
           var p = App.panels[m.school];
           if (p) {
@@ -1447,7 +2076,13 @@
           App.banner = { t: m.role.toUpperCase() + ' PROMOTED TO YEAR ' + m.year, c: '#ffd166' };
           App.bannerAt = performance.now();
         } else if (m.kind === 'trainDone') {
-          App.trainInfo = 'training finished';
+          var b = m.best || {};
+          // Name what the run settled on. "training finished" said nothing about the
+          // thing the run existed to produce.
+          App.trainInfo = 'training finished · best Tom = ' + (b.cat === 'peak' ? 'its peak' : 'its final policy')
+            + ' · best Jerry = ' + (b.mouse === 'peak' ? 'its peak' : 'its final policy')
+            + ' · the BEST chip plays them'
+            + (m.savedTo ? ' · saved to ' + m.savedTo : '');
         }
       })
       .connect();

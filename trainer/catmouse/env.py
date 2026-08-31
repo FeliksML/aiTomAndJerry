@@ -30,6 +30,9 @@ DIRS = ((0, -1), (1, 0), (0, 1), (-1, 0))  # N E S W
 ACTIONS = ("stay", "north", "east", "south", "west")
 
 VISION_HALF_ANGLE_DEG = 50.0
+# How far either side of a wall corner the silhouette rays are aimed. At full range
+# 1e-4 rad puts them 0.0009 cells apart — past the corner, far closer than a pixel.
+CORNER_EPS = 1e-4
 VISION_RANGE = 8.5
 VISION_RAYS = 21
 HEARING_RANGE = 12.0
@@ -393,40 +396,156 @@ def round_js(v: float) -> int:
 
 # ---------- sensors ----------
 
-def cast_cone(grid, ax: int, ay: int, facing: int):
-    """Vision cone with wall occlusion. Returns (polygon, ray distances in [0,1])."""
+def cast_ray(grid, ox: float, oy: float, dx: float, dy: float, rng: float):
+    """One ray, walked cell boundary to cell boundary, to the first wall face it meets
+    or to `rng` if it meets none. Returns (exact distance, 1 if it hit).
+
+    The old caster advanced in 0.18 steps and, on contact, backed off a whole step, so
+    every ray stopped somewhere within the last 0.18 cells before the wall and by a
+    different amount each: one flat wall came back with 0.17 cells of wobble along it.
+    It also tested one step BEYOND the range, letting an unobstructed ray reach 8.64 of
+    a nominal 8.5 (readings of 1.016 on a [0,1] input).
+
+    A ray crossing exactly through a lattice corner passes only if at least one of the
+    two cells sharing that corner is open: light never squeezes through a zero-width
+    diagonal gap, but it does graze the tip of a single block.
+
+    Agents stand on cell centres, so an exact 45-degree sightline is common, not a
+    measure-zero curiosity, and the two halves of that rule are the two ways to be wrong.
+    Grazing the tip lets sight through the odd corner-to-corner slit: 1 pair in 4,788
+    sampled. Refusing it instead punches a blind line through the middle of a region the
+    cone correctly draws as lit, which is eight times more common and is the failure a
+    viewer actually notices — the mouse standing in the light, unseen.
+    """
+    cx, cy = math.floor(ox), math.floor(oy)
+    if not passable(grid, cx, cy):
+        return 0.0, 1
+    sx = 1 if dx > 0 else -1
+    sy = 1 if dy > 0 else -1
+    dtx = math.inf if dx == 0 else abs(1.0 / dx)
+    dty = math.inf if dy == 0 else abs(1.0 / dy)
+    tx = math.inf if dx == 0 else (((cx + 1) if dx > 0 else cx) - ox) / dx
+    ty = math.inf if dy == 0 else (((cy + 1) if dy > 0 else cy) - oy) / dy
+    for _ in range(2 * (W + H)):
+        if tx < ty:
+            t = tx
+            tx += dtx
+            cx += sx
+        elif ty < tx:
+            t = ty
+            ty += dty
+            cy += sy
+        else:
+            t = tx
+            if t >= rng:
+                break
+            if not passable(grid, cx + sx, cy) and not passable(grid, cx, cy + sy):
+                return t, 1
+            tx += dtx
+            ty += dty
+            cx += sx
+            cy += sy
+        if t >= rng:
+            break
+        if not passable(grid, cx, cy):
+            return t, 1
+    return rng, 0
+
+
+def cone_corners(grid, ox: float, oy: float, base: float, half: float, rng: float):
+    """The lattice points inside the cone where a wall silhouette pivots.
+
+    Twenty-one rays over 100 degrees is one every five, which at full range samples the
+    world every 0.74 cells, so the fan almost never lands ON the corner a shadow turns
+    around; the polygon then bridged a near hit and a far miss with one straight edge,
+    and that edge is the spike. A ray a hair either side of every corner puts a real
+    vertex where the silhouette actually turns.
+    """
+    out = []
+    x0 = max(0, math.ceil(ox - rng))
+    x1 = min(W, math.floor(ox + rng))
+    y0 = max(0, math.ceil(oy - rng))
+    y1 = min(H, math.floor(oy + rng))
+    for py in range(y0, y1 + 1):
+        for px in range(x0, x1 + 1):
+            dx, dy = px - ox, py - oy
+            dd = dx * dx + dy * dy
+            if dd < 1e-12 or dd > rng * rng:
+                continue
+            da = math.atan2(dy, dx) - base
+            da = math.atan2(math.sin(da), math.cos(da))
+            if da < -half or da > half:
+                continue
+            # only a corner with solid on one side and open on the other casts an edge
+            k = ((0 if passable(grid, px - 1, py - 1) else 1)
+                 + (0 if passable(grid, px, py - 1) else 1)
+                 + (0 if passable(grid, px - 1, py) else 1)
+                 + (0 if passable(grid, px, py) else 1))
+            if k == 0 or k == 4:
+                continue
+            out.append(da)
+    return out
+
+
+def cast_rays(grid, ax: float, ay: float, facing: int):
+    """The VISION_RAYS evenly spaced readings a policy consumes, in fan order, in [0,1].
+
+    This is the hot path — vec.py bakes it for every cell and facing — so it skips the
+    corner sweep that only the drawn polygon needs.
+    """
     half = VISION_HALF_ANGLE_DEG * math.pi / 180.0
     base = facing * math.pi / 2 - math.pi / 2  # facing 0 = N
-    poly = [(ax + 0.5, ay + 0.5)]
-    reads = []
+    out = []
     for i in range(VISION_RAYS):
         a = base - half + (2 * half) * (i / (VISION_RAYS - 1))
-        dx, dy = math.cos(a), math.sin(a)
-        t = 0.0
-        step = 0.18
-        while t < VISION_RANGE:
-            t += step
-            cx = math.floor(ax + 0.5 + dx * t)
-            cy = math.floor(ay + 0.5 + dy * t)
-            if not in_b(cx, cy) or grid[idx(cx, cy)] == WALL:
-                t -= step
-                break
-        poly.append((ax + 0.5 + dx * t, ay + 0.5 + dy * t))
+        t, _ = cast_ray(grid, ax + 0.5, ay + 0.5, math.cos(a), math.sin(a), VISION_RANGE)
+        out.append(t / VISION_RANGE)
+    return out
+
+
+def cast_cone(grid, ax: float, ay: float, facing: int):
+    """Vision cone with wall occlusion. Returns (polygon, ray distances in [0,1]).
+
+    The distances are exactly `cast_rays` — the observation vector's shape is a
+    contract. The polygon carries the extra corner vertices on top of them.
+    """
+    half = VISION_HALF_ANGLE_DEG * math.pi / 180.0
+    base = facing * math.pi / 2 - math.pi / 2  # facing 0 = N
+    ox, oy = ax + 0.5, ay + 0.5
+    reads = []
+    verts = []
+
+    for i in range(VISION_RAYS):
+        a = base - half + (2 * half) * (i / (VISION_RAYS - 1))
+        t, _ = cast_ray(grid, ox, oy, math.cos(a), math.sin(a), VISION_RANGE)
         reads.append(t / VISION_RANGE)
+        verts.append((a, t))
+
+    for c in cone_corners(grid, ox, oy, base, half, VISION_RANGE):
+        for s in (-1, 1):
+            da = c + s * CORNER_EPS
+            if da <= -half or da >= half:
+                continue  # the rim rays already stand here
+            a = base + da
+            t, _ = cast_ray(grid, ox, oy, math.cos(a), math.sin(a), VISION_RANGE)
+            verts.append((a, t))
+
+    # every angle lies inside base +- half, a span under a half turn, so raw order is
+    # fan order and no wrap handling is needed
+    verts.sort(key=lambda v: v[0])
+    poly = [(ox, oy)] + [(ox + math.cos(a) * t, oy + math.sin(a) * t) for a, t in verts]
     return poly, reads
 
 
 def line_of_sight(grid, x0: int, y0: int, x1: int, y1: int) -> bool:
+    """Centre to centre sight, walked with the very ray the cone is drawn from, so the
+    cone on screen and the targetVisible bit can no longer disagree. The old test
+    interpolated three samples per cell and stepped over walls it clipped diagonally."""
     dx, dy = x1 - x0, y1 - y0
-    n = max(abs(dx), abs(dy)) * 3
-    if n == 0:
+    d = math.sqrt(dx * dx + dy * dy)
+    if d == 0:
         return True
-    for i in range(1, n):
-        cx = math.floor(x0 + 0.5 + dx * (i / n))
-        cy = math.floor(y0 + 0.5 + dy * (i / n))
-        if not in_b(cx, cy) or grid[idx(cx, cy)] == WALL:
-            return False
-    return True
+    return cast_ray(grid, x0 + 0.5, y0 + 0.5, dx / d, dy / d, d)[1] == 0
 
 
 def sees_target(grid, ax: int, ay: int, facing: int, tx: int, ty: int) -> bool:
@@ -497,7 +616,7 @@ def observe(s: State, role: str) -> dict:
     g = s.grid
     me = s.cat if role == "cat" else s.mouse
     other = s.mouse if role == "cat" else s.cat
-    _, rays = cast_cone(g, me.x, me.y, me.facing)
+    rays = cast_rays(g, me.x, me.y, me.facing)
     visible = sees_target(g, me.x, me.y, me.facing, other.x, other.y)
     nest = s.map.nest
     obs = {

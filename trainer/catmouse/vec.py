@@ -113,8 +113,7 @@ def _compile(m: S.Map) -> Tables:
             continue
         cx, cy = c % W, c // W
         for f in range(4):
-            _, rr = S.cast_cone(m.grid, cx, cy, f)
-            rays[c, f] = rr
+            rays[c, f] = S.cast_rays(m.grid, cx, cy, f)
         for t in range(NCELL):
             if g[t] == S.WALL:
                 continue

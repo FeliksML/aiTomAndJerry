@@ -27,6 +27,16 @@
   'use strict';
   var E = global.CatMouseEnv;
 
+  /* How big the two painted props are drawn, in map cells, and where in the cell the
+     thing they stand on sits. Sizing is by the OBJECT, not by its canvas: the prop sheet
+     carries each one's own height as a share of its frame, so an open trap — half again
+     as wide as it is tall — and a tall arch can share one atlas without either being
+     drawn to the wrong scale. The numbers themselves are set against the vector pair they
+     replace, which is the only comparison that matters: a hazard has to read at the size
+     the player already learned it at. */
+  var HOLE_CELLS = 1.05, HOLE_FOOT = 0.30;
+  var TRAP_CELLS = 0.72, TRAP_FOOT = 0.20;
+
   function rgba(hex, a) {
     var h = (hex || '#8fb6e6').replace('#', '');
     return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ','
@@ -35,7 +45,7 @@
 
   /* ---------- the arena ---------- */
 
-  function mapSvg(map, CS) {
+  function mapSvg(map, CS, opts) {
     var W = E.W, H = E.H, g = map.grid, w = W * CS, h = H * CS, p = [];
     var f = function (v) { return (+v).toFixed(1); };
     p.push('<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block">');
@@ -85,10 +95,17 @@
     // Every hole, not just the first. With two of them the room is a different game —
     // the mouse chooses and the cat cannot cover both — so both have to be on screen.
     var holes = map.nests || [map.nest];
+    // With the painted hole in play this layer keeps only the warm pool on the floor and
+    // hands the arch itself to fxSvg. The map layer is cached until the map changes, and
+    // the arch cannot live there any more: at the end of an escape it has to be replaced,
+    // for nine tenths of a second, by the four frames of a mouse diving into it.
+    var painted = !!(opts && opts.sprites) && CS >= 20
+      && global.PropSprite && global.PropSprite.ready() && global.PropSprite.has('hole');
     for (var hi = 0; hi < holes.length; hi++) {
       var n = holes[hi], nx = (n[0] + 0.5) * CS, ny = (n[1] + 0.5) * CS;
       var hw = CS * 0.62, hh = CS * 0.72;
-      p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,.06)"/>');
+      p.push('<ellipse cx="' + f(nx) + '" cy="' + f(ny) + '" rx="' + f(CS * 0.95) + '" ry="' + f(CS * 0.85) + '" fill="rgba(255,209,102,' + (painted ? '.10' : '.06') + ')"/>');
+      if (painted) continue;
       p.push('<path d="M' + f(nx - hw / 2) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw / 2) + ' ' + f(ny - hh * 0.05) + 'A' + f(hw / 2) + ' ' + f(hw / 2) + ' 0 0 1 ' + f(nx + hw / 2) + ' ' + f(ny - hh * 0.05) + 'L' + f(nx + hw / 2) + ' ' + f(ny + hh / 2) + 'Z" fill="#05080c" stroke="#ffd166" stroke-width="' + f(Math.max(1.6, CS * 0.085)) + '"/>');
       p.push('<path d="M' + f(nx - hw * 0.28) + ' ' + f(ny + hh / 2) + 'L' + f(nx - hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'A' + f(hw * 0.28) + ' ' + f(hw * 0.28) + ' 0 0 1 ' + f(nx + hw * 0.28) + ' ' + f(ny + hh * 0.08) + 'L' + f(nx + hw * 0.28) + ' ' + f(ny + hh / 2) + 'Z" fill="rgba(255,209,102,.16)"/>');
     }
@@ -277,26 +294,33 @@
     // the frame would shrink the character the moment it stepped in a trap.
     var cells = (opts && opts.cells) || 1.38;
     var size = S * cells / (sheet.meta().charHeight || 0.8);
-    var ax = (cx + 0.5) * S, ay = (cy + 0.5 + ((opts && opts.footOffset) || 0.34)) * S;
+    var foot = opts && opts.footOffset !== undefined ? opts.footOffset : 0.34;
+    var ax = (cx + 0.5) * S, ay = (cy + 0.5 + foot) * S;
     var dir = sheet.fromFacing(st.facing);
     var frame = opts && opts.frame !== null && opts.frame !== undefined ? opts.frame
               : st.frozen > 0 ? sheet.idleFrame(dir)
               : sheet.frameAt(dir, !!(opts && opts.moving), (opts && opts.now) || 0,
                               opts && opts.fps);
+    // `bare` is for the frames that are not a character standing on the floor. The escape
+    // sheet draws an ARCH, and a body shadow and an accent ring under an arch read as a
+    // second object on the tile rather than as the mouse's marker.
+    var bare = !!(opts && opts.bare);
     var o = ['<g>'];
-    o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.4)
-      + '" ry="' + n(0.14) + '" fill="rgba(0,0,0,.5)"/>');
-    o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.46)
-      + '" ry="' + n(0.17) + '" fill="none" stroke="' + rgba(accent, st.sees ? 0.85 : 0.5)
-      + '" stroke-width="' + n(0.055) + '"/>');
+    if (!bare) {
+      o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.4)
+        + '" ry="' + n(0.14) + '" fill="rgba(0,0,0,.5)"/>');
+      o.push('<ellipse cx="' + ax.toFixed(1) + '" cy="' + ay.toFixed(1) + '" rx="' + n(0.46)
+        + '" ry="' + n(0.17) + '" fill="none" stroke="' + rgba(accent, st.sees ? 0.85 : 0.5)
+        + '" stroke-width="' + n(0.055) + '"/>');
+    }
     o.push(sheet.svgAt(dir, frame, ax, ay, size));
     o.push('<g transform="translate(' + ((cx + 0.5) * S).toFixed(1) + ','
       + ((cy + 0.5) * S).toFixed(1) + ')">');
     // The frost ring is the vector skin's way of saying "held". The trapped sprite says it
     // far more plainly — the character is visibly struggling in a trap — so drawing both
     // would be saying it twice.
-    if (st.frozen > 0 && !(opts && opts.held)) o.push(frostSvg(S));
-    if (st.sees) o.push('<g transform="translate(0,' + n(-1.35) + ')"><path d="M0 0v' + n(0.16)
+    if (st.frozen > 0 && !(opts && opts.held) && !bare) o.push(frostSvg(S));
+    if (st.sees && !bare) o.push('<g transform="translate(0,' + n(-1.35) + ')"><path d="M0 0v' + n(0.16)
       + '" stroke="#ff8a5c" stroke-width="' + n(0.1) + '" stroke-linecap="round"/><circle cx="0" cy="'
       + n(0.29) + '" r="' + n(0.055) + '" fill="#ff8a5c"/></g>');
     o.push('</g></g>');
@@ -362,11 +386,52 @@
         spriteTrap[Math.round(e[1].x) + ',' + Math.round(e[1].y)] = 1;
       }
     });
+    /* The painted props, and the one cell they must stand out of the way for.
+       Both hazards moved out of the cached map layer and into this one: the trap has
+       states, and the hole is animated over at the end of an escape, and neither can be
+       said in a layer that is only redrawn when the map itself changes. */
+    var PR = global.PropSprite;
+    var props = opts.sprites && PR && PR.ready() && CS >= 20 ? PR : null;
+    var ending = opts.ending && (opts.ending.result === 'catch' || opts.ending.result === 'escape')
+      ? opts.ending : null;
+    var endSheet = null, endWho = null, endFrame = 0;
+    if (opts.sprites && W && ending) {
+      var cand = ending.result === 'catch' ? W.tom['catch'] : W.jerry.escape;
+      if (cand && cand.ready()) {
+        endSheet = cand;
+        endWho = ending.result === 'catch' ? 'cat' : 'mouse';
+        endFrame = cand.frameForElapsed(ending.ms || 0, opts.spriteFps);
+      }
+    }
+    if (props) {
+      var holes2 = map.nests || [map.nest];
+      var holeSize = PR.sizeFor('hole', HOLE_CELLS, CS);
+      for (var hj = 0; hj < holes2.length; hj++) {
+        var hc = holes2[hj];
+        // The hole she went down draws its own arch, four frames of it, so the standing
+        // one underneath would be a second arch a few pixels off the first.
+        if (endWho === 'mouse' && Math.round(v.mouse.x) === hc[0] && Math.round(v.mouse.y) === hc[1]) continue;
+        p.push(PR.svgAt('hole', (hc[0] + 0.5) * CS, (hc[1] + 0.5 + HOLE_FOOT) * CS, holeSize));
+      }
+    }
     (map.traps || []).forEach(function (t) {
-      // A trapped sprite is drawn holding its own trap, so the vector one underneath it
-      // would be a second trap in the same cell. Every other trap on the map still draws.
+      // A trapped sprite is drawn holding its own trap, so the one underneath it would be
+      // a second trap in the same cell. Every other trap on the map still draws.
       if (spriteTrap[t[0] + ',' + t[1]]) return;
       var fr = busy[t[0] + ',' + t[1]] || 0;
+      if (props) {
+        // The gold pool the vector trap carried, kept. It is not decoration: the painted
+        // trap is dark wood and mid-grey steel on a near-black floor, and without the
+        // pool underneath it reads as a smudge rather than as the hazard the whole map is
+        // built around. Gold is also the arena's word for "neutral danger", and dropping
+        // it would have left the hole speaking a language the trap no longer spoke.
+        p.push('<ellipse cx="' + f((t[0] + 0.5) * CS) + '" cy="' + f((t[1] + 0.62) * CS)
+          + '" rx="' + f(CS * 0.6) + '" ry="' + f(CS * 0.36) + '" fill="rgba(242,181,68,'
+          + (fr > 0 ? '.24' : '.13') + ')"/>');
+        p.push(PR.svgAt(fr > 0 ? 'trapShut' : 'trapSet', (t[0] + 0.5) * CS,
+                        (t[1] + 0.5 + TRAP_FOOT) * CS, PR.sizeFor('trap', TRAP_CELLS, CS)));
+        return;
+      }
       p.push(trapSvg((t[0] + 0.5) * CS, (t[1] + 0.5) * CS, CS, fr > 0, fr));
     });
 
@@ -393,8 +458,9 @@
      *
      * env.js is right here in the browser and castCone takes fractional coordinates, so
      * the honest answer is simply to cast it properly. Measured penetration drops from
-     * 0.498 cells to 0.034 — a graze along a wall face, which is where a ray is supposed
-     * to stop. Twenty-one rays twice a frame is nothing.
+     * 0.498 cells to 0 — the caster walks cell boundaries and stops on the wall face,
+     * which is where a ray is supposed to stop. About seventy rays a cone at 0.011 ms,
+     * two cones a frame, against a 16.7 ms budget.
      */
     var coneAt = function (px, py, st, fallback) {
       if (!map.grid || !E.castCone) return fallback;
@@ -423,24 +489,41 @@
     /* Which sheet a character is drawn from is decided by the game state, not by a timer:
        a held agent uses its trapped sheet, and its frame comes from the freeze countdown,
        so the snap lands on the very step the jaw closed and cannot drift out of sync. */
-    var skin = function (who, fallback, x, y, accent, ag, moving, cells) {
+    var skin = function (who, fallback, x, y, accent, ag, moving, cells, force) {
       var ch = opts.sprites && W ? W[who] : null;
       if (!ch) return fallback(x, y, CS, accent, ag);
       var held = ag.frozen > 0 && ch.trapped && ch.trapped.ready();
-      var sheet = held ? ch.trapped : ch.walk;
+      var sheet = force ? force.sheet : (held ? ch.trapped : ch.walk);
       if (!sheet || !sheet.ready()) return fallback(x, y, CS, accent, ag);
       var s = spriteSvg(sheet, x, y, CS, accent, ag, {
-        now: now, moving: moving, fps: opts.spriteFps, cells: cells, held: held,
-        frame: held ? sheet.frameForHold(ag.frozen, opts.holdSteps || 5) : null
+        now: now, moving: moving, fps: opts.spriteFps, held: held,
+        cells: force ? force.cells : cells,
+        bare: !!(force && force.bare),
+        footOffset: force && force.footOffset !== undefined ? force.footOffset : undefined,
+        frame: force ? force.frame : (held ? sheet.frameForHold(ag.frozen, opts.holdSteps || 5) : null)
       });
       return s === null ? fallback(x, y, CS, accent, ag) : s;
     };
     // 1.38 and 0.95 cells are the vector pair's own measured heights, so swapping skins
     // changes the drawing and nothing else — the cat stays exactly as large as the cat.
-    p.push(skin('jerry', mouseSvg, mx, my, opts.mouseAccent, v.mouse,
-                opts.mouseMoving, opts.mouseCells || 0.95));
-    p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat,
-                opts.catMoving, opts.catCells || 1.38));
+    var catCells = opts.catCells || 1.38;
+    if (endWho === 'cat') {
+      // One drawing, two characters. Jerry is in the cat's fist, so drawing him from his
+      // own sheet as well would put a second mouse on the floor beside himself.
+      p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat, false, catCells,
+                  { sheet: endSheet, frame: endFrame, cells: catCells }));
+    } else if (endWho === 'mouse') {
+      // She is inside the hole; the arch is hers for the length of the hold. The cat is
+      // still drawn — the shot is him arriving a moment too late.
+      p.push(skin('jerry', mouseSvg, mx, my, opts.mouseAccent, v.mouse, false, HOLE_CELLS,
+                  { sheet: endSheet, frame: endFrame, cells: HOLE_CELLS,
+                    bare: true, footOffset: HOLE_FOOT }));
+      p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat, opts.catMoving, catCells));
+    } else {
+      p.push(skin('jerry', mouseSvg, mx, my, opts.mouseAccent, v.mouse,
+                  opts.mouseMoving, opts.mouseCells || 0.95));
+      p.push(skin('tom', catSvg, cx, cy, opts.catAccent, v.cat, opts.catMoving, catCells));
+    }
     p.push('</svg>');
     return p.join('');
   }

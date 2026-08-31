@@ -116,6 +116,31 @@ def band_profile(alpha: np.ndarray, geo: dict) -> np.ndarray:
     return out
 
 
+CROWN_BAND = 0.30    # share of body height treated as "the top", for the crown anchor
+
+
+def crown_anchor(alpha: np.ndarray, geo: dict):
+    """(anchor_x, profile) taken from the TOP of the silhouette rather than the floor.
+
+    The floor band is the right anchor when the rigid object is the one standing on the
+    ground. It is the wrong one when something else crosses the floor in only some of the
+    frames: in the escape strip the mouse runs in on his own feet in the first frame and
+    is gone by the last, so his stride drags the floor profile — and the hole with it —
+    a third of the hole's width sideways. The crown of the arch is above anything the
+    mouse ever reaches, so it is the band that genuinely holds still.
+    """
+    m = alpha > 0.5
+    x0, y0, x1, y1 = geo['bbox']
+    top = m[y0:y0 + max(2, int(CROWN_BAND * geo['h'])), :]
+    col = top.sum(axis=0).astype(np.float32)
+    cx = float(np.where(top)[1].mean()) if top.any() else (x0 + x1) / 2.0
+    c = int(round(cx))
+    out = np.zeros(2 * BAND_W + 1, np.float32)
+    lo, hi = max(0, c - BAND_W), min(len(col), c + BAND_W + 1)
+    out[lo - (c - BAND_W):hi - (c - BAND_W)] = col[lo:hi]
+    return cx, out
+
+
 def best_shift(ref: np.ndarray, other: np.ndarray) -> int:
     """The offset that best lines `other` up with `ref`.
 

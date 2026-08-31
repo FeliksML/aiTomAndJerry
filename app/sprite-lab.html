@@ -115,6 +115,11 @@ main { flex: 1; overflow: auto; padding: 20px; }
       <label>Animation</label>
       <button data-anim="walk" aria-pressed="true">Walk</button>
       <button data-anim="trapped">Trapped</button>
+      <!-- The two ending sheets. Neither character has both: Tom does the catching and
+           Jerry does the escaping, so the button that does not apply is disabled rather
+           than asking for a sheet that is not supposed to exist. -->
+      <button data-anim="catch">Catch</button>
+      <button data-anim="escape">Escape</button>
     </div>
     <div class="readout" id="state"></div>
   </header>
@@ -210,8 +215,10 @@ main { flex: 1; overflow: auto; padding: 20px; }
       var ph = S.meta().phases, one = S.meta().oneShotFrames || 0;
       h.innerHTML = '<div>' + ph.map(function (x, i) { return 'F' + (i + 1); }).join(' &rarr; ') + '</div>'
         + '<div style="opacity:.7">' + ph[0] + ' &middot; ' + ph[1] + '<br>' + ph[2] + ' &middot; ' + ph[3] + '</div>'
-        + (one ? '<div style="opacity:.55;margin-top:4px">first ' + one + ' play once,<br>then the rest loop</div>'
-               : '<div style="opacity:.55;margin-top:4px">all four loop</div>');
+        + (one >= ph.length
+             ? '<div style="opacity:.55;margin-top:4px">all four play once,<br>then it holds on the last</div>'
+             : one ? '<div style="opacity:.55;margin-top:4px">first ' + one + ' play once,<br>then the rest loop</div>'
+                   : '<div style="opacity:.55;margin-top:4px">all four loop</div>');
     }
 
     function frameFor(direction, now) {
@@ -220,6 +227,11 @@ main { flex: 1; overflow: auto; padding: 20px; }
         var total = 5, held = total - Math.floor(now / 1000 * ui.fps) % (total + 3);
         return S.frameForHold(Math.max(1, held), total);
       }
+      // The ending sheets run on a stopwatch, the way the arena runs them: the server
+      // holds the last frame of an episode still for about nine tenths of a second and
+      // the sheet is clocked from when it landed. Restarting every two seconds here is
+      // the lab's way of showing that beat over and over.
+      if (anim === 'catch' || anim === 'escape') return S.frameForElapsed(now % 2000, ui.fps);
       if (!ui.walkAll && direction !== ui.direction) return S.idleFrame(direction);
       return S.frameAt(direction, true, now, ui.fps);
     }
@@ -300,7 +312,7 @@ main { flex: 1; overflow: auto; padding: 20px; }
         ui.walkAll = !ui.walkAll;
         this.setAttribute('aria-pressed', String(ui.walkAll));
       });
-      function choose(nextWho, nextAnim, group, btn) {
+      function choose(nextWho, nextAnim, group, btn, after) {
         var next = WS[nextWho][nextAnim];
         next.load(null, function (err) {
           if (err) {
@@ -312,15 +324,34 @@ main { flex: 1; overflow: auto; padding: 20px; }
           el('err').hidden = true;
           who = nextWho; anim = nextAnim; S = next;
           hubText();
-          [].forEach.call(document.querySelectorAll(group + ' button'), function (x) {
+          [].forEach.call(document.querySelectorAll(group + ' button[data-who], '
+                          + group + ' button[data-anim]'), function (x) {
             x.setAttribute('aria-pressed', String(x === btn));
           });
+          if (after) after();
+        });
+      }
+      // A character's sheets are its own. Switching to Jerry while Catch is selected
+      // would ask for jerry-catch.json, so the buttons follow the character.
+      function syncAnimButtons() {
+        var have = WS[who].animations;
+        [].forEach.call(document.querySelectorAll('#anim button[data-anim]'), function (x) {
+          x.disabled = have.indexOf(x.dataset.anim) < 0;
+          x.style.opacity = x.disabled ? '.35' : '';
         });
       }
       el('who').addEventListener('click', function (e) {
         var b = e.target.closest('button[data-who]');
-        if (b) choose(b.dataset.who, anim, '#who', b);
+        if (!b) return;
+        var keep = WS[b.dataset.who].animations.indexOf(anim) >= 0 ? anim : 'walk';
+        choose(b.dataset.who, keep, '#who', b, function () {
+          syncAnimButtons();
+          [].forEach.call(document.querySelectorAll('#anim button[data-anim]'), function (x) {
+            x.setAttribute('aria-pressed', String(x.dataset.anim === anim));
+          });
+        });
       });
+      syncAnimButtons();
       el('anim').addEventListener('click', function (e) {
         var b = e.target.closest('button[data-anim]');
         if (b) choose(who, b.dataset.anim, '#anim', b);

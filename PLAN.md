@@ -125,7 +125,8 @@ still authoritative for identity; the second skin is a set of sprite sheets. Eac
 has the same shape — four phases across, eight directions down — and all of them are
 built ahead of time, so the app only ever loads transparent PNGs.
 
-Four sheets: a walk and a trapped animation per character.
+Six sheets — a walk and a trapped animation for each of them, plus one ending each —
+and a small atlas for the two painted props.
 
 | sheet | frame | source |
 |---|---|---|
@@ -133,6 +134,9 @@ Four sheets: a walk and a trapped animation per character.
 | `jerry-walk` | 256 | 5 generated strips |
 | `tom-trapped` | 448 | 5 generated strips |
 | `jerry-trapped` | 352 | 5 generated strips |
+| `tom-catch` | 512 | 5 generated strips |
+| `jerry-escape` | 384 | 1 generated strip |
+| `props` (trap, hole) | 256 | 2 generated images |
 
 The frames are different sizes on purpose. A trapped pose throws both arms up and
 reaches 185px either side of the trap, which does not fit in the walk sheet's frame; the
@@ -184,11 +188,13 @@ sides cannot drift.
     npm run build:cat-walk     # config -> 32 frames + sheet + metadata + QA
     npm run build:mouse-walk   # strips -> the same, for Jerry
     npm run build:trapped      # both characters, caught in a trap
-    npm run build:sprites      # all four
+    npm run build:endings      # the catch and the escape
+    npm run build:props        # the painted trap and the painted hole
+    npm run build:sprites      # all of it
 
 One config per character and animation — `cat-walk`, `mouse-walk`, `cat-trapped`,
-`mouse-trapped` — so a pose that reads badly is one integer away from being fixed and the
-build stays reproducible. `app/sprite-lab.html` is the development view: either character,
+`mouse-trapped`, `cat-catch`, `mouse-escape` — so a pose that reads badly is one integer
+away from being fixed and the build stays reproducible. `app/sprite-lab.html` is the development view: either character,
 either animation, all eight directions at once, over the backgrounds a matte fails on.
 
 In the arena the sprites are on by default and `c` toggles back to the vector pair. The
@@ -198,8 +204,49 @@ rule that a school is legible from the character has to survive the swap.
 The trapped animation is driven by the environment, not by a timer. `CFG.freezeSteps` is
 5, and the countdown maps straight onto the four frames — snap, recoil, then the struggle
 repeating — so the snap is drawn on the very step the jaw closed and the two can never
-drift apart. While a character is held, the vector trap in that cell is not drawn: the
+drift apart. While a character is held, the trap in that cell is not drawn separately: the
 sprite is holding its own.
+
+### The two endings
+
+An episode used to stop dead. It does not any more: `serve.py` already held the last frame
+for about nine tenths of a second before advancing, and that hold is now what the ending
+sheets are played over, clocked from when the frame landed rather than from a step counter
+there is no longer any of.
+
+- **`tom-catch`** — lunge, grab, then Tom holding Jerry up in his fist. Frames 3 and 4 are
+  a two-frame loop, so the pose the scoreboard is read over keeps moving. It is one drawing
+  containing *both* characters, which is the point: a catch drawn as two sprites is two
+  animations that have to agree with each other every frame. While it plays, Jerry is not
+  drawn from his own sheet — he is already in the cat's hand.
+- **`jerry-escape`** — run-up, dive, hind legs, then an empty hole. All four play once and
+  it holds on the last, because once the tail is gone there is nothing left to animate.
+  This one is generated as a *single* strip and used for all eight directions: every other
+  animation is turned to face eight ways because the character is walking somewhere, but
+  this one is a mouse going into a hole that is drawn front-on wherever it sits on the map.
+
+The escape strip draws the hole into every frame, which makes the hole the rigid thing to
+line the frames up on — and the floor anchor, right for the trapped sheets, is wrong here:
+the mouse runs in on his own feet in frame 1 and is gone by frame 4, so the floor profile
+is not the same object twice and it dragged the arch a third of its own width sideways.
+`pivot: "crown"` lines them up on the top of the arch instead, which is above anything the
+mouse ever reaches. That takes the arch from a 130px jump to 2px across the four frames.
+
+### The painted props
+
+The trap and the hole were vector shapes drawn into the cached map layer. They are now
+painted, from the same generator and in the same hand as the characters, and they moved
+into the live layer — the trap because it has states, the hole because at the end of an
+escape it has to be replaced, for the length of the hold, by four frames of a mouse diving
+into it. `tools/build_props.py` cuts both out of their source images into one five-frame
+atlas; `app/js/props.js` is the loader, deliberately about a third the size of
+`walksprite.js` because a prop needs one row and no mirrors.
+
+Two things carried over from the vector versions on purpose. The gold pool under the trap
+stayed: gold is the arena's word for neutral danger, and without it dark wood and mid-grey
+steel on a near-black floor read as a smudge. And both props are sized by the *object*,
+not by the frame — an open trap is two thirds wider than it is tall — which is the same
+`charHeight` mechanism the character sheets use, for the same reason.
 
 ## Open items
 

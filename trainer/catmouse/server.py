@@ -104,6 +104,11 @@ class Session:
         self._scorer_task = None
 
         self.mode = "idle"
+        # Bumped by RESET TO ZERO. A live run cannot be killed outright -- the stop is
+        # cooperative, so the optimiser keeps going until it next reads its budget -- and
+        # the run outlives the wipe by up to a whole iteration. This is how the run finds
+        # out that the session it belongs to no longer exists.
+        self.epoch = 0
         # `ctx` is whatever the arena is currently playing, and `start_play` overwrites
         # it. This is the training run's own copy, so a detour into a checkpoint can be
         # walked back without the HUD losing the budget it was reporting.
@@ -284,6 +289,16 @@ class Session:
             # full, which it checks once an iteration.
             self.train_school.budget.seconds = 1e-9
             self.train_school.budget.steps = 1
+            # And let go of it. The budget above is mutated on the object itself, which
+            # the worker thread holds, so the stop still lands -- but `frames()` serves
+            # `train_school.timeline` in preference to everything else, so keeping the
+            # reference meant `hello` went on handing out the reel of the run this wipe
+            # just discarded. A window that reconnected got the graph back.
+            self.train_school = None
+        # The reels of runs that no longer exist. `timelines` is what keeps a finished
+        # run scrubbable, and after this none of these policies are the ones that were
+        # measured, so none of these reels describe anything on this session.
+        self.timelines = {}
         rng = np.random.default_rng(seed)
         schools = [s for s in SCHOOLS if s in self.policies["trained"]] or list(SCHOOLS)
         for ck in CHECKPOINTS:
@@ -295,6 +310,10 @@ class Session:
         self.budgets = None
         self.highlights = None
         self.zeroed = True
+        # Everything below is now the truth, and the run still finishing in the worker
+        # thread must not undo it. See `_train_body`, which checks this before it writes
+        # its best policies and its timeline back into the session.
+        self.epoch += 1
         self.mode = "idle"
         self.train_ctx = None
         self.env = None
@@ -978,10 +997,27 @@ class Session:
         from .ppo import PPOSchool
         cls = {"ppo": PPOSchool, "ga": GASchool, "cmaes": CMAESSchool}[school]
 
-        def on_event(ev: dict) -> None:
+        # The generation this run belongs to. RESET TO ZERO bumps it, and everything
+        # below asks whether it is still the current one before it says or writes
+        # anything -- see `Session.epoch`.
+        epoch = self.epoch
+
+        def alive() -> bool:
+            return self.epoch == epoch
+
+        def emit(ev: dict) -> None:
             msg = {"type": "train", **ev}
             with contextlib.suppress(Exception):
                 asyncio.run_coroutine_threadsafe(self._train_events.put(msg), loop)
+
+        def on_event(ev: dict) -> None:
+            # A run that has been reset away has to stop talking. Its evaluations went on
+            # arriving for another iteration after the wipe, and each one was appended to
+            # the reel the wipe had just emptied -- the screen rebuilding a run it had
+            # been told no longer existed.
+            if not alive():
+                return
+            emit(ev)
 
         # A live take is a real run — at a step budget it can be hours of work — so it
         # writes its checkpoints like any other. Under `live/<stamp>/` rather than
@@ -999,6 +1035,19 @@ class Session:
         # shadow has something to ask for the moment setup finishes.
         self.train_school = s
         s.train(eval_every=0.02)
+        # Everything from here writes the run back INTO the session, and RESET TO ZERO may
+        # have emptied that session while the optimiser was still finishing its iteration.
+        # Doing it anyway put trained weights back under `best` and rebuilt the reel, next
+        # to a `zeroed` flag still reading True and school cards showing only UNTRAINED --
+        # a session claiming to hold nothing while holding the run it had just thrown out.
+        if not alive():
+            # Announced, not swallowed. The wipe does not reach the disk, and `train()`
+            # has been writing checkpoints the whole way, so the work is still there and
+            # the one useful thing to say is where.
+            emit({"kind": "trainDone", "school": school, "discarded": True,
+                  "savedTo": str(out), "frames": 0, "best": {},
+                  "message": "reset to zero threw this run away while it was training"})
+            return
         # The live run picked a best cat and a best mouse of its own. Hand them to the
         # session so `play best` right after a take plays what was just watched being
         # trained, rather than the last run scored off disk.

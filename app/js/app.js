@@ -2860,6 +2860,20 @@
           App.trainFinished = true;
           if (App.training) App.training.finished = true;
           var nm = view(m.school || App.school);
+          // A run the wipe threw away must not be announced like one that landed. This
+          // used to read "finished · best Tom = its final policy · the BEST chip plays
+          // them" over a session that had just reported itself empty — and the BEST chip
+          // did NOT play them, because the weights behind it were wiped. What is worth
+          // saying is the one thing the wipe did not touch: where the run is on disk.
+          if (m.discarded) {
+            App.trainInfo = 'reset to zero threw this run away while it was training — '
+              + 'nothing on screen comes from it'
+              + (m.savedTo ? ' · its checkpoints are still on disk at ' + m.savedTo : '');
+            notice((nm.sealed ? 'That academy' : nm.short) + '\u2019s run was thrown away by '
+              + 'RESET TO ZERO while it was training.'
+              + (m.savedTo ? ' Its checkpoints are still on disk at ' + m.savedTo + '.' : ''), true);
+            return;
+          }
           notice(m.failed
             ? 'The run stopped: ' + (m.message || 'the trainer raised')
             : (nm.sealed ? 'That academy' : nm.short) + ' finished · best Tom = '

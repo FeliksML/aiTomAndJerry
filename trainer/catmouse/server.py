@@ -104,6 +104,10 @@ class Session:
         self._scorer_task = None
 
         self.mode = "idle"
+        # `ctx` is whatever the arena is currently playing, and `start_play` overwrites
+        # it. This is the training run's own copy, so a detour into a checkpoint can be
+        # walked back without the HUD losing the budget it was reporting.
+        self.train_ctx: dict | None = None
         self.speed = 4.0
         self.playing = True
         self.rng = np.random.default_rng(0)
@@ -292,6 +296,7 @@ class Session:
         self.highlights = None
         self.zeroed = True
         self.mode = "idle"
+        self.train_ctx = None
         self.env = None
         self.actors = {}
         self.bot = None
@@ -722,6 +727,39 @@ class Session:
         self.pinned = None
         self.pinned_school = None
 
+    def shadow(self) -> dict:
+        """Back to the shadow arena of the run that is already going.
+
+        The one-way door this closes: `start_play` is what a checkpoint pill sends, and
+        it moves the session out of `train`. That alone was enough to end scrubbing for
+        the rest of the run — `pin` is refused outside train mode, `_refresh_shadow`
+        returns early there, and `start_train` is the only other thing that sets the mode
+        back but refuses while a run is going ("training already running"). So looking at
+        UNTRAINED for two seconds during a forty-minute run cost the reel for the whole
+        forty minutes, with the run still visibly training behind it.
+
+        This is the way back. It rebuilds exactly what `start_train` builds for the
+        arena — a single watchable episode over the twelve rooms — restores the run's own
+        context, and starts an episode; `_begin_episode` calls `_refresh_shadow`, which
+        now passes its guard and re-reads the optimiser's current weights. The optimiser
+        itself is never touched: no task is started, stopped or restarted here.
+        """
+        if not (self._train_task and not self._train_task.done()):
+            return {"type": "error", "message":
+                    "nothing is training — the shadow arena is what a live run plays into"}
+        self.mode = "train"
+        self.level_seeds = None
+        if self.train_ctx is not None:
+            self.ctx = dict(self.train_ctx)
+        self.env = VecEnv(self.maps, 1, seed=4242)
+        self.bot = ScriptedPair(self.env, EXAMINER_SKILL, seed=13)
+        self.level_order = list(range(len(self.maps)))
+        self.level = 0
+        self.results = []
+        self.actors = {"cat": None, "mouse": None}
+        self._begin_episode()
+        return {"type": "state", **self.state()}
+
     def pin(self, i, school: str | None = None) -> dict:
         """Play the arena on the weights of one frame — or go back to live with None.
 
@@ -879,6 +917,10 @@ class Session:
                     "shaping": shaping, "hyper": hyper,
                     "budget": Budget(seconds=None if minutes is None else minutes * 60,
                                      steps=steps).describe()}
+        # Kept whole, because `shadow()` has to put it back exactly: `ctx` rides on every
+        # frame and every state, so a rebuilt approximation would change the budget, the
+        # shaping and the knobs the HUD reports mid-run.
+        self.train_ctx = dict(self.ctx)
         self.train_school = None
         # A shadow episode, replayed from the policy as it currently stands. Training
         # itself runs thousands of episodes a second across a batch; showing one of them

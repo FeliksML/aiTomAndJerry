@@ -884,10 +884,16 @@
 
   /* The reel plays into the SHADOW arena, and that arena exists in train mode alone —
      `pin` is refused everywhere else, on purpose, because pinning an arena that goes on
-     playing something else is a control that reports success and changes nothing. The
-     client has to know the same rule the server enforces, or it offers a handle whose
-     every move is rejected and then keeps the rejected position on screen. */
-  function scrubbable() { return App.mode === 'train'; }
+     playing something else is a control that reports success and changes nothing.
+
+     But "the arena is not in train mode" and "there is nothing to scrub" are different
+     facts, and treating them as one is what made a two-second look at UNTRAINED cost the
+     reel for the rest of a forty-minute run. While a run for THIS school is live the
+     shadow arena is one `shadow` command away, and `needsShadow()` is where the handle
+     says so — see `pinTo`, which sends it. Scrubbing is off only when there is genuinely
+     no live run behind the reel: a finished run read off disk has nothing to go back to. */
+  function scrubbable() { return App.mode === 'train' || trainingHere(); }
+  function needsShadow() { return App.mode !== 'train' && trainingHere(); }
 
   function addFrame(m) {
     var tl = App.timeline[m.school] || (App.timeline[m.school] = []);
@@ -2185,6 +2191,14 @@
       _pinBusy = false;
       if (_pinAt === null) return;
       var at = _pinAt; _pinAt = null;
+      // Ordered on one socket, so the mode is already `train` by the time the pin is
+      // read. Cheap to be sure rather than to remember: re-entering the shadow arena
+      // when it is already up would rewind the episode for nothing.
+      if (needsShadow()) {
+        App.net.send({ cmd: 'shadow' });
+        notice('Back to the shadow arena — the reel plays into that one, not the checkpoint '
+               + 'you were watching.', false);
+      }
       _pinSent = true;
       App.net.send({ cmd: 'pin', at: at, school: App.school });
     }, 120);
@@ -2271,8 +2285,15 @@
         if (App.training) { App.school = App.training.school; App.screen = 'school'; App.acadOpen = false; }
         render();
       }
-      else if (a === 'tl-live') { App.pinned = null;
-                                  App.net.send({ cmd: 'pin', at: null }); render(); }
+      else if (a === 'tl-live') {
+        App.pinned = null;
+        // LIVE off a checkpoint used to light the chip and change nothing: `pin(null)`
+        // has no mode guard, so it answered "pinned" while the arena went on playing
+        // UNTRAINED. Going back to the shadow arena is what LIVE means here.
+        if (needsShadow()) App.net.send({ cmd: 'shadow' });
+        App.net.send({ cmd: 'pin', at: null });
+        render();
+      }
       else if (a === 'score') {
         App.scoring = { lines: [], done: false, ok: false };
         App.net.send({ cmd: 'score', tag: App.setup.tag,
@@ -2598,6 +2619,13 @@
         // the leaderboard threw you onto the school screen.
         var changed = m.mode !== App.serverMode;
         App.serverMode = m.mode;
+        // What the ARENA is playing is not a navigation decision, and it was being kept
+        // inside one: the assignment below only ran when the SCREEN also changed, and
+        // `play` and `train` both map to 'school'. So a mode change that stayed on the
+        // school screen never reached `App.mode` — which is exactly what `shadow` does,
+        // and it left the reel believing it still had to send `shadow` before every pin,
+        // rewinding the episode on each drag.
+        if (changed) App.mode = m.mode === 'train' ? 'train' : 'play';
         var to = changed ? { play: 'school', final: 'final', race: 'race', train: 'school' }[m.mode] : null;
         // ...except while a screen the author is working on is open. Both the run
         // screen and the academy drawer are places you sit and type; an episode playing

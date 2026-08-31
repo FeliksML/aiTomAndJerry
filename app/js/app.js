@@ -882,6 +882,13 @@
      entries and it makes the rest of the reel unable to reach a hole. */
   function frames(key) { return (App.timeline[key || App.school] || []).filter(Boolean); }
 
+  /* The reel plays into the SHADOW arena, and that arena exists in train mode alone —
+     `pin` is refused everywhere else, on purpose, because pinning an arena that goes on
+     playing something else is a control that reports success and changes nothing. The
+     client has to know the same rule the server enforces, or it offers a handle whose
+     every move is rejected and then keeps the rejected position on screen. */
+  function scrubbable() { return App.mode === 'train'; }
+
   function addFrame(m) {
     var tl = App.timeline[m.school] || (App.timeline[m.school] = []);
     while (tl.length < m.i) tl.push(null);
@@ -906,18 +913,27 @@
         + 'Train this academy and a frame is kept every time it is scored — this becomes a graph '
         + 'of who is winning and a slider you can drag back through the run.</div></div>';
     }
-    var at = App.pinned === null || App.pinned === undefined ? f.length - 1 : App.pinned;
+    // The graph is history and stays readable everywhere. The HANDLE is the part that
+    // only means anything while the shadow arena is up, so that is the part that goes
+    // grey — a disabled slider explains itself before the drag, where a refusal banner
+    // only explains itself after it.
+    var can = scrubbable();
+    var at = !can || App.pinned === null || App.pinned === undefined ? f.length - 1 : App.pinned;
     return '<div id="timeline" class="card" style="padding:12px 14px;margin-top:10px">'
       + '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">'
       + '<div class="mono faint" style="font-size:10px;letter-spacing:1.5px">THE REEL</div>'
       + '<div id="tl-legend">' + graphLegend() + '</div>'
-      + '<div class="btn ghost" data-act="tl-live" style="margin-left:auto;padding:4px 10px;font-size:10px;'
-      + (App.pinned === null ? 'border-color:rgba(124,188,255,.5);color:#dceaff' : '') + '">LIVE</div>'
+      + (can
+         ? '<div class="btn ghost" data-act="tl-live" style="margin-left:auto;padding:4px 10px;font-size:10px;'
+           + (App.pinned === null ? 'border-color:rgba(124,188,255,.5);color:#dceaff' : '') + '">LIVE</div>'
+         : '<div class="mono faint" style="margin-left:auto;font-size:10px;letter-spacing:1.5px">READ ONLY</div>')
       + '</div>'
       + '<div id="tl-marks" style="position:relative;height:' + GRAPH_H + 'px;margin-top:6px">'
       + timelineMarks() + '</div>'
       + '<input type="range" id="tl" min="0" max="' + (f.length - 1) + '" step="1" value="' + at + '"'
-      + ' style="width:100%;accent-color:var(--gold);height:18px">'
+      + (can ? '' : ' disabled')
+      + ' style="width:100%;height:18px;accent-color:' + (can ? 'var(--gold)' : 'rgba(130,160,200,.3)')
+      + (can ? '' : ';opacity:.45;cursor:not-allowed') + '">'
       + '<div id="tl-label" class="mono" style="font-size:12.5px;color:#c9d8ee;min-height:16px">'
       + timelineLabel() + '</div>'
       + '</div>';
@@ -988,6 +1004,16 @@
   function timelineLabel() {
     var f = frames();
     if (!f.length) return '';
+    // Read-only is a state worth naming. Without this the line read "PINNED · the brain
+    // at 153M steps" while the arena played the finished policy and the trainer had
+    // already refused the pin — the screen taking credit for something that did not
+    // happen, which is the one thing this app is not allowed to do.
+    if (!scrubbable()) {
+      var last = f[f.length - 1];
+      return f.length + ' checkpoints kept · latest at ' + steps(last.steps) + ' steps · Tom '
+        + pct(last.catExam) + ' · Jerry ' + pct(last.mouseExam)
+        + ' — read only here: the reel drives the shadow arena, not this one';
+    }
     // Where these frames came from. The server serves the newest take for a school when
     // the run directory has no reel of its own, so the numbers on screen can belong to a
     // run nobody in the room started.
@@ -1021,7 +1047,13 @@
     var f = frames(), input = el('tl');
     if (!input) { host.outerHTML = timelineStrip(); return; }
     if (+input.max !== f.length - 1) input.max = String(f.length - 1);
-    if (App.pinned === null || App.pinned === undefined) input.value = String(f.length - 1);
+    // `render()` is not guaranteed between a mode change and the next frame — the card is
+    // repainted in place. Sync the handle's own enabled state here or a reel that went
+    // read-only mid-run stays draggable until something else forces a full rebuild.
+    if (input.disabled === scrubbable()) { host.outerHTML = timelineStrip(); return; }
+    if (!scrubbable() || App.pinned === null || App.pinned === undefined) {
+      input.value = String(f.length - 1);
+    }
     var marks = el('tl-marks'), label = el('tl-label'), leg = el('tl-legend');
     if (marks) marks.innerHTML = timelineMarks();
     if (label) label.innerHTML = timelineLabel();
@@ -2142,6 +2174,9 @@
   /* Pinning during a drag: the arena should follow the handle, but not at sixty
      messages a second. One in flight at a time, with the last position sent after. */
   var _pinAt = null, _pinBusy = false;
+  /* The last position the TRAINER agreed to, which is not the same thing as the last
+     position the handle was dragged to. A refusal has to put the reel back to this. */
+  var _pinSent = false, _pinOk = null;
   function pinTo(i) {
     _pinAt = i;
     if (_pinBusy) return;
@@ -2150,6 +2185,7 @@
       _pinBusy = false;
       if (_pinAt === null) return;
       var at = _pinAt; _pinAt = null;
+      _pinSent = true;
       App.net.send({ cmd: 'pin', at: at, school: App.school });
     }, 120);
   }
@@ -2606,6 +2642,21 @@
           App.train = null;
           if (App.mode === 'train') App.mode = 'play';
         }
+        // A refused PIN left the reel reading "PINNED · the brain at 153M steps" over an
+        // arena playing something else, for the rest of the session — the label is written
+        // optimistically on the drag so the handle stays smooth, and nothing ever put it
+        // back. The trainer refuses this exact lie server-side; the client was telling it
+        // anyway, one line lower.
+        if (_pinSent) {
+          _pinSent = false;
+          App.pinned = _pinOk;
+          var slider = el('tl');
+          if (slider) {
+            var n = frames().length;
+            slider.value = String(App.pinned === null || App.pinned === undefined
+                                  ? Math.max(0, n - 1) : App.pinned);
+          }
+        }
         App.setupNote = m.message || null;
         App.trainInfo = m.message || null;
         render();
@@ -2617,7 +2668,9 @@
       })
       .on('snapshot', function () { /* snapshots arrive inside `train` events */ })
       .on('pinned', function (m) {
+        _pinSent = false;
         App.pinned = m.at === null || m.at === undefined ? null : m.at;
+        _pinOk = App.pinned;
         var lab = el('tl-label');
         if (lab) lab.innerHTML = timelineLabel(); else render();
       })

@@ -31,10 +31,27 @@ html, body {
    ever has to be responsive and the recorded frame is deterministic. */
 #root {
   width: 1920px; height: 1080px;
-  position: absolute; left: 50%; top: 50%; overflow: hidden;
+  position: absolute; left: 50%; top: 50%;
+  /* Vertical only. Nothing may ever scroll sideways -- the canvas is authored 1920 wide
+     and a horizontal offset would slice the same column off every recorded frame.
+     Down is a different matter: the school screen's left column is arena + reel, and
+     once the reel replaces the twelve-arena strip that column is taller than 1080. With
+     `overflow: hidden` the last 42px went away silently, which cost the scrub slider its
+     bottom edge and its readout line entirely -- the one label that says WHICH set of
+     weights the arena is replaying. Clipped and unscrollable is the worst pair: the
+     control is there, it works, and nothing on screen admits it has been cut. */
+  overflow-x: hidden; overflow-y: auto;
   transform-origin: 0 0;
   background: radial-gradient(120% 90% at 50% -10%, #0b1424 0%, #05070d 55%, #03050a 100%);
 }
+
+/* In the palette rather than OS grey, and only 8px of it. The bar has to be visible
+   enough that a screen with more below the fold reads as scrollable, without putting a
+   light strip down the right edge of a shot. */
+#root::-webkit-scrollbar { width: 8px; }
+#root::-webkit-scrollbar-track { background: transparent; }
+#root::-webkit-scrollbar-thumb { background: rgba(130, 160, 200, .28); border-radius: 4px; }
+#root::-webkit-scrollbar-thumb:hover { background: rgba(130, 160, 200, .45); }
 
 .backdrop { position: absolute; inset: 0; pointer-events: none; background-size: cover; background-position: center; }
 .veil { position: absolute; inset: 0; pointer-events: none;

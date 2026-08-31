@@ -1,0 +1,24 @@
+{
+  "frameSize": 512,
+  "fps": 8,
+  "charHeight": 0.62,
+  "groundY": 0.9,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "up.png",
+    "left": "left.png",
+    "down-left": "down-left.png",
+    "up-left": "up-left.png"
+  },
+  "scale": {},
+  "idle": {},
+  "split": {},
+  "pivot": "ground",
+  "keepFragments": 0.03,
+  "renderScale": 1.048,
+  "_note": "The end-of-episode catch: Tom lunges, closes both paws on Jerry, then holds him up by the scruff for the two frames the scoreboard is read over. Pivot \"ground\" because Tom stands still through all four and his feet are the one thing that does not move; anchoring on the torso would swing him as the raised arm changes the centroid.",
+  "_fragmentNote": "keepFragments 0.03 rather than the default 0.15. Every other sheet draws one connected figure, so the builder is right to bin loose islands as leakage from the pose next door. Here the mouse IS a second island in the frames where the cat is not touching him yet \u2014 and at 3% of the cat he is well under the default floor, so the default would have quietly deleted the thing the animation is about.",
+  "_sizeNote": "512px frame and charHeight 0.62 measured off the strips: with an arm raised over his head Tom reaches about 0.71 of the frame in the tallest of the four, which clears the top with room to spare.",
+  "_renderScaleNote": "Same correction the trapped sheets need, measured the same way \u2014 on a pose the animation does not stretch. Frames 3 and 4 hold Jerry above Tom's head, which makes the silhouette 5% taller without making Tom any bigger, and the renderer sizes by the silhouette. 1.048 is the median frame height over the GRAB frame, where nothing reaches above Tom's ears, so GRAB draws Tom at exactly the 1.38 cells his walk sheet draws him at and he does not change size the moment he catches her."
+}

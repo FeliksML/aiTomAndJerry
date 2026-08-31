@@ -95,6 +95,10 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
+    // The last beat of an episode. The server sends one final frame and then holds the
+    // arena still for about nine tenths of a second, which is what the catch and escape
+    // sheets are played over; `at` is the stopwatch they run on.
+    ending: null, raceDoneAt: {},
     trainInfo: null, showKeys: false, setupNote: null,
     // Everything the trainer says about where it is: iteration, both clocks, the rate,
     // and the high-water mark each role has reached. Null until a run starts.
@@ -125,7 +129,7 @@
 
   if (window.WalkSprite) {
     [window.WalkSprite.tom, window.WalkSprite.jerry].forEach(function (ch) {
-      window.WalkSprite.ANIMATIONS.forEach(function (a) {
+      ch.animations.forEach(function (a) {
         ch[a].load(null, function (err, st) {
           if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
           if (a !== 'walk') return;
@@ -136,6 +140,17 @@
           if (document.getElementById('screens')) render();
         });
       });
+    });
+  }
+
+  // The painted trap and the painted hole. Until they arrive the vector pair is drawn,
+  // exactly as with the characters — but the map layer is cached, and it is the layer
+  // that decides whether to draw the vector arch, so it has to be told to draw again.
+  if (window.PropSprite) {
+    window.PropSprite.load(null, function (err) {
+      if (err) { console.warn('prop atlas unavailable:', err.message); return; }
+      App.mapKey = null;
+      if (document.getElementById('screens')) render();
     });
   }
   App.livePanel = window.Panels.live();
@@ -942,7 +957,7 @@
       if (!mh || !fh) continue;
       if (mh.getAttribute('data-k') !== String(App.map.seed)) {
         mh.setAttribute('data-k', String(App.map.seed));
-        mh.innerHTML = P.mapSvg(local, RCS);
+        mh.innerHTML = P.mapSvg(local, RCS, { sprites: App.sprites });
       }
       var v = view(k);
       var fr = App.raceFrames[k], pv = (App.racePrev && App.racePrev[k]) || fr;
@@ -952,7 +967,9 @@
         key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color,
         sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
         catMoving: App.alpha < 1 && (fr.cat.x !== pv.cat.x || fr.cat.y !== pv.cat.y),
-        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y)
+        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y),
+        ending: App.raceDone && App.raceDone[k]
+          ? { result: App.raceDone[k], ms: now - (App.raceDoneAt[k] || now) } : null
       });
     }
   }
@@ -1358,7 +1375,7 @@
     var key = App.map.seed + ':' + App.map.nest.join(',');
     if (App.mapKey !== key) {
       App.mapKey = key;
-      host.innerHTML = P.mapSvg(localMap(App.map), CS);
+      host.innerHTML = P.mapSvg(localMap(App.map), CS, { sprites: App.sprites });
     }
     if (!App.frame) return;
     var v = view(App.screen === 'final' ? (App.runState && App.runState.catSchool) || App.school : App.school);
@@ -1367,7 +1384,8 @@
       frame: App.frame, prev: App.prev, alpha: App.alpha, cs: CS, map: App.map,
       key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color,
       sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
-      catMoving: App.catMoving, mouseMoving: App.mouseMoving
+      catMoving: App.catMoving, mouseMoving: App.mouseMoving,
+      ending: App.ending ? { result: App.ending, ms: now - App.bannerAt } : null
     });
     var b = el('arena-banner');
     if (b) {
@@ -1757,6 +1775,9 @@
         App.alpha = joins ? 0 : 1;
         App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
+        // A frame that does not join the last one is a new episode, and the ending it
+        // was holding on is over.
+        if (!joins) App.ending = null;
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
         if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
@@ -1805,18 +1826,21 @@
         if ((App.runState || {}).level !== m.level) {
           App.runState = Object.assign({}, App.runState, { level: m.level });
           App.raceDone = {};
+          App.raceDoneAt = {};
           render();
         }
       })
       .on('laneEnd', function (m) {
         App.raceDone = App.raceDone || {};
         App.raceDone[m.school] = m.result;
+        App.raceDoneAt[m.school] = performance.now();
         App.raceGrid = App.raceGrid || {};
         (App.raceGrid[m.school] = App.raceGrid[m.school] || [])[m.level] = m.result;
         render();
       })
       .on('episodeEnd', function (m) {
         App.results[m.level] = m.result;
+        App.ending = m.result === 'catch' || m.result === 'escape' ? m.result : null;
         App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
           : m.result === 'escape' ? { t: 'JERRY GOT HOME', c: '#ffd166' }
           : { t: 'TIME OUT', c: '#8fa4c4' };

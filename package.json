@@ -4,11 +4,13 @@
   "private": true,
   "description": "Asset pipeline entry points. The app itself is plain HTML and JS with no build step and no dependencies \u2014 npm is here only so the pipelines have a conventional name.",
   "scripts": {
-    "build:sprites": "npm run build:cat-walk && npm run build:mouse-walk && npm run build:trapped",
+    "build:sprites": "npm run build:cat-walk && npm run build:mouse-walk && npm run build:trapped && npm run build:endings && npm run build:props",
     "build:cat-walk": "python3 tools/build_cat_sprites.py",
     "analyze:cat-walk": "python3 tools/build_cat_sprites.py --analyze",
     "build:mouse-walk": "python3 tools/build_strip_sprites.py --character mouse --animation walk",
     "build:trapped": "python3 tools/build_strip_sprites.py --character cat --animation trapped && python3 tools/build_strip_sprites.py --character mouse --animation trapped",
+    "build:endings": "python3 tools/build_strip_sprites.py --character cat --animation catch && python3 tools/build_strip_sprites.py --character mouse --animation escape",
+    "build:props": "python3 tools/build_props.py",
     "build:assets": "python3 tools/build_assets.py",
     "start": "python3 -m http.server 8791 --directory app"
   }

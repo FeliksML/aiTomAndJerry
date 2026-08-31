@@ -34,11 +34,22 @@
 
   /* Both roles train at once and both stream telemetry; each panel draws one of them.
      Which one is not a detail the viewer can infer from the picture, so it is written on
-     it. `role` is set by the app when it forwards the telemetry. */
+     it — on its own row, because right-aligning it against a column header is how it
+     ended up printed on top of one. `role` is set by the app when it forwards telemetry. */
   function roleTag(role, x, y) {
-    return '<text x="' + x + '" y="' + y + '" fill="#61708a" font-size="10" letter-spacing="1.4"'
-      + ' font-family="JetBrains Mono,monospace">' + String(role || 'cat').toUpperCase()
-      + ' · the other role trains alongside it</text>';
+    var r = String(role || 'cat').toUpperCase();
+    return '<text x="' + x + '" y="' + y + '" fill="#5b6b85" font-size="9.5" letter-spacing="1.3"'
+      + ' font-family="JetBrains Mono,monospace">TRAINING THE ' + r
+      + ' — the ' + (r === 'CAT' ? 'mouse' : 'cat') + ' is learning in the same run</text>';
+  }
+
+  /* A column heading and the one line that says what the picture underneath actually is.
+     Two rows, always: a subtitle squeezed onto the title's row is a collision waiting for
+     a longer word. */
+  function heading(x, y, title, sub) {
+    return '<text x="' + x + '" y="' + y + '" fill="#8fa4c4" font-size="11" letter-spacing="1.4">'
+      + title + '</text>'
+      + '<text x="' + x + '" y="' + (y + 14) + '" fill="#61708a" font-size="9.5">' + sub + '</text>';
   }
 
   /* Every panel draws this until its optimiser has actually said something. An empty
@@ -88,10 +99,12 @@
     var p = [], f = function (v) { return (+v).toFixed(1); };
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
 
-    // Action probabilities
-    var bx = 16, by = 34, bw = w * 0.36, bh = h - 76;
-    p.push('<text x="' + bx + '" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT IT WOULD DO</text>');
-    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
+    // Row 0 is the role, on its own. Rows 1-2 are each column's title and its subtitle.
+    // Everything below starts under all of them, so no two strings share a baseline.
+    p.push(roleTag(this.role, 16, 14));
+    var bx = 16, by = 62, bw = w * 0.36, bh = h - 128;   // leaves the footer its own two rows
+    p.push(heading(bx, 36, 'WHAT IT WOULD DO',
+                   'the five moves, scored on one fixed batch of situations'));
     var slot = bw / ACTIONS.length;
     for (var i = 0; i < ACTIONS.length; i++) {
       var v = Math.max(0, Math.min(1, this.probs[i] || 0));
@@ -104,8 +117,9 @@
     }
 
     // Ratio histogram against the clip band
-    var hx = bx + bw + 34, hw2 = w - hx - 16, hy = 34, hh = bh * 0.66;
-    p.push('<text x="' + hx + '" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">HOW FAR THE UPDATE TRIED TO MOVE</text>');
+    var hx = bx + bw + 34, hw2 = w - hx - 16, hy = 62, hh = bh * 0.60;
+    p.push(heading(hx, 36, 'HOW FAR THE UPDATE TRIED TO MOVE',
+                   'one bar per sampled move · the shaded band is where it is allowed to go'));
     var lo = this.range[0], hi = this.range[1];
     var sx = function (r) { return hx + (r - lo) / (hi - lo) * hw2; };
     var b0 = sx(this.band[0]), b1 = sx(this.band[1]);
@@ -130,7 +144,7 @@
     // Absolute axis, 0 to ln 5. Fitting the trail to its own min and max turned 0.3% of
     // noise into a full-height collapse, which is the shape of the story this panel is
     // meant to tell and therefore the last thing it should draw when it has not happened.
-    var ty = hy + hh + 34, th = h - ty - 26;
+    var ty = hy + hh + 48, th = h - ty - 46;
     var EMAX = Math.log(5);
     if (this.trail.length > 2 && th > 10) {
       var d = '';
@@ -142,17 +156,32 @@
       p.push('<line x1="' + f(hx) + '" y1="' + f(ty) + '" x2="' + f(hx + hw2) + '" y2="' + f(ty) + '" stroke="rgba(130,160,200,.14)" stroke-width="1"/>');
       p.push('<line x1="' + f(hx) + '" y1="' + f(ty + th) + '" x2="' + f(hx + hw2) + '" y2="' + f(ty + th) + '" stroke="rgba(130,160,200,.14)" stroke-width="1"/>');
       p.push('<path d="' + d + '" fill="none" stroke="' + accent + '" stroke-width="1.6" opacity=".8"/>');
-      p.push('<text x="' + hx + '" y="' + f(ty - 6) + '" fill="#7d90ad" font-size="10" letter-spacing="1">ENTROPY · how much it is still exploring &nbsp; 0 to ln 5 = 1.609, fixed axis</text>');
-      p.push('<text x="' + f(hx + hw2) + '" y="' + f(ty - 6) + '" text-anchor="end" fill="#c9d8ee" font-size="10" font-family="JetBrains Mono,monospace">'
-        + fmt(this.trail[this.trail.length - 1], 3) + '</text>');
+      // One string, left-aligned. The value used to be right-aligned on the same
+      // baseline, which collided with the label the moment the label grew.
+      p.push('<text x="' + hx + '" y="' + f(ty - 8) + '" fill="#7d90ad" font-size="10">'
+        + 'ENTROPY <tspan fill="#c9d8ee" font-family="JetBrains Mono,monospace">'
+        + fmt(this.trail[this.trail.length - 1], 3) + '</tspan>'
+        + ' · how much doubt is left · axis fixed, 0 to ln 5 = 1.609</text>');
     }
 
+    // The footer used to read "clipped 1% KL 0.0031 value-fit 38% year 1" — four numbers
+    // with nothing saying what any of them means. Each now carries its own plain label.
     var s = this.stats;
-    p.push('<text x="' + bx + '" y="' + (h - 8) + '" fill="#8fa4c4" font-size="11" font-family="JetBrains Mono,monospace">'
-      + 'clipped ' + (s.clipped !== undefined ? Math.round(s.clipped * 100) + '%' : '—')
-      + '   KL ' + fmt(s.kl, 4)
-      + '   value-fit ' + (s.ev !== undefined ? Math.round(s.ev * 100) + '%' : '—')
-      + (s.year ? '   year ' + s.year : '') + '</text>');
+    var cells = [
+      ['CLIPPED', s.clipped !== undefined ? Math.round(s.clipped * 100) + '%' : '—',
+       'of moves the leash held back'],
+      ['KL', fmt(s.kl, 4), 'how far the policy shifted'],
+      ['VALUE-FIT', s.ev !== undefined ? Math.round(s.ev * 100) + '%' : '—',
+       'how well it predicts its own score'],
+      ['YEAR', s.year ? String(s.year) : '—', 'difficulty of the opponents']
+    ];
+    var cwid = (w - 32) / cells.length;
+    for (var ci = 0; ci < cells.length; ci++) {
+      var cxp = bx + ci * cwid;
+      p.push('<text x="' + f(cxp) + '" y="' + (h - 22) + '" fill="#61708a" font-size="9" letter-spacing="1.2" font-family="JetBrains Mono,monospace">' + cells[ci][0] + '</text>');
+      p.push('<text x="' + f(cxp + 62) + '" y="' + (h - 22) + '" fill="#e8eef9" font-size="12" font-family="JetBrains Mono,monospace">' + cells[ci][1] + '</text>');
+      p.push('<text x="' + f(cxp) + '" y="' + (h - 8) + '" fill="#4f6280" font-size="9">' + cells[ci][2] + '</text>');
+    }
     p.push('</svg>');
     return p.join('');
   };
@@ -194,11 +223,12 @@
     this.flash = Math.max(0, this.flash - 0.045);
     var p = [], f = function (v) { return (+v).toFixed(1); };
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
-    p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">FORTY-EIGHT BRAINS · RANKED, THEN BRED</text>');
-    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
+    p.push(roleTag(this.role, 16, 14));
+    p.push(heading(16, 36, 'FORTY-EIGHT BRAINS · RANKED, THEN BRED',
+                   'each strip is one whole brain · lit ones survive and breed'));
 
     var n = fpT.length, cols = 12, rows = Math.ceil(n / cols);
-    var gx = 16, gy = 32, gw = w - 32, gh = h - 96;
+    var gx = 16, gy = 62, gw = w - 32, gh = h - 126;   // below the role line and the heading
     var cw = gw / cols, ch = gh / rows;
     var order = this.order || fpT.map(function (_, i) { return i; });
     var pos = {};                       // genome -> slot, so lines can find their ends
@@ -321,14 +351,15 @@
     this.step = easeArr(this.step, this.stepT || [0, 0], 0.15);
 
     var p = [], f = function (v) { return (+v).toFixed(1); };
-    var cx = w * 0.36, cy = h * 0.5, R = Math.min(w * 0.32, h * 0.40);
+    var cx = w * 0.36, cy = h * 0.5 + 16, R = Math.min(w * 0.32, h * 0.36);
     var k = R / this.scale;
     var X = function (v) { return cx + v * k; };
     var Y = function (v) { return cy - v * k; };
 
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
-    p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">THE SEARCH CLOUD, AND THE SHAPE IT HAS LEARNED</text>');
-    p.push(roleTag(this.role, w - 16, 20).replace('<text x', '<text text-anchor="end" x'));
+    p.push(roleTag(this.role, 16, 14));
+    p.push(heading(16, 36, 'THE SEARCH CLOUD, AND THE SHAPE IT HAS LEARNED',
+                   'each dot is one sampled brain, on the two directions it varies most'));
 
     for (var r = 1; r <= 3; r++) {
       p.push('<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + f(R * r / 3) + '" fill="none" stroke="rgba(130,160,200,.10)" stroke-width="1"/>');

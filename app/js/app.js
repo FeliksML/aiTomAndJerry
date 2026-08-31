@@ -122,6 +122,13 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
+    // Two-press arming for RESET TO ZERO, so the one destructive control on screen
+    // cannot fire on a single stray click during a take.
+    resetArmed: 0,
+    // The last beat of an episode. The server sends one final frame and then holds the
+    // arena still for about nine tenths of a second, which is what the catch and escape
+    // sheets are played over; `at` is the stopwatch they run on.
+    ending: null, raceDoneAt: {},
     trainInfo: null, showKeys: false, setupNote: null,
     // A refusal or an announcement, drawn on top of whatever screen is up.
     notice: null,
@@ -166,7 +173,7 @@
 
   if (window.WalkSprite) {
     [window.WalkSprite.tom, window.WalkSprite.jerry].forEach(function (ch) {
-      window.WalkSprite.ANIMATIONS.forEach(function (a) {
+      ch.animations.forEach(function (a) {
         ch[a].load(null, function (err, st) {
           if (err) { console.warn(ch.hero + ' ' + a + ' sheet unavailable:', err.message); return; }
           if (a !== 'walk') return;
@@ -177,6 +184,17 @@
           if (document.getElementById('screens')) render();
         });
       });
+    });
+  }
+
+  // The painted trap and the painted hole. Until they arrive the vector pair is drawn,
+  // exactly as with the characters — but the map layer is cached, and it is the layer
+  // that decides whether to draw the vector arch, so it has to be told to draw again.
+  if (window.PropSprite) {
+    window.PropSprite.load(null, function (err) {
+      if (err) { console.warn('prop atlas unavailable:', err.message); return; }
+      App.mapKey = null;
+      if (document.getElementById('screens')) render();
     });
   }
   App.livePanel = window.Panels.live();
@@ -405,17 +423,32 @@
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
       + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
           ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
+      + resetButton()
       + '<div class="dim" style="margin-left:auto;font-size:13px;text-align:right">'
-      + (App.link === 'live'
-        ? (ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
-                 : 'Generate the shared level set first')
+      + (App.link !== 'live'
         // The trainer is a separate process and the app talks to it over a socket, so
         // it cannot be started from in here. Saying only TRAINER OFFLINE left the one
         // question that matters — what do I type — unanswered on screen.
-        : 'The trainer is not running, so nothing can train or play.<br>'
+        ? 'The trainer is not running, so nothing can train or play.<br>'
           + 'Start it with <span class="mono" style="color:#c9d8ee">./run.sh serve</span>'
-          + ' in the project folder — this page reconnects on its own.')
+          + ' in the project folder — this page reconnects on its own.'
+        : App.cat && App.cat.zeroed
+          ? 'Every weight is a fresh random init — nothing has been trained yet. Enter a school and press t to train one on camera.'
+          : ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
+                  : 'Generate the shared level set first')
       + '</div></div></div>';
+  }
+
+  /* Two presses, because this is the one control on screen that destroys something, and
+     it lives on a menu that gets clicked around during a take. The armed state times out
+     on its own, so a stray first press cannot sit there waiting to be completed. */
+  function resetButton() {
+    var armed = App.resetArmed && (performance.now() - App.resetArmed < 5000);
+    if (!armed && App.resetArmed) App.resetArmed = 0;
+    return '<div class="btn ghost" data-act="reset" style="border-color:'
+      + (armed ? 'rgba(255,138,92,.7)' : 'rgba(255,138,92,.28)') + ';color:'
+      + (armed ? '#ff9a72' : '#b98070') + (armed ? ';background:rgba(255,122,84,.12)' : '') + '">'
+      + (armed ? 'PRESS AGAIN — THIS WIPES EVERY WEIGHT' : 'RESET TO ZERO') + '</div>';
   }
 
   function scoreBox(label, value, color) {
@@ -488,6 +521,7 @@
   function renderSchool() {
     var v = view(App.school);
     var accent = v.color;
+    var training = App.mode === 'train';
     // During the highlight reel the run is the reel, not the twelve-arena level set:
     // ten episodes counted out of twelve, under LV01-LV12 labels that name rooms the
     // reel is not playing, is two wrong numbers in the same corner of the screen.
@@ -500,9 +534,12 @@
 
     /* BEST is offered only when this run actually has one. It is written by the trainer
        alongside the other three, so a run made before it existed has three chips and
-       nothing to explain — better than a fourth chip that answers with an error. */
+       nothing to explain — better than a fourth chip that answers with an error.
+       A zeroed run has none of them: nothing has trained, so three identical pills would
+       invite a comparison of one thing with itself. */
     var have = App.cat && App.cat.available;
-    var pills = CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : [])
+    var pills = (App.cat && App.cat.zeroed ? ['untrained']
+                 : CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : []))
       .map(function (c) {
         var on = App.checkpoint === c;
         return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
@@ -559,11 +596,32 @@
 
       + '<div style="flex:1;display:flex;flex-direction:column;gap:12px;min-width:0">'
       + '<div style="display:flex;gap:12px">'
-      // Named for what they actually are: the episodes on this screen, by whichever
-       // policy the arena is currently playing.
-      + scoreBox('TOM · THIS PLAYBACK', catch_ + ' / ' + n, 'var(--cat)')
-      + scoreBox('JERRY · THIS PLAYBACK', esc_ + ' / ' + n, 'var(--mouse)')
+      /* Two different questions, so two different labels. While the shadow arena is
+         replaying the run's own policy these boxes are a rolling tally over a loop that
+         never ends; the rest of the time they are the twelve-room playthrough you
+         started. Either way they are NOT the reel's percentages a few centimetres below,
+         which measure the trainee against the Examiner. */
+      + scoreBox(training ? 'TOM · CAUGHT HER, THIS LAP' : 'TOM · THIS PLAYBACK',
+                 catch_ + ' / ' + n, 'var(--cat)')
+      + scoreBox(training ? 'JERRY · GOT HOME, THIS LAP' : 'JERRY · THIS PLAYBACK',
+                 esc_ + ' / ' + n, 'var(--mouse)')
       + scoreBox('ARENA', ((st.level || 0) + 1) + ' / ' + n, 'var(--gold)') + '</div>'
+      /* The HUD says how the run is going. This says what the ARENA is, which is the
+         first thing anyone asks on pressing `t`: it starts moving and nothing explains
+         why. They are not being tested — the optimiser is running thousands of episodes
+         a second in a batch nobody could watch, and this is one of them. */
+      + (training
+         ? '<div class="card" style="padding:13px 18px;border-color:rgba(255,209,102,.28)">'
+           + '<div class="mono" style="font-size:10px;letter-spacing:1.6px;color:var(--gold)">SHADOW EPISODE · NOT A TEST</div>'
+           + '<div class="faint" style="font-size:12px;line-height:1.5;margin-top:5px">'
+           + 'The optimiser is running thousands of episodes a second. This is one of them, '
+           + 'replayed at a watchable pace with the policy <b>as it stands right now</b> — '
+           + 'it is re-read at the start of every episode, so the pair should visibly get '
+           + 'better while you watch. The lap runs the twelve rooms and starts again.'
+           + '</div></div>'
+         : '')
+      // `trainedHere()`, not `training`: the card belongs to the RUN, so it survives a
+      // checkpoint click that takes the arena out of train mode.
       + (trainedHere() ? trainHud(accent) : '')
       + (App.acadOpen ? academyPanel(App.school, accent) : ''
       + '<div class="card" style="padding:14px 18px">'
@@ -1342,7 +1400,7 @@
       if (!mh || !fh) continue;
       if (mh.getAttribute('data-k') !== String(App.map.seed)) {
         mh.setAttribute('data-k', String(App.map.seed));
-        mh.innerHTML = P.mapSvg(local, RCS);
+        mh.innerHTML = P.mapSvg(local, RCS, { sprites: App.sprites });
       }
       var v = view(k);
       var fr = App.raceFrames[k], pv = (App.racePrev && App.racePrev[k]) || fr;
@@ -1352,7 +1410,9 @@
         key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color,
         sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
         catMoving: App.alpha < 1 && (fr.cat.x !== pv.cat.x || fr.cat.y !== pv.cat.y),
-        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y)
+        mouseMoving: App.alpha < 1 && (fr.mouse.x !== pv.mouse.x || fr.mouse.y !== pv.mouse.y),
+        ending: App.raceDone && App.raceDone[k]
+          ? { result: App.raceDone[k], ms: now - (App.raceDoneAt[k] || now) } : null
       });
     }
   }
@@ -1789,7 +1849,7 @@
     var key = App.map.seed + ':' + App.map.nest.join(',');
     if (App.mapKey !== key) {
       App.mapKey = key;
-      host.innerHTML = P.mapSvg(localMap(App.map), CS);
+      host.innerHTML = P.mapSvg(localMap(App.map), CS, { sprites: App.sprites });
     }
     if (!App.frame) return;
     var v = view(App.screen === 'final' ? (App.runState && App.runState.catSchool) || App.school : App.school);
@@ -1798,7 +1858,8 @@
       frame: App.frame, prev: App.prev, alpha: App.alpha, cs: CS, map: App.map,
       key: 'live', now: now, catAccent: v.color, mouseAccent: mv.color,
       sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
-      catMoving: App.catMoving, mouseMoving: App.mouseMoving
+      catMoving: App.catMoving, mouseMoving: App.mouseMoving,
+      ending: App.ending ? { result: App.ending, ms: now - App.bannerAt } : null
     });
     var b = el('arena-banner');
     if (b) {
@@ -2186,6 +2247,19 @@
       else if (a === 'train-stop') App.net.send({ cmd: 'stop' });
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
+      else if (a === 'reset') {
+        if (App.resetArmed && performance.now() - App.resetArmed < 5000) {
+          App.resetArmed = 0;
+          App.results = []; App.highlights = null; App.frame = App.prev = null;
+          App.trainInfo = null; App.runState = null; App.mode = 'play';
+          App.checkpoint = 'untrained';
+          App.net.send({ cmd: 'reset' });
+        } else {
+          App.resetArmed = performance.now();
+          setTimeout(function () { if (App.screen === 'menu') render(); }, 5100);
+        }
+        render();
+      }
       else if (a === 'school') { App.screen = 'school'; render(); }
       else if (a === 'x-open') openExplain();
       else if (a === 'x-next') stepExplain(1);
@@ -2382,6 +2456,9 @@
         App.alpha = joins ? 0 : 1;
         App.livePanel.update(m);
         if (m.map) { App.map = m.map; App.mapKey = null; }
+        // A frame that does not join the last one is a new episode, and the ending it
+        // was holding on is over.
+        if (!joins) App.ending = null;
         if (m.level !== undefined && App.runState) App.runState.level = m.level;
         var th = el('thought');
         if (th) th.textContent = m.cat.mode + ' · ' + m.mouse.mode;
@@ -2409,6 +2486,15 @@
         App.replay = false;
         render();
       })
+      /* The trainer answers some commands with a refusal — a second training run while
+         one is already going, a school the run does not contain. Nothing listened for
+         those, so on camera the key press simply did nothing and there was no way to
+         tell a refusal from a bug. */
+      .on('error', function (m) {
+        App.banner = { t: (m.message || 'the trainer refused that').toUpperCase(), c: '#ff9a72' };
+        App.bannerAt = performance.now();
+        render();
+      })
       .on('trainWait', function () {
         App.trainReady = false;
         App.trainInfo = 'Starting the optimiser — the arena waits for the first real policy.';
@@ -2433,22 +2519,27 @@
         if ((App.runState || {}).level !== m.level) {
           App.runState = Object.assign({}, App.runState, { level: m.level });
           App.raceDone = {};
+          App.raceDoneAt = {};
           render();
         }
       })
       .on('laneEnd', function (m) {
         App.raceDone = App.raceDone || {};
         App.raceDone[m.school] = m.result;
+        App.raceDoneAt[m.school] = performance.now();
         App.raceGrid = App.raceGrid || {};
         (App.raceGrid[m.school] = App.raceGrid[m.school] || [])[m.level] = m.result;
         render();
       })
       .on('episodeEnd', function (m) {
-        // A training run's shadow episodes are not a scoreboard: one policy early, a
-        // different one later, sometimes a pinned checkpoint in between. Counting them
-        // into the twelve-arena tally produced a score mixing a dozen brains, on top of
-        // whatever the previous playthrough had already left in the boxes.
-        if (App.mode !== 'train') App.results[m.level] = m.result;
+        // Both fire for every episode. The tally used to be the problem — a training
+        // run's shadow episodes are one policy early, a different one later, sometimes a
+        // pinned checkpoint in between, so twelve of them are not a score. The fix is the
+        // label, not the counter: during a run the boxes read "THIS LAP", which is what
+        // they are. The `render()` below is still skipped in train mode, because the
+        // level strip it exists to redraw is not on screen then.
+        App.results[m.level] = m.result;
+        App.ending = m.result === 'catch' || m.result === 'escape' ? m.result : null;
         App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
           : m.result === 'escape' ? { t: 'JERRY GOT HOME', c: '#ffd166' }
           : { t: 'TIME OUT', c: '#8fa4c4' };

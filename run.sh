@@ -12,9 +12,16 @@ cd "$(dirname "$0")"
 # default went stale the first time a run was tagged anything else: the trainer came up
 # green on a directory that did not exist and all three schools read NOT IN THIS RUN.
 newest_tag() {
-  local d
-  d="$(ls -1dt runs/*/ 2>/dev/null | grep -v '/journals/$' | head -1)"
-  [ -n "$d" ] && basename "$d" || echo v5
+  # The newest directory that actually holds a trained school. Excluding only `journals`
+  # was not enough: `maptables` is the compiled-arena cache, it is rewritten by every
+  # training run, and it therefore looked like the freshest "run" on disk.
+  local d tag
+  for d in $(ls -1dt runs/*/ 2>/dev/null); do
+    tag="$(basename "$d")"
+    case "$tag" in journals|maptables) continue ;; esac
+    if ls "$d"/*/checkpoints.npz >/dev/null 2>&1; then echo "$tag"; return; fi
+  done
+  echo v6
 }
 TAG_DEFAULT="$(newest_tag)"
 

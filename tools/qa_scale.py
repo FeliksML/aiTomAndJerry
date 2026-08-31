@@ -11,9 +11,16 @@ from PIL import Image, ImageDraw
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CS = 78                      # map cell size, chosen so the sheet fits on screen
-CELLS = {'tom': 1.38, 'jerry': 0.95}
-SHEETS = [('tom', 'walk', 'cat'), ('tom', 'trapped', 'cat'),
-          ('jerry', 'walk', 'mouse'), ('jerry', 'trapped', 'mouse')]
+# What each sheet is sized by, in map cells. Walking and being trapped both draw the
+# CHARACTER at its own height; the catch does too — Tom is still Tom with a mouse in his
+# fist. The escape is the exception and is sized by the ARCH, because the arch is what the
+# sheet's silhouette actually is, and it has to end up the same size as the standing hole
+# the map draws on that cell.
+CELLS = {('tom', 'walk'): 1.38, ('tom', 'trapped'): 1.38, ('tom', 'catch'): 1.38,
+         ('jerry', 'walk'): 0.95, ('jerry', 'trapped'): 0.95, ('jerry', 'escape'): 1.05}
+SHEETS = [('tom', 'walk', 'cat'), ('tom', 'trapped', 'cat'), ('tom', 'catch', 'cat'),
+          ('jerry', 'walk', 'mouse'), ('jerry', 'trapped', 'mouse'),
+          ('jerry', 'escape', 'mouse')]
 BG = (24, 34, 52)
 
 
@@ -23,7 +30,7 @@ def frame(hero, anim, folder, row, col):
     S = m['frameWidth']
     sh = np.asarray(Image.open(d / m['image']))
     f = sh[row * S:(row + 1) * S, col * S:(col + 1) * S]
-    size = CELLS[hero] * CS / m['charHeight']          # exactly what paint.js computes
+    size = CELLS[(hero, anim)] * CS / m['charHeight']   # exactly what paint.js computes
     k = size / S
     im = Image.fromarray(f).resize((max(1, int(S * k)),) * 2, Image.LANCZOS)
     return im, m['anchor'], m
@@ -31,7 +38,7 @@ def frame(hero, anim, folder, row, col):
 
 def main():
     cols, cell_w, cell_h = 5, 230, 300
-    out = Image.new('RGB', (cell_w * cols + 120, cell_h * 4), BG)
+    out = Image.new('RGB', (cell_w * cols + 120, cell_h * len(SHEETS)), BG)
     dr = ImageDraw.Draw(out)
     ground = cell_h - 46
     for r, (hero, anim, folder) in enumerate(SHEETS):

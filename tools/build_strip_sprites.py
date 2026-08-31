@@ -34,7 +34,7 @@ C8 = np.ones((3, 3), bool)
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from catlib import sheet as SH                       # noqa: E402
-from catlib.frames import geometry, place, band_profile, best_shift  # noqa: E402
+from catlib.frames import geometry, place, band_profile, best_shift, crown_anchor  # noqa: E402
 from catlib.matte import cutout                      # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -54,6 +54,11 @@ DEFAULTS = {
     # 'ground' keeps whatever is on the floor still — for the trapped strips that is the
     # trap, and it is the only fixed thing in the shot.
     'pivot': 'torso',
+    # Smallest disconnected piece, as a fraction of the biggest one, that survives the
+    # cut-out. The default assumes one connected figure and throws away everything else.
+    # Two characters in one drawing break that assumption: the caught mouse is a separate
+    # island whenever the cat is not actually touching him, so `catch` lowers it.
+    'keepFragments': 0.15,
     # Multiplies the character's size on screen without touching how the frames are laid
     # out. Kept apart from `scale` on purpose: `scale` changes the art inside the frame
     # and the metadata then measures the result, so `scale` alone can never change the
@@ -156,7 +161,7 @@ def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation:
             sub_a, sub_rgb = alpha[:, a:b], rgb[:, a:b]
             if (sub_a > 0.5).sum() < 500:
                 raise SystemExit('empty frame in %s' % path)
-            sub_a = _only_this_pose(sub_a)
+            sub_a = _only_this_pose(sub_a, cfg.get('keepFragments', 0.15))
             frames.append((sub_rgb, sub_a, geometry(sub_a)))
         cut[d] = frames
         log('%-10s %s  ->  4 frames at x %s' % (d, path.name, [s[0] for s in spans]))
@@ -186,6 +191,12 @@ def build(cfg: dict, src: pathlib.Path, out: pathlib.Path, hero: str, animation:
             # sits from the first frame's. Correcting frame 0's anchor instead would
             # throw every frame by the difference between the two anchors.
             pivots = [p + best_shift(profs[0], pr) for p, pr in zip(pivots, profs)]
+        elif cfg.get('pivot') == 'crown':
+            # Same idea, anchored on the top of the silhouette instead of the floor —
+            # for a strip whose rigid object is overhead and whose floor is walked on.
+            anchors = [crown_anchor(al, g) for _, al, g in cut[d]]
+            profs = [pr for _, pr in anchors]
+            pivots = [cx + best_shift(profs[0], pr) for (cx, _), pr in zip(anchors, profs)]
 
         frames, notes = [], []
         for (rgb, alpha, geo), pivot in zip(cut[d], pivots):

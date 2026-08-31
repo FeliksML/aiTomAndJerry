@@ -121,6 +121,21 @@
       return k < lead ? k : lead + ((k - lead) % Math.max(1, n - lead));
     }
 
+    /* The same one-shot, driven by a stopwatch instead of by a countdown. An episode's
+       last beat has no per-step counter to hang an animation on — the server sends one
+       final frame and then holds the arena still for about nine tenths of a second — so
+       the ending sheets are clocked from however long ago that frame landed. A sheet
+       whose lead covers every frame (the escape: once the tail is gone there is nothing
+       left to play) simply stops on the last one. */
+    function frameForElapsed(ms, fps) {
+      var m = st.meta;
+      var n = m ? m.framesPerDirection : 4;
+      var lead = m && m.oneShotFrames !== undefined ? m.oneShotFrames : 0;
+      var k = Math.floor(Math.max(0, ms) / 1000 * (fps || (m ? m.defaultFPS : 8)));
+      if (lead >= n) return Math.min(k, n - 1);
+      return k < lead ? k : lead + ((k - lead) % Math.max(1, n - lead));
+    }
+
     /* A small walker for callers that want the phase to survive stopping and starting.
        Keeping the accumulator here rather than in component state is the point: the walk
        advances on the game's own clock and costs no re-render. */
@@ -180,7 +195,7 @@
       ready: function () { return st.ready; },
       meta: function () { return st.meta; },
       cell: cell, row: row, idleFrame: idleFrame, frameAt: frameAt,
-      frameForHold: frameForHold, create: walker,
+      frameForHold: frameForHold, frameForElapsed: frameForElapsed, create: walker,
       svgSlice: svgSlice, svgAt: svgAt, backgroundStyle: backgroundStyle,
       DIRECTIONS: DIRECTIONS, dirFromVector: dirFromVector,
       normalize: normalize, fromFacing: fromFacing
@@ -210,17 +225,26 @@
   function fromFacing(facing) { return FROM_FACING[facing] || 'down'; }
 
   /* One entry per character, one sheet per animation. A character whose trapped sheet is
-     missing simply keeps walking — nothing here fails hard on an absent file. */
-  function character(hero, home) {
-    return {
+     missing simply keeps walking — nothing here fails hard on an absent file.
+
+     The two of them no longer own the same set. Walking and being trapped are things
+     either of them does; catching and escaping are not, and asking for jerry-catch.json
+     would only put a 404 in the console for a sheet that is not supposed to exist. Each
+     character therefore carries its own list, and callers iterate that rather than a
+     shared constant. */
+  function character(hero, home, extra) {
+    var c = {
       hero: hero, home: home,
+      animations: ['walk', 'trapped'].concat(extra || []),
       walk: sheet(hero, hero + '-walk.json', home),
       trapped: sheet(hero, hero + '-trapped.json', home)
     };
+    (extra || []).forEach(function (a) { c[a] = sheet(hero, hero + '-' + a + '.json', home); });
+    return c;
   }
 
-  var tom = character('tom', 'assets/cat/');
-  var jerry = character('jerry', 'assets/mouse/');
+  var tom = character('tom', 'assets/cat/', ['catch']);
+  var jerry = character('jerry', 'assets/mouse/', ['escape']);
 
   global.WalkSprite = {
     sheet: sheet, character: character, tom: tom, jerry: jerry,

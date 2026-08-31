@@ -95,6 +95,9 @@
     levels: [], genIndex: 0, lastGen: 0,
     panels: {}, lastTel: {},
     banner: null, bannerAt: 0, highlights: null,
+    // Two-press arming for RESET TO ZERO, so the one destructive control on screen
+    // cannot fire on a single stray click during a take.
+    resetArmed: 0,
     // The last beat of an episode. The server sends one final frame and then holds the
     // arena still for about nine tenths of a second, which is what the catch and escape
     // sheets are played over; `at` is the stopwatch they run on.
@@ -331,17 +334,32 @@
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
       + (App.cat && App.cat.highlights && App.cat.highlights.highlights.length
           ? '<div class="btn ghost" data-act="highlights">HIGHLIGHTS · H</div>' : '')
+      + resetButton()
       + '<div class="dim" style="margin-left:auto;font-size:13px;text-align:right">'
-      + (App.link === 'live'
-        ? (ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
-                 : 'Generate the shared level set first')
+      + (App.link !== 'live'
         // The trainer is a separate process and the app talks to it over a socket, so
         // it cannot be started from in here. Saying only TRAINER OFFLINE left the one
         // question that matters — what do I type — unanswered on screen.
-        : 'The trainer is not running, so nothing can train or play.<br>'
+        ? 'The trainer is not running, so nothing can train or play.<br>'
           + 'Start it with <span class="mono" style="color:#c9d8ee">./run.sh serve</span>'
-          + ' in the project folder — this page reconnects on its own.')
+          + ' in the project folder — this page reconnects on its own.'
+        : App.cat && App.cat.zeroed
+          ? 'Every weight is a fresh random init — nothing has been trained yet. Enter a school and press t to train one on camera.'
+          : ready ? App.levels.length + ' arenas ready · every school trains on the same rooms'
+                  : 'Generate the shared level set first')
       + '</div></div></div>';
+  }
+
+  /* Two presses, because this is the one control on screen that destroys something, and
+     it lives on a menu that gets clicked around during a take. The armed state times out
+     on its own, so a stray first press cannot sit there waiting to be completed. */
+  function resetButton() {
+    var armed = App.resetArmed && (performance.now() - App.resetArmed < 5000);
+    if (!armed && App.resetArmed) App.resetArmed = 0;
+    return '<div class="btn ghost" data-act="reset" style="border-color:'
+      + (armed ? 'rgba(255,138,92,.7)' : 'rgba(255,138,92,.28)') + ';color:'
+      + (armed ? '#ff9a72' : '#b98070') + (armed ? ';background:rgba(255,122,84,.12)' : '') + '">'
+      + (armed ? 'PRESS AGAIN — THIS WIPES EVERY WEIGHT' : 'RESET TO ZERO') + '</div>';
   }
 
   function scoreBox(label, value, color) {
@@ -414,6 +432,7 @@
   function renderSchool() {
     var v = view(App.school);
     var accent = v.color;
+    var training = App.mode === 'train';
     // During the highlight reel the run is the reel, not the twelve-arena level set:
     // ten episodes counted out of twelve, under LV01-LV12 labels that name rooms the
     // reel is not playing, is two wrong numbers in the same corner of the screen.
@@ -426,9 +445,12 @@
 
     /* BEST is offered only when this run actually has one. It is written by the trainer
        alongside the other three, so a run made before it existed has three chips and
-       nothing to explain — better than a fourth chip that answers with an error. */
+       nothing to explain — better than a fourth chip that answers with an error.
+       A zeroed run has none of them: nothing has trained, so three identical pills would
+       invite a comparison of one thing with itself. */
     var have = App.cat && App.cat.available;
-    var pills = CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : [])
+    var pills = (App.cat && App.cat.zeroed ? ['untrained']
+                 : CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : []))
       .map(function (c) {
         var on = App.checkpoint === c;
         return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
@@ -480,10 +502,27 @@
 
       + '<div style="flex:1;display:flex;flex-direction:column;gap:12px;min-width:0">'
       + '<div style="display:flex;gap:12px">'
-      + scoreBox('TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
-      + scoreBox('JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
+      // During training these are a rolling tally over a loop that never ends, not a
+      // score out of twelve. Saying so in the label costs three words and stops the
+      // screen from looking like an evaluation that happens to keep restarting.
+      + scoreBox(training ? 'TOM · CAUGHT HER, THIS LAP' : 'TOM · CAUGHT HER', catch_ + ' / ' + n, 'var(--cat)')
+      + scoreBox(training ? 'JERRY · GOT HOME, THIS LAP' : 'JERRY · GOT HOME', esc_ + ' / ' + n, 'var(--mouse)')
       + scoreBox('ARENA', ((st.level || 0) + 1) + ' / ' + n, 'var(--gold)') + '</div>'
-      + (App.mode === 'train' ? trainHud(accent) : '')
+      /* The HUD says how the run is going. This says what the ARENA is, which is the
+         first thing anyone asks on pressing `t`: it starts moving and nothing explains
+         why. They are not being tested — the optimiser is running thousands of episodes
+         a second in a batch nobody could watch, and this is one of them. */
+      + (training
+         ? '<div class="card" style="padding:13px 18px;border-color:rgba(255,209,102,.28)">'
+           + '<div class="mono" style="font-size:10px;letter-spacing:1.6px;color:var(--gold)">SHADOW EPISODE · NOT A TEST</div>'
+           + '<div class="faint" style="font-size:12px;line-height:1.5;margin-top:5px">'
+           + 'The optimiser is running thousands of episodes a second. This is one of them, '
+           + 'replayed at a watchable pace with the policy <b>as it stands right now</b> — '
+           + 'it is re-read at the start of every episode, so the pair should visibly get '
+           + 'better while you watch. The lap runs the twelve rooms and starts again.'
+           + '</div></div>'
+         : '')
+      + (training ? trainHud(accent) : '')
       + '<div class="card" style="padding:14px 18px">'
       + '<div class="faint mono" style="font-size:10px;letter-spacing:1.6px">WHAT THEY CAN SENSE RIGHT NOW</div>'
       + '<div id="thought" class="mono" style="font-size:15px;margin-top:6px;color:#c9d8ee">' + esc(mode) + '</div></div>'
@@ -1670,6 +1709,19 @@
       else if (a === 'train-stop') App.net.send({ cmd: 'stop' });
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
+      else if (a === 'reset') {
+        if (App.resetArmed && performance.now() - App.resetArmed < 5000) {
+          App.resetArmed = 0;
+          App.results = []; App.highlights = null; App.frame = App.prev = null;
+          App.trainInfo = null; App.runState = null; App.mode = 'play';
+          App.checkpoint = 'untrained';
+          App.net.send({ cmd: 'reset' });
+        } else {
+          App.resetArmed = performance.now();
+          setTimeout(function () { if (App.screen === 'menu') render(); }, 5100);
+        }
+        render();
+      }
       else if (a === 'school') { App.screen = 'school'; render(); }
       else if (a === 'x-open') openExplain();
       else if (a === 'x-next') stepExplain(1);
@@ -1800,6 +1852,15 @@
       })
       .on('replayEnd', function () {
         App.trainInfo = 'Replay finished.';
+        render();
+      })
+      /* The trainer answers some commands with a refusal — a second training run while
+         one is already going, a school the run does not contain. Nothing listened for
+         those, so on camera the key press simply did nothing and there was no way to
+         tell a refusal from a bug. */
+      .on('error', function (m) {
+        App.banner = { t: (m.message || 'the trainer refused that').toUpperCase(), c: '#ff9a72' };
+        App.bannerAt = performance.now();
         render();
       })
       .on('trainWait', function () {

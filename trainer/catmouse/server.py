@@ -38,7 +38,7 @@ import torch
 
 from . import arena
 from .league import EXAMINER_SKILL
-from .nets import FlatActor
+from .nets import FlatActor, init_flat
 from .school import Budget
 from .scripted import ScriptedPair
 from .tournament import LABELS, SCHOOLS, load_run
@@ -121,6 +121,7 @@ class Session:
         self._shadow_at = 0
         self.race: list[str] = []
         self._race_done: list = []
+        self.zeroed = False
 
     def load_run_dir(self, run_dir: Path) -> None:
         """Point the session at a run. Called at start-up and again whenever the app
@@ -164,12 +165,55 @@ class Session:
             "progression": self.progression,
             "budgets": self.budgets,
             "highlights": self.highlights,
+            "zeroed": self.zeroed,
             "runDir": str(self.run_dir),
             "runTag": self.run_dir.name,
             "runs": self.list_runs(),
             "config": self.config,
             "training": self.runner_state(),
         }
+
+    # ---------- RESET ----------
+
+    def reset_to_zero(self, seed: int = 0) -> dict:
+        """Throw the run away and start from an untrained brain, in memory only.
+
+        Every school's weights become a fresh draw from `init_flat` — the same
+        distribution every school starts training from, so nothing here is a special
+        "demo" policy. The measured artefacts go with them: the tournament, the
+        checkpoint progression, the budgets and the highlight reel all describe policies
+        that no longer exist, so continuing to show them would be the exact class of lie
+        the rest of this app is built to avoid. The leaderboard, the grand final and the
+        verdict each already have an honest empty state, and this is what puts them in it.
+
+        **Nothing on disk is touched.** `runs/<tag>` still holds the trained checkpoints;
+        restarting the server brings the whole run back.
+        """
+        if self.train_school is not None:
+            # Cooperative stop: the training loop breaks as soon as its budget reads
+            # full, which it checks once an iteration.
+            self.train_school.budget.seconds = 1e-9
+            self.train_school.budget.steps = 1
+        rng = np.random.default_rng(seed)
+        schools = [s for s in SCHOOLS if s in self.policies["trained"]] or list(SCHOOLS)
+        for ck in CHECKPOINTS:
+            self.policies[ck] = {
+                s: {r: init_flat(1, rng)[0] for r in ("cat", "mouse")} for s in schools
+            }
+        self.tournament = None
+        self.progression = None
+        self.budgets = None
+        self.highlights = None
+        self.zeroed = True
+        self.mode = "idle"
+        self.env = None
+        self.actors = {}
+        self.bot = None
+        self.results = []
+        self.level = 0
+        self.level_seeds = None
+        self._map_sent = None
+        return self.hello()
 
     def list_runs(self) -> list[dict]:
         """Every run on disk, newest first, with enough for the app to say what it is."""

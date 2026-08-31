@@ -112,7 +112,9 @@ class ScriptedPair:
         e, M, mi, sk = self.env, self.env.M, self.env.map_idx, self.skill
         n = e.n
         cat, mouse = e.cat, e.mouse
-        vis = M.sees[mi, cat, e.cat_face, mouse]
+        # The Examiner cat sees through the CAT's cone — so widening it widens the
+        # yardstick too. That is deliberate: the anchor has to play the same game.
+        vis = M.sees_cat[mi, cat, e.cat_face, mouse]
 
         scent_cell, _, scent_ok = e.scent_cue()
 
@@ -192,7 +194,7 @@ class ScriptedPair:
         n = e.n
         cat, mouse = e.cat, e.mouse
         sk = np.broadcast_to(np.asarray(sk, np.float64), (n,))
-        vis = M.sees[mi, mouse, e.mouse_face, cat]
+        vis = M.sees_mouse[mi, mouse, e.mouse_face, cat]
 
         heard_cell = (np.rint(e.heard[:, 1]).astype(np.int32) * W
                       + np.rint(e.heard[:, 0]).astype(np.int32))

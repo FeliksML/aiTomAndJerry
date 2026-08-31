@@ -22,6 +22,7 @@ they agree step for step, so the speed does not quietly cost correctness.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import pathlib
 from dataclasses import dataclass
@@ -70,10 +71,12 @@ class Tables:
     grid: np.ndarray        # (NCELL,) uint8 cell codes
     move_to: np.ndarray     # (NCELL, 5) int16
     dist: np.ndarray        # (NCELL, NCELL) int16, -1 unreachable
-    sees: np.ndarray        # (NCELL, 4, NCELL) bool
+    sees_cat: np.ndarray    # (NCELL, 4, NCELL) bool — the cat's cone
+    sees_mouse: np.ndarray  # (NCELL, 4, NCELL) bool — the mouse's, which may differ
     los: np.ndarray         # (NCELL, NCELL) bool, facing-free line of sight
     next_home: np.ndarray   # (NCELL,) int16, greedy step toward the nest
-    rays: np.ndarray        # (NCELL, 4, 21) float32
+    rays_cat: np.ndarray    # (NCELL, 4, 21) float32
+    rays_mouse: np.ndarray  # (NCELL, 4, 21) float32
     nest_field: np.ndarray  # (NCELL,) int16 — distance to the NEAREST hole
     nest_cells: np.ndarray  # (MAX_NESTS,) int32, -1 padded
     n_nests: int
@@ -105,15 +108,18 @@ def _compile(m: S.Map) -> Tables:
             continue
         dist[c] = np.asarray(S.bfs(m.grid, c % W, c // W), np.int16)
 
-    rays = np.zeros((NCELL, 4, 21), np.float32)
-    sees = np.zeros((NCELL, 4, NCELL), bool)
+    # One set per role. `los` below stays single: line of sight is angle-free, so it is
+    # the same question whoever asks it.
+    rays = {r: np.zeros((NCELL, 4, 21), np.float32) for r in ("cat", "mouse")}
+    sees = {r: np.zeros((NCELL, 4, NCELL), bool) for r in ("cat", "mouse")}
     los = np.zeros((NCELL, NCELL), bool)
     for c in range(NCELL):
         if g[c] == S.WALL:
             continue
         cx, cy = c % W, c // W
         for f in range(4):
-            rays[c, f] = S.cast_rays(m.grid, cx, cy, f)
+            for role in ("cat", "mouse"):
+                rays[role][c, f] = S.cast_rays(m.grid, cx, cy, f, role)
         for t in range(NCELL):
             if g[t] == S.WALL:
                 continue
@@ -123,7 +129,8 @@ def _compile(m: S.Map) -> Tables:
                 los[c, t] = v
                 los[t, c] = v
             for f in range(4):
-                sees[c, f, t] = S.sees_target(m.grid, cx, cy, f, tx, ty)
+                for role in ("cat", "mouse"):
+                    sees[role][c, f, t] = S.sees_target(m.grid, cx, cy, f, tx, ty, role)
 
     # One greedy step down the nest field, tie-broken N,E,S,W exactly as env.js does.
     # Chaining it k times is the `pathAhead` the scripted cat uses to cut her off.
@@ -155,8 +162,10 @@ def _compile(m: S.Map) -> Tables:
 
     on_route = {(p[0], p[1]) for p in m.route}
     return Tables(
-        seed=m.seed, grid=g, move_to=move_to, dist=dist, sees=sees, los=los,
-        next_home=next_home, rays=rays,
+        seed=m.seed, grid=g, move_to=move_to, dist=dist, los=los,
+        sees_cat=sees["cat"], sees_mouse=sees["mouse"],
+        rays_cat=rays["cat"], rays_mouse=rays["mouse"],
+        next_home=next_home,
         nest_field=np.asarray(m.nest_field, np.int16),
         nest_cells=cells, n_nests=len(m.nests),
         cat_spawn=m.cat_spawn[1] * W + m.cat_spawn[0],
@@ -166,17 +175,45 @@ def _compile(m: S.Map) -> Tables:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _env_fingerprint() -> str:
+    """A hash of env.py itself.
+
+    Listing the constants by hand is not enough, and this project has the scar to prove
+    it: the key was `v3:{seed}:{nests}`, the hole-placement rule was changed, and every
+    one of the 54 cached arenas went on serving the OLD rooms. Two 500M-step runs trained
+    against maps their author believed had been replaced, every gate passed, and the only
+    symptom was a policy that scored differently once the cache finally missed.
+
+    The rules live in code, not only in constants, so the fingerprint is the code. Editing
+    env.py costs a recompile of the arenas in use (~2s each, once); it can no longer cost
+    a silently wrong experiment.
+    """
+    src = (pathlib.Path(S.__file__)).read_bytes()
+    return hashlib.sha1(src).hexdigest()[:12]
+
+
+def cache_key(seed: int, nests: int) -> str:
+    """Everything the compiled tables depend on, in the key."""
+    return hashlib.sha1(
+        f"v4:{seed}:{nests}:{_env_fingerprint()}".encode()).hexdigest()[:16]
+
+
 def tables_for(seed: int, nests: int = 1, use_cache: bool = True) -> Tables:
-    """Compile (or load) one arena. Compiling costs ~1s; arenas are reused constantly."""
-    key = hashlib.sha1(f"v3:{seed}:{nests}".encode()).hexdigest()[:16]
-    p = CACHE / f"{key}.npz"
+    """Compile (or load) one arena. Compiling costs ~2s; arenas are reused constantly."""
+    p = CACHE / f"{cache_key(seed, nests)}.npz"
     if use_cache and p.exists():
         z = np.load(p, allow_pickle=False)
+        bits = lambda k, shape: np.unpackbits(z[k], count=int(np.prod(shape))).astype(bool).reshape(shape)
         return Tables(
             seed=int(z["seed"]), grid=z["grid"], move_to=z["move_to"], dist=z["dist"],
-            sees=np.unpackbits(z["sees"], count=NCELL * 4 * NCELL).astype(bool).reshape(NCELL, 4, NCELL),
-            los=np.unpackbits(z["los"], count=NCELL * NCELL).astype(bool).reshape(NCELL, NCELL),
-            next_home=z["next_home"], rays=z["rays"], nest_field=z["nest_field"],
+            # Both role fields renamed on purpose: had one kept the old name `sees`, a
+            # stale file would load silently for that role and only that role.
+            sees_cat=bits("sees_cat", (NCELL, 4, NCELL)),
+            sees_mouse=bits("sees_mouse", (NCELL, 4, NCELL)),
+            los=bits("los", (NCELL, NCELL)),
+            next_home=z["next_home"], rays_cat=z["rays_cat"], rays_mouse=z["rays_mouse"],
+            nest_field=z["nest_field"],
             nest_cells=z["nest_cells"], n_nests=int(z["n_nests"]),
             cat_spawn=int(z["cat_spawn"]), mouse_spawn=int(z["mouse_spawn"]),
             nest_sin=z["nest_sin"], nest_cos=z["nest_cos"], optimal=int(z["optimal"]),
@@ -187,8 +224,11 @@ def tables_for(seed: int, nests: int = 1, use_cache: bool = True) -> Tables:
         CACHE.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             p, seed=t.seed, grid=t.grid, move_to=t.move_to, dist=t.dist,
-            sees=np.packbits(t.sees.reshape(-1)), los=np.packbits(t.los.reshape(-1)),
-            next_home=t.next_home, rays=t.rays, nest_field=t.nest_field,
+            sees_cat=np.packbits(t.sees_cat.reshape(-1)),
+            sees_mouse=np.packbits(t.sees_mouse.reshape(-1)),
+            los=np.packbits(t.los.reshape(-1)),
+            next_home=t.next_home, rays_cat=t.rays_cat, rays_mouse=t.rays_mouse,
+            nest_field=t.nest_field,
             nest_cells=t.nest_cells, n_nests=t.n_nests,
             cat_spawn=t.cat_spawn, mouse_spawn=t.mouse_spawn,
             nest_sin=t.nest_sin, nest_cos=t.nest_cos, optimal=t.optimal,
@@ -212,10 +252,12 @@ class MapSet:
         self.grid = np.stack([t.grid for t in ts])
         self.move_to = np.stack([t.move_to for t in ts])
         self.dist = np.stack([t.dist for t in ts])
-        self.sees = np.stack([t.sees for t in ts])
+        self.sees_cat = np.stack([t.sees_cat for t in ts])
+        self.sees_mouse = np.stack([t.sees_mouse for t in ts])
         self.los = np.stack([t.los for t in ts])
         self.next_home = np.stack([t.next_home for t in ts])
-        self.rays = np.stack([t.rays for t in ts])
+        self.rays_cat = np.stack([t.rays_cat for t in ts])
+        self.rays_mouse = np.stack([t.rays_mouse for t in ts])
         self.nest_field = np.stack([t.nest_field for t in ts])
         self.nest_sin = np.stack([t.nest_sin for t in ts])
         self.nest_cos = np.stack([t.nest_cos for t in ts])
@@ -291,9 +333,19 @@ class VecEnv:
 
     # ---------- lifecycle ----------
 
-    def training_shaping(self) -> "VecEnv":
-        """Use the learning-strength shaping. Never used when scoring."""
+    def training_shaping(self, overrides: dict | None = None) -> "VecEnv":
+        """Use the learning-strength shaping. Never used when scoring.
+
+        `overrides` lets a school be trained with its own pull toward the mouse or the
+        hole. That is a decision about *how to teach*, not about what counts as winning:
+        catch, escape and timeout are still counted exactly as the spec says, on an
+        environment that never sees these numbers. Two schools taught with different
+        shaping remain comparable on the scoreboard for that reason.
+        """
         self.shaping = dict(self.SHAPING_TRAINING)
+        for k, v in (overrides or {}).items():
+            if k in self.shaping and v is not None:
+                self.shaping[k] = float(v)
         return self
 
     def reset(self, map_idx=None) -> None:
@@ -373,11 +425,11 @@ class VecEnv:
         o[:, 1] = my / H
         o[self._ar, 2 + face] = 1.0
         o[:, 6] = frozen / S.FREEZE_STEPS
-        o[:, IX_RAYS:IX_RAYS + 21] = M.rays[mi, me, face]
+        o[:, IX_RAYS:IX_RAYS + 21] = (M.rays_cat if role == "cat" else M.rays_mouse)[mi, me, face]
         o[:, 28] = M.nest_field[mi, me] / (W + H)
         o[:, 29] = self.step_n / S.MAX_STEPS
 
-        vis = M.sees[mi, me, face, other]
+        vis = (M.sees_cat if role == "cat" else M.sees_mouse)[mi, me, face, other]
         bear = np.arctan2(oy - my, ox - mx)
         o[:, 30] = vis
         o[:, 31] = np.where(vis, np.sin(bear), 0)
@@ -437,8 +489,8 @@ class VecEnv:
         g = t.grid
         cx, cy = int(self.cat[i] % W), int(self.cat[i] // W)
         mx, my = int(self.mouse[i] % W), int(self.mouse[i] // W)
-        cc, _ = S.cast_cone(g, cx, cy, int(self.cat_face[i]))
-        cm, _ = S.cast_cone(g, mx, my, int(self.mouse_face[i]))
+        cc, _ = S.cast_cone(g, cx, cy, int(self.cat_face[i]), "cat")
+        cm, _ = S.cast_cone(g, mx, my, int(self.mouse_face[i]), "mouse")
         sc = self.scent[i]
         hot = np.flatnonzero(sc > 0.08)
         out = {
@@ -569,8 +621,10 @@ class VecEnv:
         self.heard = np.where(audible[:, None], fresh, faded)
         self.heard_on = np.where(audible, True, self.heard_on & (faded[:, 2] >= 0.1))
 
-        self.saw_mouse = M.sees[mi, self.cat, self.cat_face, self.mouse]
-        self.saw_cat = M.sees[mi, self.mouse, self.mouse_face, self.cat]
+        # Not only an observation: `saw_mouse` also gates the cat's approach shaping a
+        # few lines below, so a wider cat cone pays her shaping over a wider arc too.
+        self.saw_mouse = M.sees_cat[mi, self.cat, self.cat_face, self.mouse]
+        self.saw_cat = M.sees_mouse[mi, self.mouse, self.mouse_face, self.cat]
 
         new_gap = np.hypot(cx - mx, cy - my)
         new_home = M.nest_field[mi, self.mouse].astype(np.float32)

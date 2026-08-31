@@ -17,7 +17,9 @@ Commands the app sends:
     {"cmd":"stopAll"}                                   ... ended early, but saved
     {"cmd":"score","tag":"v5","checkpoint":"best"}      tournament + highlight scan
     {"cmd":"useRun","tag":"v5"}                         watch a different run
-    {"cmd":"train","school":"ga","minutes":10}          train live, on camera
+    {"cmd":"train","school":"ga","minutes":10,"shaping":{...},"hyper":{...}}
+                                                        one academy, its own knobs
+    {"cmd":"pin","at":12}   {"cmd":"pin","at":null}     scrub the run / back to live
     {"cmd":"train","school":"ga","minutes":null,"steps":"500M"}   ... to a step budget
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
@@ -168,7 +170,12 @@ async def handler(ws, session, journal, clients, send):
             elif cmd == "useRun":
                 tag = str(m.get("tag", "")).strip()
                 target = (ROOT / "runs" / tag) if tag else None
-                if not target or not target.exists():
+                busy = session.busy_reason()
+                if busy:
+                    # Switching runs rebinds the arenas and the policies under whatever is
+                    # training, and the take would then save into the run it was moved to.
+                    await send({"type": "error", "message": busy})
+                elif not target or not target.exists():
                     await send({"type": "error", "message": f"no run called {tag!r}"})
                 else:
                     session.mode = "idle"
@@ -182,7 +189,13 @@ async def handler(ws, session, journal, clients, send):
                 await send(session.start_train(m.get("school", "ppo"),
                                                None if mins is None else float(mins),
                                                int(m.get("seed", 11)),
-                                               steps=parse_steps(m.get("steps"))))
+                                               steps=parse_steps(m.get("steps")),
+                                               shaping=m.get("shaping"),
+                                               hyper=m.get("hyper")))
+            elif cmd == "pin":
+                # Scrub the run: play the arena on the weights it had at one evaluation,
+                # or `null` to go back to whatever the optimiser holds now.
+                await send(session.pin(m.get("at"), m.get("school")))
             elif cmd == "speed":
                 session.speed = max(0.25, float(m.get("value", 4)))
                 await send({"type": "state", **session.state()})
@@ -195,7 +208,9 @@ async def handler(ws, session, journal, clients, send):
                 # episode, so that tick's output is what has to be forwarded — a fresh
                 # tick afterwards finds the result already recorded and stays quiet.
                 env = session.env
-                if env is not None:
+                if env is None:
+                    await send({"type": "error", "message": "nothing is playing to skip"})
+                else:
                     tail: list[dict] = []
                     guard = 0
                     while not env.done[0] and guard < 400:
@@ -213,17 +228,34 @@ async def handler(ws, session, journal, clients, send):
                 await send(session.reset_to_zero(int(m.get("seed", 0))))
                 await send({"type": "state", **session.state()})
             elif cmd == "stop":
-                # A live run is a background thread on its own budget; leaving the
-                # screen does not end it. Ask it to finish at the next iteration so it
-                # still snapshots and still picks its best cat and mouse.
+                # Ends the ON-CAMERA take. Three things this deliberately does NOT do:
+                #
+                #  * it does not touch the three-school run — `stop` is what the arena's
+                #    own button and shift+S send, and one keystroke meant for a take must
+                #    not end an hour-long background run. That is `stopAll`.
+                #  * it does not idle the arena while a take is wrapping up. Stopping is
+                #    a request honoured at the next iteration boundary, and the tail after
+                #    it (final scoring, the peak-versus-finish run-off) is tens of seconds
+                #    more. Freezing the arena at the key press made every stop look like a
+                #    crash, seconds before anything had actually stopped.
+                #  * it does not stay silent when there is nothing to stop.
                 sch = session.train_school
                 if sch is not None:
                     sch.request_stop()
                     await send({"type": "trainStopping", "school": sch.key})
-                if session.runner is not None and session.runner.poll() is None:
-                    await send(session.stop_train_all())
-                session.mode = "idle"
+                elif session.runner is not None and session.runner.poll() is None:
+                    await send({"type": "error", "message":
+                                "that stops a live take — the three-school run is ended "
+                                "with STOP on the RUNS screen"})
+                else:
+                    await send({"type": "error", "message": "nothing is training"})
+                    session.mode = "idle"
                 await send({"type": "state", **session.state()})
+            else:
+                # No `else` at all meant a typo, a stale client and a dropped packet were
+                # the same event: nothing happened and nothing said so.
+                await ws.send(json.dumps({"type": "error",
+                                          "message": f"unknown command {cmd!r}"}))
     finally:
         clients.discard(ws)
 
@@ -265,6 +297,15 @@ def main() -> None:
         journal = None if a.no_journal else Journal(ROOT / "runs" / "journals" / f"{stamp}.jsonl")
         session = Session(run_dir, dev, journal)
         print(f"serving {run_dir} on ws://{a.host}:{a.port}  (device {dev})", flush=True)
+        # A missing or empty run directory is tolerated on purpose — you can serve one and
+        # train into it from the app — but silently is the wrong way to tolerate it. The
+        # symptom otherwise is a green TRAINER LIVE chip over three greyed-out schools.
+        have = sorted(session.policies["trained"].keys())
+        if not have:
+            print(f"  !! no checkpoints under {run_dir} — every school will read "
+                  f"NOT IN THIS RUN until one is trained", flush=True)
+        else:
+            print(f"  schools present: {', '.join(have)}", flush=True)
         if journal:
             print(f"journalling to runs/journals/{stamp}.jsonl", flush=True)
 
@@ -285,7 +326,25 @@ def main() -> None:
                     clients.discard(sock)
 
         stop = asyncio.Event()
-        clock = asyncio.create_task(pump(session, broadcast, stop))
+
+        async def keep_clock() -> None:
+            """The pump is the only thing that steps the arena and the only thing that
+            drains training telemetry. It used to be created once: one exception and the
+            app stayed connected, still answering commands, with an arena that never moved
+            again and a run whose events piled up unseen."""
+            while not stop.is_set():
+                try:
+                    await pump(session, broadcast, stop)
+                    return                      # asked to stop
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        await broadcast({"type": "error",
+                                         "message": "the simulation clock restarted"})
+                    await asyncio.sleep(0.5)
+
+        clock = asyncio.create_task(keep_clock())
         try:
             async with websockets.serve(
                     lambda ws: handler(ws, session, journal, clients, broadcast),

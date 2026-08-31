@@ -153,7 +153,8 @@
 
     var threat = belief ? E.bfs(g, Math.round(belief[0]), Math.round(belief[1])) : null;
     var nestField = s.map.nestField;
-    var catCone = obs.targetVisible ? E.castCone(g, cat.x, cat.y, cat.facing) : null;
+    // The cat's cone, drawn from the cat's own angle.
+    var catCone = obs.targetVisible ? E.castCone(g, cat.x, cat.y, cat.facing, 'cat') : null;
 
     var here = nestField[E.idx(mouse.x, mouse.y)];
     var commit = here >= 0 && here <= 7 ? 0.2 : 1;   // this close to home, take the risk

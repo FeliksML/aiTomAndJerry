@@ -22,7 +22,12 @@
   var CORNER_EPS = 1e-4;
 
   var CFG = {
+    // One cone per role — mirrors env.py's VISION_HALF_ANGLE_{CAT,MOUSE}_DEG. `vision`
+    // stays the shared half (range and ray count) because seven other files read
+    // CFG.vision.range; the angle now lives per role and must be passed explicitly.
     vision: { halfAngleDeg: 50, range: 8.5, rays: 21 },
+    visionCat: { halfAngleDeg: 50, range: 8.5, rays: 21 },
+    visionMouse: { halfAngleDeg: 50, range: 8.5, rays: 21 },
     hearing: { range: 12, baseNoise: 0.10, distNoise: 0.055 }, // mouse only
     scent: { range: 6, decay: 0.93 },                          // cat only
     freezeSteps: 5,
@@ -143,7 +148,9 @@
         if (probe[idx(c[0], c[1])] < 0) return false;
         var open = 0;
         for (var k = 0; k < 4; k++) if (passable(g, c[0] + DIRS[k][0], c[1] + DIRS[k][1])) open++;
-        return open >= 2 && (c[0] <= 4 || c[0] >= W - 5);
+        // Anywhere on the floor that is not a dead end — see env.py. Holes were
+        // pinned to the side walls, which left the middle of every room hole-free.
+        return open >= 2;
       });
       var anchor = null, ni, nk, nb, saved, probe2;
       for (ni = 0; ni < free.length && !anchor; ni++) if (probe[idx(free[ni][0], free[ni][1])] >= 0) anchor = free[ni];
@@ -359,9 +366,21 @@
    * the two are built separately. Callers that only need the readings should use
    * castRays and skip the corner sweep entirely.
    */
+  /* Whose cone. Takes a role name ('cat' / 'mouse') or an explicit config object; throws
+     on anything else, because silently answering with the shared 50 degrees is exactly
+     how a per-role change ends up doing nothing. */
+  function coneFor(opt) {
+    if (opt === 'cat') return CFG.visionCat;
+    if (opt === 'mouse') return CFG.visionMouse;
+    if (opt && typeof opt.halfAngleDeg === 'number') return opt;
+    throw new Error("vision is per role: pass 'cat', 'mouse' or a cone config");
+  }
+
   function castCone(grid, ax, ay, facing, opt) {
-    var cfg = opt || CFG.vision;
-    var half = (cfg.halfAngleDeg || 50) * Math.PI / 180;
+    // No `|| 50` fallback: a caller that forgets whose cone it wants must break loudly
+    // rather than quietly draw and read the old shared angle.
+    var cfg = coneFor(opt);
+    var half = cfg.halfAngleDeg * Math.PI / 180;
     var range = cfg.range, n = cfg.rays;
     var base = facing * Math.PI / 2 - Math.PI / 2; // facing 0=N
     var ox = ax + 0.5, oy = ay + 0.5;
@@ -398,8 +417,8 @@
   // The readings alone, for the callers that never draw the cone. Same rays, same
   // order, same values as castCone().reads — just without the corner sweep.
   function castRays(grid, ax, ay, facing, opt) {
-    var cfg = opt || CFG.vision;
-    var half = (cfg.halfAngleDeg || 50) * Math.PI / 180;
+    var cfg = coneFor(opt);
+    var half = cfg.halfAngleDeg * Math.PI / 180;
     var range = cfg.range, n = cfg.rays;
     var base = facing * Math.PI / 2 - Math.PI / 2;
     var out = [];
@@ -421,7 +440,7 @@
   }
 
   function seesTarget(grid, ax, ay, facing, tx, ty, opt) {
-    var cfg = opt || CFG.vision;
+    var cfg = coneFor(opt);
     var d = Math.hypot(tx - ax, ty - ay);
     if (d > cfg.range) return false;
     var base = facing * Math.PI / 2 - Math.PI / 2;
@@ -447,8 +466,8 @@
   // Observation vectors handed to a policy. Mirror these keys in Python.
   function observe(s, role) {
     var g = s.grid, me = role === 'cat' ? s.cat : s.mouse, other = role === 'cat' ? s.mouse : s.cat;
-    var cone = castCone(g, me.x, me.y, me.facing);
-    var visible = seesTarget(g, me.x, me.y, me.facing, other.x, other.y);
+    var cone = castCone(g, me.x, me.y, me.facing, role);
+    var visible = seesTarget(g, me.x, me.y, me.facing, other.x, other.y, role);
     var nest = s.map.nest;
     var obs = {
       role: role,
@@ -525,8 +544,8 @@
       if (s.heard.conf < 0.1) s.heard = null;
     }
 
-    s.sawMouse = seesTarget(g, s.cat.x, s.cat.y, s.cat.facing, s.mouse.x, s.mouse.y);
-    s.sawCat = seesTarget(g, s.mouse.x, s.mouse.y, s.mouse.facing, s.cat.x, s.cat.y);
+    s.sawMouse = seesTarget(g, s.cat.x, s.cat.y, s.cat.facing, s.mouse.x, s.mouse.y, 'cat');
+    s.sawCat = seesTarget(g, s.mouse.x, s.mouse.y, s.mouse.facing, s.cat.x, s.cat.y, 'mouse');
 
     var newCatToMouse = Math.hypot(s.cat.x - s.mouse.x, s.cat.y - s.mouse.y);
     var newMouseToNest = s.map.nestField[idx(s.mouse.x, s.mouse.y)];
@@ -559,6 +578,7 @@
     DIRS: DIRS, ACTIONS: ACTIONS, CFG: CFG,
     rng: rng, idx: idx, inB: inB, passable: passable, bfs: bfs,
     genMap: genMap, reset: reset, step: step, observe: observe,
+    coneFor: coneFor,
     castCone: castCone, castRays: castRays, castRay: castRay,
     lineOfSight: lineOfSight, seesTarget: seesTarget
   };

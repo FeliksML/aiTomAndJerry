@@ -2483,7 +2483,14 @@
         ORDER.forEach(function (k) {
           var a = m.academies && m.academies[k];
           if (a && a.timeline && a.timeline.length) App.timeline[k] = a.timeline.slice();
+          // This only ever OVERWROTE, so it could not express "there is no reel any
+          // more". RESET TO ZERO answers with a hello, the wiped session rightly offers
+          // no timeline, and the frames the discarded run had already streamed stayed on
+          // screen — a graph of the run right under a caption saying nothing on screen
+          // comes from it. A zeroed session has trained nothing, so it has no reel.
+          else if (m.zeroed) App.timeline[k] = [];
         });
+        if (m.zeroed) App.pinned = null;
         var t = m.training || {};
         if (t.live && t.liveSchool) {
           App.training = { school: t.liveSchool, finished: false };

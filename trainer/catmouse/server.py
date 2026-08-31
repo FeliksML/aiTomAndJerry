@@ -289,6 +289,16 @@ class Session:
             # full, which it checks once an iteration.
             self.train_school.budget.seconds = 1e-9
             self.train_school.budget.steps = 1
+            # And let go of it. The budget above is mutated on the object itself, which
+            # the worker thread holds, so the stop still lands -- but `frames()` serves
+            # `train_school.timeline` in preference to everything else, so keeping the
+            # reference meant `hello` went on handing out the reel of the run this wipe
+            # just discarded. A window that reconnected got the graph back.
+            self.train_school = None
+        # The reels of runs that no longer exist. `timelines` is what keeps a finished
+        # run scrubbable, and after this none of these policies are the ones that were
+        # measured, so none of these reels describe anything on this session.
+        self.timelines = {}
         rng = np.random.default_rng(seed)
         schools = [s for s in SCHOOLS if s in self.policies["trained"]] or list(SCHOOLS)
         for ck in CHECKPOINTS:

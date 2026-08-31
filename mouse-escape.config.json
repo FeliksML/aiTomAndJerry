@@ -1,0 +1,22 @@
+{
+  "frameSize": 384,
+  "fps": 8,
+  "charHeight": 0.55,
+  "groundY": 0.88,
+  "anchorX": 0.5,
+  "source": {
+    "down": "down.png",
+    "up": "down.png",
+    "left": "down.png",
+    "down-left": "down.png",
+    "up-left": "down.png"
+  },
+  "scale": {},
+  "idle": {},
+  "split": {},
+  "pivot": "crown",
+  "keepFragments": 0.03,
+  "renderScale": 1.0,
+  "_note": "Jerry going home: run-up, dive, hind legs, then an empty hole. The hole is drawn into every frame and is the fixed point, so the frames are lined up on it. Pivot \"crown\" and not \"ground\": the mouse runs in on his own feet in frame 1 and is gone by frame 4, so the floor profile is not the same object twice and it dragged the hole a third of its own width sideways. The top of the arch is above anything he reaches, and holds still.",
+  "_directionNote": "All five sources are the same strip, on purpose. Every other animation is generated once per facing because the character is walking somewhere; this one is not \u2014 it is the mouse disappearing into a hole that is itself drawn front-on wherever it sits on the map. Turning that dive to face eight ways would put a front-facing arch at eight angles it does not have. The three right-facing rows still come out as mirrors, so the dive runs toward the side he came from."
+}

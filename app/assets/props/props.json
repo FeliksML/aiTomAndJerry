@@ -1,0 +1,26 @@
+{
+  "image": "props.png",
+  "frameWidth": 256,
+  "frameHeight": 256,
+  "columns": 5,
+  "rows": 1,
+  "anchor": {
+    "x": 0.5,
+    "y": 0.86
+  },
+  "frame": {
+    "trapSet": 0,
+    "trapGlint": 1,
+    "trapSnap": 2,
+    "trapShut": 3,
+    "hole": 4
+  },
+  "charHeight": {
+    "trap": 0.52,
+    "hole": 0.74
+  },
+  "source": {
+    "trap": "trap.png",
+    "hole": "hole.png"
+  }
+}

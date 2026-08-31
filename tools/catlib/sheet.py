@@ -29,6 +29,8 @@ BGS = [('black', (0, 0, 0)), ('slate', (24, 34, 52)),
 PHASES = {
     'walk': ['contactA', 'passingA', 'contactB', 'passingB'],
     'trapped': ['snap', 'recoil', 'struggleA', 'struggleB'],
+    'catch': ['lunge', 'grab', 'raiseA', 'raiseB'],
+    'escape': ['runUp', 'dive', 'halfIn', 'gone'],
 }
 
 # How many leading frames play once rather than looping. A walk loops all four. Being
@@ -36,7 +38,13 @@ PHASES = {
 # are a one-shot and 2-3 are the loop. The environment holds a trapped agent for
 # CFG.freezeSteps = 5 steps, which lands exactly on snap, recoil, struggle, struggle,
 # struggle.
-ONE_SHOT = {'walk': 0, 'trapped': 2}
+#
+# The catch and the escape are both endings, so they front-load more than the trap does.
+# The catch plays lunge and grab once and then holds on the two raise frames, which is
+# the shot the scoreboard is read over. The escape has no loop at all: once the tail is
+# gone there is nothing left to animate, so all four frames are one-shot and the last
+# one — an empty hole — is what the hold sits on.
+ONE_SHOT = {'walk': 0, 'trapped': 2, 'catch': 2, 'escape': 4}
 
 
 def mirror_all(canvases: dict) -> dict:

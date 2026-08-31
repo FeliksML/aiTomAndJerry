@@ -20,6 +20,7 @@ Commands the app sends:
     {"cmd":"train","school":"ga","minutes":10,"shaping":{...},"hyper":{...}}
                                                         one academy, its own knobs
     {"cmd":"pin","at":12}   {"cmd":"pin","at":null}     scrub the run / back to live
+    {"cmd":"shadow"}                                    back to a live run's arena
     {"cmd":"train","school":"ga","minutes":null,"steps":"500M"}   ... to a step budget
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
@@ -192,6 +193,12 @@ async def handler(ws, session, journal, clients, send):
                                                steps=parse_steps(m.get("steps")),
                                                shaping=m.get("shaping"),
                                                hyper=m.get("hyper")))
+            elif cmd == "shadow":
+                # Back to the training arena of a run that is still going, without
+                # touching the optimiser. A checkpoint pill moves the session to `play`,
+                # and that used to end scrubbing for the rest of the run — this is the
+                # way back, and the reel sends it itself before a pin.
+                await send(session.shadow())
             elif cmd == "pin":
                 # Scrub the run: play the arena on the weights it had at one evaluation,
                 # or `null` to go back to whatever the optimiser holds now.

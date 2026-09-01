@@ -2876,6 +2876,13 @@
         // label, not the counter: during a run the boxes read "THIS LAP", which is what
         // they are. The `render()` below is still skipped in train mode, because the
         // level strip it exists to redraw is not on screen then.
+        // The lap wraps, and the trainer clears its own tally when it does — `advance()`
+        // in train mode sets the level back to 0 and empties `results`. This one did not,
+        // so the entries for the arenas the new lap had not reached yet were still last
+        // lap's, and a box labelled THIS LAP counted episodes from the one before it. The
+        // wrap is a level that goes backwards; nothing else moves the level down.
+        if (App._lapLevel !== undefined && m.level < App._lapLevel) App.results = [];
+        App._lapLevel = m.level;
         App.results[m.level] = m.result;
         App.ending = m.result === 'catch' || m.result === 'escape' ? m.result : null;
         App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }

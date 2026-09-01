@@ -32,6 +32,12 @@
 
   function fmt(v, d) { return (v === undefined || v === null) ? '—' : (+v).toFixed(d === undefined ? 3 : d); }
 
+  /* Panels fade on the wall clock rather than per animation frame: a per-frame decay is a
+     different duration on a 60Hz and a 120Hz panel, and the recording is neither. */
+  function now() {
+    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  }
+
   /* Both roles train at once and both stream telemetry; each panel draws one of them.
      Which one is not a detail the viewer can infer from the picture, so it is written on
      it — on its own row, because right-aligning it against a column header is how it
@@ -54,10 +60,31 @@
 
   /* Every panel draws this until its optimiser has actually said something. An empty
      box on camera invites "is it broken?"; an invented number is worse. */
-  function waiting(w, h) {
+  /* Two different silences. A school that is not training has nothing to say and says so.
+     A school that IS training has not said anything YET — the first generation has to
+     finish before there is a number — and telling that author to "press t" three seconds
+     after they pressed t is the one moment this box produces the "is it broken?" it exists
+     to prevent. The true sentence already lived one card away, in the dim block nobody
+     frames the shot on. */
+  var STARTING = {
+    ppo: 'building the first batch — every environment has to fill before the first update lands',
+    ga: 'playing generation 1 — every brain in the crowd has to finish before there is anything to draw',
+    cmaes: 'playing generation 1 — the whole sample has to be scored before the cloud has a shape'
+  };
+
+  function waiting(w, h, opt) {
+    var live = opt && opt.starting;
+    var line = live
+      ? (STARTING[opt.school] || 'the optimiser is starting — the first numbers are seconds away')
+      : 'no telemetry yet — press t to train this school on camera';
+    var bar = live
+      ? '<rect x="' + (w / 2 - 90) + '" y="' + (h / 2 + 14) + '" width="180" height="3" rx="1.5"'
+        + ' fill="rgba(130,160,200,.14)"/>'
+        + '<rect x="' + (w / 2 - 90) + '" y="' + (h / 2 + 14) + '" width="54" height="3" rx="1.5" fill="#4e6a94"/>'
+      : '';
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'
       + '<text x="' + (w / 2) + '" y="' + (h / 2) + '" fill="#3d4a60" font-size="13" text-anchor="middle"'
-      + ' font-family="JetBrains Mono,monospace">no telemetry yet — press t to train this school on camera</text></svg>';
+      + ' font-family="JetBrains Mono,monospace">' + line + '</text>' + bar + '</svg>';
   }
 
   /* ---------------- PPO ---------------- */
@@ -88,12 +115,12 @@
     }
   };
 
-  PpoPanel.prototype.draw = function (w, h, accent) {
+  PpoPanel.prototype.draw = function (w, h, accent, opt) {
     // Nothing until the optimiser has spoken, the same as GaPanel and CmaPanel. A
     // fallback of [0.2 x 5] would draw a *measurement* — five bars reading "20", a
     // perfectly uniform policy — out of the absence of one, and the clip band would be
     // drawn at the JS constant rather than at the trainer's epsilon.
-    if (!this.target) return waiting(w, h);
+    if (!this.target) return waiting(w, h, opt);
     this.probs = easeArr(this.probs, this.target, 0.18);
     this.hist = easeArr(this.hist, this.histTarget || new Array(32).fill(0), 0.22);
     var p = [], f = function (v) { return (+v).toFixed(1); };
@@ -273,8 +300,12 @@
       best: t.fitBest, mean: t.fitMean, year: t.year, ladder: t.ladderWin
     };
     this.gen = (t.gen !== undefined) ? t.gen : this.gen + 1;
-    this.flash = 1;
-
+    // Wall clock, not frames. The decay was 0.045 per animation frame, so the crossover
+    // curves lived 22 frames — 0.37s at 60Hz, 0.19s on a 120Hz panel — against a
+    // generation that lands about every 1.1s. Breeding read as a strobe rather than an
+    // event, and there was no moment at which "those two, right there" was still true
+    // while the sentence finished.
+    this.flashAt = now();
     var n = (this.fitTarget || []).length;
     if (!n) return;
     if (!this.hue || this.hue.length !== n) {
@@ -300,11 +331,12 @@
     if (this.dynasty.length > 240) this.dynasty.shift();
   };
 
-  GaPanel.prototype.draw = function (w, h, accent) {
+  GaPanel.prototype.draw = function (w, h, accent, opt) {
     var fpT = this.fpTarget, fitT = this.fitTarget;
-    if (!fpT || !fitT) return waiting(w, h);
+    if (!fpT || !fitT) return waiting(w, h, opt);
     this.fit = easeArr(this.fit, fitT, 0.2);
-    this.flash = Math.max(0, this.flash - 0.045);
+    // Two seconds, so a pairing is still on screen when the sentence about it ends.
+    this.flash = Math.max(0, 1 - (now() - (this.flashAt || 0)) / 2000);
     var p = [], f = function (v) { return (+v).toFixed(1); };
     var n = fpT.length;
     // Twelve columns was written for a population of forty-eight. The academy's slider
@@ -490,8 +522,8 @@
     if (this.scale0 === undefined) this.scale0 = this.scaleT;
   };
 
-  CmaPanel.prototype.draw = function (w, h, accent) {
-    if (!this.samples) return waiting(w, h);
+  CmaPanel.prototype.draw = function (w, h, accent, opt) {
+    if (!this.samples) return waiting(w, h, opt);
     this.scale = ease(this.scale, this.scaleT || 1, 0.08);
     if (this.ellipseT) {
       this.ellipse.rx = ease(this.ellipse.rx, this.ellipseT.rx, 0.15);

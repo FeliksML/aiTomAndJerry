@@ -1021,7 +1021,22 @@
     var f = frames();
     var W = 1000, H = GRAPH_H, pad = 6;
     var y = function (v) { return pad + (1 - Math.max(0, Math.min(1, v))) * (H - 2 * pad); };
-    var x = function (j) { return f.length < 2 ? W : j / (f.length - 1) * W; };
+    /* Against the run's own clock, on an axis that does not move. Normalising the sample
+       INDEX to the full width recomputed the x of every existing frame each time one
+       arrived, so the whole history slid left and no point was in the same place two
+       evaluations apart — the peak marks and the handle moved under the cursor while the
+       author was pointing at them. The comment above this one removed exactly this
+       artefact from the OTHER axis, for the same reason.
+       The budget is the axis where there is one; otherwise the axis grows in powers of
+       two, so a reflow is rare and large rather than constant and small. */
+    var last = f.length ? (f[f.length - 1].steps || 0) : 0;
+    var target = App.train && App.train.targetSteps;
+    var xm = target || Math.max(1, Math.pow(2, Math.ceil(Math.log(Math.max(1, last)) / Math.LN2)));
+    var x = function (j) {
+      if (f.length < 2) return W;
+      var st = f[j].steps;
+      return st === undefined ? j / (f.length - 1) * W : Math.min(1, st / xm) * W;
+    };
     var g = ['<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" width="100%" height="'
              + H + '" style="display:block">'];
     // A grid the eye can read a percentage off, and 50% called out.
@@ -2208,7 +2223,10 @@
     // panel already derives its layout from the width and height it is handed.
     var pw = Math.max(320, host.clientWidth || (lesson ? 1180 : 700));
     var ph = Math.max(240, host.clientHeight || (lesson ? 700 : 420));
-    host.innerHTML = p.draw(pw, ph, view(App.school).color);
+    // The panel cannot tell "nothing is training" from "the first generation has not
+    // finished yet"; the caller can, and the difference is what the box says.
+    host.innerHTML = p.draw(pw, ph, view(App.school).color,
+                            { starting: trainingHere(), school: App.school });
   }
 
   var last = 0;

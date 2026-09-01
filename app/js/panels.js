@@ -585,7 +585,10 @@
     var sxp = X(this.step[0]), syp = Y(this.step[1]);
     p.push('<line x1="' + f(cx) + '" y1="' + f(cy) + '" x2="' + f(sxp) + '" y2="' + f(syp) + '" stroke="#ffd166" stroke-width="2" opacity=".9"/>');
     p.push('<circle cx="' + f(sxp) + '" cy="' + f(syp) + '" r="3.4" fill="#ffd166"/>');
-    p.push('<text x="' + f(sxp + 7) + '" y="' + f(syp - 5) + '" fill="#ffd166" font-size="10" font-family="JetBrains Mono,monospace">new centre</text>');
+    // Not just a fact about the optimiser. `tell` sets `best = mean`, so this marker IS
+    // the brain playing in the arena on the left — a brain that was never sampled and is
+    // not any of the dots. The population race already says it in these words.
+    p.push('<text x="' + f(sxp + 7) + '" y="' + f(syp - 5) + '" fill="#ffd166" font-size="10" font-family="JetBrains Mono,monospace">NEW CENTRE · IN THE ARENA</text>');
 
     var lx = cx + R + 28;
     var rows = [
@@ -641,6 +644,15 @@
   function LivePanel() {
     this.cat = null; this.mouse = null; this.frame = null;
   }
+
+  /* There is exactly one of these, shared by all three schools. Switching school clears
+     the arena's frame but left the panel holding the previous school's probabilities, its
+     sense strings and its step counter — drawn under the new school's header and colour
+     until the first frame of the new one arrived. `row()` already draws "waiting for the
+     policy…" for a null array, so the honest state was there and simply never asked for. */
+  LivePanel.prototype.reset = function () {
+    this.cat = this.mouse = this.catT = this.mouseT = this.frame = null;
+  };
 
   LivePanel.prototype.update = function (frame) {
     if (!frame) return;

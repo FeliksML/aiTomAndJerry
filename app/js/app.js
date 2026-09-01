@@ -2319,6 +2319,10 @@
       return;
     }
     App.acadOpen = false;
+    // One LivePanel serves every school, so it has to be emptied with the frame it was
+    // drawing — otherwise PPO's probabilities, PPO's sense strings and PPO's step counter
+    // sit under GA's green header until GA's first frame lands.
+    if (App.livePanel && App.livePanel.reset) App.livePanel.reset();
     // A pin belongs to the school it was taken from; the server drops it on `play`.
     App.pinned = null;
     App.school = key;
@@ -2628,6 +2632,15 @@
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
       else if (a === 'reset') {
+        if (App.link !== 'live') {
+          // `Net.send` queues rather than rejecting, so the wipe was announced, the local
+          // playback state was cleared, and the menu went on showing GRADUATED chips with
+          // real percentages off a catalogue nothing had touched.
+          App.resetArmed = 0;
+          notice('The trainer is not running — nothing was wiped. Start it and press again.', true);
+          render();
+          return;
+        }
         if (App.resetArmed && performance.now() - App.resetArmed < 5000) {
           App.resetArmed = 0;
           App.results = []; App.highlights = null; App.frame = App.prev = null;
@@ -3123,6 +3136,11 @@
         // indexes the new run's timeline.
         App.scoring = null; App.results = [];
         App.timeline = {}; App.pinned = null;
+        // The grand final reads `catSchool`, `wins` and `levels` off this. Left standing,
+        // the previous run's finalists and their ROUNDS WON were drawn under a headline
+        // saying they earned them — which is the exact outcome the guard in `renderFinal`
+        // exists to prevent, and it looks less broken than the empty state.
+        App.runState = null;
         App.train = null; App.training = null; App.trainFinished = false;
         App.frame = App.prev = null; App.trainInfo = null; App.mode = 'play';
         App.screen = 'menu';

@@ -2072,6 +2072,11 @@
     App.net.send({ cmd: 'race', checkpoint: 'trained' });
   }
 
+  /* What pressing TRAIN overwrote, so a refusal can put it back. Nulling was right when
+     the refusal meant "there is no run", and destructive when it meant "training already
+     running" -- the run being erased was the live one in ANOTHER school. */
+  var _trainSent = false, _trainWas = null;
+
   function trainLive() {
     var a = acadOf(App.school);
     var b = { minutes: a.minutes || null, steps: a.steps || null };
@@ -2083,6 +2088,11 @@
       App.screen = 'setup';
       return note('Set a budget first: a step count, a minutes cap, or both.');
     }
+    _trainWas = { training: App.training, train: App.train, mode: App.mode,
+                  trainReady: App.trainReady, trainFinished: App.trainFinished,
+                  pinned: App.pinned, results: App.results,
+                  highlights: App.highlights, runState: App.runState };
+    _trainSent = true;
     App.setupNote = null;
     App.mode = 'train';
     // `t` is a global key, so it can be pressed from the verdict or the leaderboard.
@@ -2428,6 +2438,8 @@
          of only the window that pressed the button. */
       .on('training', function (m) {
         var was = App.training && !App.training.finished ? App.training.school : null;
+        // The server accepted a run, so there is nothing left to undo.
+        if (m.live && m.liveSchool) _trainSent = false;
         if (m.live && m.liveSchool) {
           App.training = { school: m.liveSchool, finished: false };
           App.trainFinished = false;
@@ -2672,7 +2684,23 @@
         // this, a refused SCORE left the panel reading "SCORING · starting…" for the rest
         // of the session, and a refused TRAIN left a run card for a run that never began.
         if (App.scoring && !App.scoring.done && !App.scoring.lines.length) App.scoring = null;
-        if (App.training && !App.training.finished && (!App.train || !App.train.iter)) {
+        // Put back exactly what the press overwrote. Nulling instead cost a live run in
+        // another school its run card, its STOP button and its scrub -- `trainingHere()`
+        // reads `App.training`, so erasing it took the reel read-only while the run was
+        // still going -- and left the HUD counting that run's steps against the budget of
+        // the run that never started: 63M steps shown as 6% of a 1B budget nobody set.
+        if (_trainSent) {
+          _trainSent = false;
+          App.training = _trainWas.training;
+          App.train = _trainWas.train;
+          App.mode = _trainWas.mode;
+          App.trainReady = _trainWas.trainReady;
+          App.trainFinished = _trainWas.trainFinished;
+          App.pinned = _trainWas.pinned;
+          App.results = _trainWas.results;
+          App.highlights = _trainWas.highlights;
+          App.runState = _trainWas.runState;
+        } else if (App.training && !App.training.finished && (!App.train || !App.train.iter)) {
           App.training = null;
           App.train = null;
           if (App.mode === 'train') App.mode = 'play';

@@ -186,7 +186,31 @@
     return p.join('');
   };
 
-  /* ---------------- GA ---------------- */
+  /* ---------------- GA ----------------
+   *
+   * Selection is a story about individuals: this one bred, that one did not. The panel
+   * could not tell it, because the grid was ranked by fitness every generation -- a
+   * genome changed slot whenever its score moved, so nobody could be followed for more
+   * than one beat and nobody was ever seen to die.
+   *
+   * The grid is laid out by genome index instead, which is stable by construction:
+   * `tell()` writes the survivors into the first `elite` slots and the children after
+   * them. Position stops moving, so colour and brightness can carry the story --
+   * ancestry and who is about to be replaced.
+   */
+
+  /* Circular mean, so a child sits BETWEEN its parents on the wheel: hue 350 bred with
+     hue 10 has to meet at 0, not at the numeric average of 180 -- which is the colour of
+     neither parent and would invent a lineage nobody has. */
+  function hueBlend(a, b) {
+    var x = Math.cos(a * Math.PI / 180) + Math.cos(b * Math.PI / 180);
+    var y = Math.sin(a * Math.PI / 180) + Math.sin(b * Math.PI / 180);
+    if (Math.abs(x) < 1e-9 && Math.abs(y) < 1e-9) return a;
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+  function hueCss(hu, l, sat) {
+    return 'hsl(' + (hu || 0).toFixed(0) + ',' + (sat === undefined ? 60 : sat) + '%,' + (l || 58) + '%)';
+  }
 
   function GaPanel() {
     this.fp = null;
@@ -197,7 +221,43 @@
     this.stats = {};
     this.gen = 0;
     this.flash = 0;
+    // Identity of the population currently on screen, one entry per slot.
+    this.hue = null;
+    this.founder = null;
+    // The previous message's survivors and pairings -- what BUILT the population this
+    // message reports, and therefore what the identities have to be carried across.
+    this.prev = null;
+    // Founder counts per generation, oldest first: the dynasty band.
+    this.dynasty = [];
   }
+
+  /* Carry identity across one generation. `tell()` builds the next population as
+     `nxt[:elite] = pop[elites]` followed by one child per entry of `pairs`, so slot j
+     below `elite` IS last generation's `elites[j]`, and every slot after it is the child
+     of a known pair. Nothing here is inferred. */
+  GaPanel.prototype.advance = function (n, elites, pairs, fit) {
+    if (!this.hue || !elites || !pairs) return;
+    var hue = new Array(n), founder = new Array(n), e = elites.length;
+    for (var i = 0; i < n; i++) {
+      var src = i < e ? elites[i] : -1;
+      if (src >= 0 && this.hue[src] !== undefined) {
+        hue[i] = this.hue[src]; founder[i] = this.founder[src];
+        continue;
+      }
+      var pr = pairs[i - e];
+      if (!pr || this.hue[pr[0]] === undefined || this.hue[pr[1]] === undefined) {
+        hue[i] = this.hue[i] === undefined ? i * 360 / n : this.hue[i];
+        founder[i] = this.founder[i] === undefined ? i : this.founder[i];
+        continue;
+      }
+      hue[i] = hueBlend(this.hue[pr[0]], this.hue[pr[1]]);
+      // Counted under the fitter parent's line. Once one founder is on both sides of
+      // most pairings, that is the line that has taken the population over, and the
+      // band below should say so rather than splitting the credit evenly.
+      founder[i] = (fit && fit[pr[1]] > fit[pr[0]]) ? this.founder[pr[1]] : this.founder[pr[0]];
+    }
+    this.hue = hue; this.founder = founder;
+  };
 
   GaPanel.prototype.update = function (t) {
     if (t && t.role) this.role = t.role;
@@ -214,6 +274,30 @@
     };
     this.gen = (t.gen !== undefined) ? t.gen : this.gen + 1;
     this.flash = 1;
+
+    var n = (this.fitTarget || []).length;
+    if (!n) return;
+    if (!this.hue || this.hue.length !== n) {
+      // Founders: one hue each, evenly around the wheel. Every colour after this one is
+      // descended from these, which is the whole point of the band.
+      this.hue = []; this.founder = [];
+      for (var i = 0; i < n; i++) { this.hue.push(i * 360 / n); this.founder.push(i); }
+      this.dynasty = [];
+      // Lineage is tracked from telemetry, and telemetry starts arriving when this
+      // window connects. Joining at generation 300 means these "founders" are simply
+      // whoever was alive at generation 300 -- calling them the founders of the run
+      // would be a lie the band cannot back up, so the caption says which it is.
+      this.baseGen = this.gen;
+    } else if (this.prev) {
+      this.advance(n, this.prev.elites, this.prev.pairs, this.prev.fit);
+    }
+    this.prev = { elites: this.elites, pairs: this.pairs, fit: this.fitTarget };
+
+    var counts = {};
+    for (var j = 0; j < n; j++) counts[this.founder[j]] = (counts[this.founder[j]] || 0) + 1;
+    this.dynasty.push(counts);
+    // One generation per pixel column at most; older ones fall off the left.
+    if (this.dynasty.length > 240) this.dynasty.shift();
   };
 
   GaPanel.prototype.draw = function (w, h, accent) {
@@ -222,75 +306,145 @@
     this.fit = easeArr(this.fit, fitT, 0.2);
     this.flash = Math.max(0, this.flash - 0.045);
     var p = [], f = function (v) { return (+v).toFixed(1); };
+    var n = fpT.length;
+    // Twelve columns was written for a population of forty-eight. The academy's slider
+    // goes far past that -- at 120 it gave ten rows of 56x28 letterboxes -- so the grid
+    // is shaped from the box it actually has, which keeps the cells roughly square at
+    // any population size.
+    var gwTmp = w - 32, ghTmp = h - 138;
+    var cols = Math.max(6, Math.min(24, Math.round(Math.sqrt(n * gwTmp / Math.max(1, ghTmp)))));
+    var rows = Math.ceil(n / cols);
+    var nE = (this.elites || []).length;
+    var self = this;
+    var hueOf = function (i) { return self.hue && self.hue[i] !== undefined ? self.hue[i] : 0; };
+
     p.push('<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">');
     p.push(roleTag(this.role, 16, 14));
-    p.push(heading(16, 36, 'FORTY-EIGHT BRAINS · RANKED, THEN BRED',
-                   'each strip is one whole brain · lit ones survive and breed'));
+    p.push(heading(16, 36, n + ' BRAINS · ' + nE + ' SURVIVE, ' + (n - nE) + ' ARE REPLACED',
+                   'colour is ancestry — a child is its two parents mixed · dim ones do not breed'));
 
-    var n = fpT.length, cols = 12, rows = Math.ceil(n / cols);
-    var gx = 16, gy = 62, gw = w - 32, gh = h - 126;   // below the role line and the heading
+    var gx = 16, gy = 62, gw = w - 32, gh = h - 138;
     var cw = gw / cols, ch = gh / rows;
-    var order = this.order || fpT.map(function (_, i) { return i; });
-    var pos = {};                       // genome -> slot, so lines can find their ends
+    var pos = {};
     var lo = Math.min.apply(null, this.fit), hi = Math.max.apply(null, this.fit);
     var span = Math.max(1e-6, hi - lo);
+    // The genome the arena is actually playing. `tell()` keeps `best = pop[order[0]]`,
+    // so this is not a guess about which cat is on screen -- it is the same index.
+    var inArena = this.order && this.order.length ? this.order[0] : -1;
 
-    for (var s = 0; s < n; s++) {
-      var gi = order[s];
-      var col = s % cols, row = (s / cols) | 0;
+    for (var i = 0; i < n; i++) {
+      var col = i % cols, row = (i / cols) | 0;
       var x = gx + col * cw, y = gy + row * ch;
-      pos[gi] = { x: x + cw / 2, y: y + ch / 2 };
-      var isElite = this.elites.indexOf(gi) >= 0;
-      var strip = fpT[gi] || [];
-      p.push('<g transform="translate(' + f(x + 2) + ',' + f(y + 2) + ')">');
-      p.push('<rect x="0" y="0" width="' + f(cw - 4) + '" height="' + f(ch - 8) + '" rx="3" fill="rgba(255,255,255,.03)" stroke="'
-        + (isElite ? accent : 'rgba(130,160,200,.14)') + '" stroke-width="' + (isElite ? 1.4 : 0.8) + '"'
-        + (isElite ? ' opacity="' + (0.7 + 0.3 * this.flash).toFixed(2) + '"' : '') + '/>');
-      // DNA strip: one bar per projected coordinate, sign as hue, size as magnitude.
-      var bw2 = (cw - 10) / strip.length;
-      for (var b = 0; b < strip.length; b++) {
-        var v = strip[b];
-        var mag = Math.min(1, Math.abs(v));
-        var hgt = Math.max(1, mag * (ch - 22));
-        p.push('<rect x="' + f(3 + b * bw2) + '" y="' + f((ch - 14 - hgt) / 2 + 2) + '" width="' + f(Math.max(0.8, bw2 - 0.4)) + '" height="' + f(hgt)
-          + '" fill="' + (v >= 0 ? accent : '#4b5a73') + '" opacity="' + (0.25 + 0.6 * mag).toFixed(2) + '"/>');
+      pos[i] = { x: x + cw / 2, y: y + ch / 2 };
+      var isElite = this.elites.indexOf(i) >= 0;
+      var hu = hueOf(i);
+      var stroke = isElite ? hueCss(hu, 66) : 'rgba(130,160,200,.16)';
+      var strip = fpT[i] || [];
+      p.push('<g transform="translate(' + f(x + 2) + ',' + f(y + 2) + ')" opacity="'
+        + (isElite ? 1 : 0.5) + '">');
+      p.push('<rect x="0" y="0" width="' + f(cw - 4) + '" height="' + f(ch - 8) + '" rx="3" fill="'
+        + (isElite ? hueCss(hu, 22, 45) : 'rgba(255,255,255,.03)') + '" stroke="' + stroke
+        + '" stroke-width="' + (isElite ? 1.5 : 0.8) + '"'
+        + (isElite ? ' opacity="' + (0.75 + 0.25 * this.flash).toFixed(2) + '"' : '') + '/>');
+      // The genome strip is only drawn while a bar is wide enough to be a bar. Forty
+      // coordinates across a 56px cell is one pixel each: a texture that looks like
+      // detail and carries none, over the one signal that does read at this size --
+      // whose descendant this is. Below the threshold the cell becomes that colour.
+      var bw2 = (cw - 10) / Math.max(1, strip.length);
+      if (bw2 >= 2.2) {
+        for (var b = 0; b < strip.length; b++) {
+          var v = strip[b];
+          var mag = Math.min(1, Math.abs(v));
+          var hgt = Math.max(1, mag * (ch - 22));
+          p.push('<rect x="' + f(3 + b * bw2) + '" y="' + f((ch - 14 - hgt) / 2 + 2) + '" width="'
+            + f(Math.max(0.8, bw2 - 0.4)) + '" height="' + f(hgt)
+            + '" fill="' + (v >= 0 ? hueCss(hu, 62) : hueCss(hu, 34, 30))
+            + '" opacity="' + (0.3 + 0.6 * mag).toFixed(2) + '"/>');
+        }
+      } else {
+        var frTile = (this.fit[i] - lo) / span;
+        p.push('<rect x="3" y="3" width="' + f(cw - 10) + '" height="' + f(ch - 16)
+          + '" rx="2" fill="' + hueCss(hu, 54) + '" opacity="' + (0.3 + 0.55 * frTile).toFixed(2) + '"/>');
       }
-      // fitness bar along the bottom
-      var fr = (this.fit[gi] - lo) / span;
-      p.push('<rect x="3" y="' + f(ch - 11) + '" width="' + f((cw - 10) * fr) + '" height="2.5" rx="1.2" fill="' + (isElite ? accent : '#7d90ad') + '"/>');
+      var fr = (this.fit[i] - lo) / span;
+      p.push('<rect x="3" y="' + f(ch - 11) + '" width="' + f((cw - 10) * fr)
+        + '" height="2.5" rx="1.2" fill="' + hueCss(hu, isElite ? 64 : 40) + '"/>');
+      // The condemned are struck through rather than merely dimmed. Forty of these are
+      // gone the moment this generation ends, and that is the event the screen exists
+      // to show -- dimming alone read as "less important", not as "about to die".
+      if (!isElite) {
+        p.push('<line x1="3" y1="' + f(ch - 9) + '" x2="' + f(cw - 7) + '" y2="4" stroke="rgba(255,138,92,.22)" stroke-width="1"/>');
+      }
       p.push('</g>');
     }
 
-    // Crossover: a few of this generation's pairings, drawn between the two parents
-    // with the child on the arc between them.
-    //
-    // The child is deliberately NOT drawn in a grid slot. The strips show the CURRENT
-    // population ranked by fitness; the children belong to the next one and have no
-    // slot yet, and next generation the whole grid is re-ranked anyway. Pointing at a
-    // slot would name a genome that is not the child — so the child is drawn where it
-    // actually is conceptually: between its parents.
+    // Which strip is the cat you are watching. Without it the grid and the arena are two
+    // unrelated pictures on one screen.
+    if (pos[inArena]) {
+      var a0 = pos[inArena];
+      p.push('<rect x="' + f(a0.x - cw / 2 + 1) + '" y="' + f(a0.y - ch / 2 + 1) + '" width="' + f(cw - 2)
+        + '" height="' + f(ch - 6) + '" rx="4" fill="none" stroke="' + accent + '" stroke-width="1.6"/>');
+      p.push('<text x="' + f(a0.x) + '" y="' + f(a0.y - ch / 2 - 2) + '" fill="' + accent
+        + '" font-size="8" letter-spacing="1.1" text-anchor="middle"'
+        + ' font-family="JetBrains Mono,monospace">IN THE ARENA</text>');
+    }
+
+    // A few of this generation's pairings. The child is drawn between its parents rather
+    // than in a slot: it belongs to the NEXT population and has no slot here yet.
     if (this.pairs.length) {
-      var shown = Math.min(4, this.pairs.length);
+      var shown = Math.min(6, this.pairs.length);
       for (var q = 0; q < shown; q++) {
-        var a = pos[this.pairs[q][0]], b2 = pos[this.pairs[q][1]];
-        if (!a || !b2) continue;
-        var midx = (a.x + b2.x) / 2, midy = (a.y + b2.y) / 2 - 10;
-        var op = (0.5 * this.flash).toFixed(2);
-        p.push('<path d="M' + f(a.x) + ' ' + f(a.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
-          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + accent + '" stroke-width="1.1" opacity="' + op + '"/>');
-        p.push('<path d="M' + f(b2.x) + ' ' + f(b2.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
-          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + accent + '" stroke-width="1.1" opacity="' + op + '"/>');
-        p.push('<circle cx="' + f(midx) + '" cy="' + f(midy) + '" r="3" fill="' + accent
-          + '" opacity="' + (0.85 * this.flash).toFixed(2) + '"/>');
+        var pa = pos[this.pairs[q][0]], pb = pos[this.pairs[q][1]];
+        if (!pa || !pb) continue;
+        var midx = (pa.x + pb.x) / 2, midy = (pa.y + pb.y) / 2 - 10;
+        var op = (0.55 * this.flash).toFixed(2);
+        var kid = hueBlend(hueOf(this.pairs[q][0]), hueOf(this.pairs[q][1]));
+        p.push('<path d="M' + f(pa.x) + ' ' + f(pa.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
+          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + hueCss(hueOf(this.pairs[q][0]), 60)
+          + '" stroke-width="1.1" opacity="' + op + '"/>');
+        p.push('<path d="M' + f(pb.x) + ' ' + f(pb.y) + 'Q' + f(midx) + ' ' + f(midy - 8) + ' '
+          + f(midx) + ' ' + f(midy) + '" fill="none" stroke="' + hueCss(hueOf(this.pairs[q][1]), 60)
+          + '" stroke-width="1.1" opacity="' + op + '"/>');
+        p.push('<circle cx="' + f(midx) + '" cy="' + f(midy) + '" r="3.2" fill="' + hueCss(kid, 62)
+          + '" opacity="' + (0.9 * this.flash).toFixed(2) + '"/>');
       }
+    }
+
+    // The dynasty band: what share of the population descends from each founder, one
+    // column per generation. This is the picture of evolution the grid cannot give,
+    // because the grid only ever shows one generation at a time.
+    var by = h - 66, bh = 22, bw = w - 32, lines = 0;
+    if (this.dynasty.length) {
+      var last = this.dynasty[this.dynasty.length - 1];
+      lines = Object.keys(last).length;
+      var colW = bw / this.dynasty.length;
+      for (var g = 0; g < this.dynasty.length; g++) {
+        var cnt = this.dynasty[g], acc = 0;
+        var keys = Object.keys(cnt).sort(function (m2, n2) { return +m2 - +n2; });
+        for (var k = 0; k < keys.length; k++) {
+          var share = cnt[keys[k]] / n, segH = share * bh;
+          p.push('<rect x="' + f(16 + g * colW) + '" y="' + f(by + acc) + '" width="'
+            + f(Math.max(0.7, colW + 0.3)) + '" height="' + f(Math.max(0.6, segH))
+            + '" fill="' + hueCss(+keys[k] * 360 / n, 55) + '" opacity=".9"/>');
+          acc += segH;
+        }
+      }
+      var fromStart = !this.baseGen;
+      p.push('<text x="' + (w - 16) + '" y="' + (by - 4) + '" fill="#61708a" font-size="9"'
+        + ' text-anchor="end" font-family="JetBrains Mono,monospace">'
+        + lines + ' of ' + n + ' line' + (lines === 1 ? '' : 's') + ' still alive</text>');
+      p.push('<text x="16" y="' + (by - 4) + '" fill="#61708a" font-size="9" letter-spacing="1.1">'
+        + (fromStart ? 'DYNASTIES · one column per generation'
+                     : 'LINES SINCE GENERATION ' + this.baseGen + ' · one column per generation')
+        + '</text>');
     }
 
     var st = this.stats;
     p.push('<text x="16" y="' + (h - 26) + '" fill="#c9d8ee" font-size="11" font-family="JetBrains Mono,monospace">generation '
       + this.gen + '   sigma ' + fmt(st.sigma, 4) + '   diversity ' + fmt(st.diversity, 4) + '</text>');
     p.push('<text x="16" y="' + (h - 9) + '" fill="#7d90ad" font-size="10.5">'
-      + 'Bottom bar = fitness. Lit borders are the elites, carried over untouched. '
-      + 'Each pair of curves is two parents meeting at the child they just made.</text>');
+      + 'Bottom bar = fitness. Lit ones survive and breed; struck-through ones are replaced. '
+      + 'The band is who everyone is descended from.</text>');
     p.push('</svg>');
     return p.join('');
   };

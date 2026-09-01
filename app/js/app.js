@@ -247,7 +247,57 @@
   function esc(s) { return String(s === undefined ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
-  function view(key) { return window.Reveal.view(ALGOS[key]); }
+  /* The identity card's numbers belong to the trainer, not to a copy of them kept here.
+     POPULATION, LAMBDA and BATCH are all academy knobs — the population slider runs from
+     8 to 256 — so a hardcoded "48 individuals" stops being true the moment the author
+     moves one, while the panel a few centimetres away reads the real number off the same
+     run. Filmed side by side, that is a card contradicting a live readout. The static
+     strings stay as the fallback for before the trainer has spoken. */
+  var LIVE_SPEC = {
+    ppo: { BATCH: function (t) { return t.n_envs + ' arenas × ' + t.horizon + ' steps'; } },
+    ga: { POPULATION: function (t) { return t.pop_size + ' individuals'; } },
+    cmaes: { LAMBDA: function (t) { return t.lam + ' samples per generation'; } }
+  };
+  var LIVE_LINE = {
+    ga: function (t) { return 'population ' + t.pop_size + ' · elitism · tournament selection'; },
+    cmaes: function (t) { return 'σ-adaptation · λ=' + t.lam + ' · separable (diagonal)'; }
+  };
+  var LIVE_BLURB = {
+    ga: function (t) {
+      return 'No gradients at all. ' + t.pop_size + ' whole brains a generation; the ones '
+        + 'that survived the room breed, their children are a coin-flip mix with a few '
+        + 'weights nudged.';
+    }
+  };
+
+  /* What a run started right now would actually use: the author's override if there is
+     one, otherwise the trainer's own default, which is the same rule the academy slider
+     reads. Null until `hello` lands — the card then keeps its written text. */
+  function tunablesNow(key) {
+    var a = (App.cat && App.cat.academies && App.cat.academies[key]) || null;
+    if (!a || !a.tunables || !a.tunables.length) return null;
+    var out = {};
+    a.tunables.forEach(function (t) { out[t.key] = hyperValue(key, t); });
+    return out;
+  }
+
+  function view(key) {
+    var algo = ALGOS[key];
+    var t = algo && tunablesNow(key);
+    if (t) {
+      var spec = LIVE_SPEC[key] || {};
+      algo = Object.assign({}, algo, {
+        specs: algo.specs.map(function (row) {
+          // Only rows this table knows how to source live are replaced; the rest are
+          // prose about the method and have no number to go stale.
+          return spec[row[0]] ? [row[0], spec[row[0]](t)] : row;
+        })
+      });
+      if (LIVE_LINE[key]) algo.line = LIVE_LINE[key](t);
+      if (LIVE_BLURB[key]) algo.blurb = LIVE_BLURB[key](t);
+    }
+    return window.Reveal.view(algo);
+  }
 
   /* Centre by translating half the canvas back before scaling, rather than relying on
      flex/grid centring — a 1920-wide child inside a narrower box gets clipped at the

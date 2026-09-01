@@ -548,7 +548,16 @@ class Session:
         replays the same episode frame for frame, alone or in any order. Without it the
         streams simply run on, which is what a straight twelve-arena run wants.
         """
-        pol = self.policies[checkpoint].get(school)
+        # A checkpoint this run does not have is a refusal, not a crash. `policies` was
+        # indexed directly, so a client asking for one -- which the population race made
+        # possible by naming its context "live" -- raised straight out of the command
+        # dispatch and took the whole websocket with it: TRAINER OFFLINE, mid-take.
+        table = self.policies.get(checkpoint)
+        if table is None:
+            return {"type": "error",
+                    "message": f"no checkpoint {checkpoint!r} in this run — "
+                               f"have {', '.join(sorted(self.policies))}"}
+        pol = table.get(school)
         if pol is None:
             return {"type": "error", "message": f"no {school} @ {checkpoint} in this run"}
         mpol = pol
@@ -691,7 +700,10 @@ class Session:
         self.level_seeds = None
         self.race = keys
         self.ctx = {
-            "schools": keys, "checkpoint": "live",
+            # No `checkpoint` key. It named something that is not a checkpoint, the app
+            # adopted it as the one to replay, and the next school opened asked the
+            # trainer to play a checkpoint called "live".
+            "schools": keys,
             "wins": {k: {"catch": 0, "escape": 0, "draw": 0} for k in keys},
             "raceKind": "population", "raceRole": role, "raceSchool": getattr(sch, "key", None),
             "raceLanes": [{"key": keys[i], **meta[i]} for i in range(n)],
@@ -730,7 +742,7 @@ class Session:
             lanes.append({"school": school, **e.render(i)})
         payload = {"type": "race", "mode": "race", "lanes": lanes,
                    "level": self.level, "wins": self.ctx["wins"],
-                   "schools": self.race, "checkpoint": self.ctx["checkpoint"]}
+                   "schools": self.race, "checkpoint": self.ctx.get("checkpoint")}
         # A population race has no schools to look up, so what each lane IS has to travel
         # with the frames. Absent for the three-school race, which reads them from ORDER.
         for extra in ("raceKind", "raceRole", "raceSchool", "raceLanes", "raceGen", "racePop"):

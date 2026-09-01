@@ -140,135 +140,147 @@ async def handler(ws, session, journal, clients, send):
             except Exception:
                 continue
             cmd = m.get("cmd")
-            if cmd == "hello":
-                await ws.send(json.dumps(session.hello(), default=lambda o: o.tolist()))
-            elif cmd == "play":
-                await send(session.start_play(m.get("school", "ppo"),
-                                              m.get("checkpoint", "trained"),
-                                              m.get("opponent", "self"),
-                                              m.get("levels"),
-                                              m.get("mouseSchool"),
-                                              m.get("seeds")))
-            elif cmd == "race":
-                await send(session.start_race(m.get("checkpoint", "trained"), m.get("levels")))
-            elif cmd == "final":
-                await send(session.start_final(int(m.get("rounds", 5))))
-            elif cmd == "trainAll":
-                await send(session.start_train_all(
-                    asyncio.get_running_loop(),
-                    steps=parse_steps(m.get("steps")),
-                    minutes=m.get("minutes") or None,
-                    envs=m.get("envs") or None,
-                    seed=int(m.get("seed", 7)),
-                    tag=m.get("tag", "v5"),
-                    nests=str(m.get("nests", "2")),
-                    device=m.get("device", "auto")))
-            elif cmd == "stopAll":
-                await send(session.stop_train_all())
-            elif cmd == "score":
-                await send(session.start_score(asyncio.get_running_loop(),
-                                               m.get("tag"),
-                                               m.get("checkpoint", "trained")))
-            elif cmd == "useRun":
-                tag = str(m.get("tag", "")).strip()
-                target = (ROOT / "runs" / tag) if tag else None
-                busy = session.busy_reason()
-                if busy:
-                    # Switching runs rebinds the arenas and the policies under whatever is
-                    # training, and the take would then save into the run it was moved to.
-                    await send({"type": "error", "message": busy})
-                elif not target or not target.exists():
-                    await send({"type": "error", "message": f"no run called {tag!r}"})
+            # One bad command must not take the socket with it. The dispatch below ran
+            # bare inside `async for`, so any exception propagated out of the handler and
+            # the connection simply ended -- the app went TRAINER OFFLINE mid-take with
+            # the last frame frozen on screen, and the only clue was a traceback in a
+            # terminal nobody is looking at while filming. A refusal is a message now.
+            try:
+                if cmd == "hello":
+                    await ws.send(json.dumps(session.hello(), default=lambda o: o.tolist()))
+                elif cmd == "play":
+                    await send(session.start_play(m.get("school", "ppo"),
+                                                  m.get("checkpoint", "trained"),
+                                                  m.get("opponent", "self"),
+                                                  m.get("levels"),
+                                                  m.get("mouseSchool"),
+                                                  m.get("seeds")))
+                elif cmd == "race":
+                    await send(session.start_race(m.get("checkpoint", "trained"), m.get("levels")))
+                elif cmd == "final":
+                    await send(session.start_final(int(m.get("rounds", 5))))
+                elif cmd == "trainAll":
+                    await send(session.start_train_all(
+                        asyncio.get_running_loop(),
+                        steps=parse_steps(m.get("steps")),
+                        minutes=m.get("minutes") or None,
+                        envs=m.get("envs") or None,
+                        seed=int(m.get("seed", 7)),
+                        tag=m.get("tag", "v5"),
+                        nests=str(m.get("nests", "2")),
+                        device=m.get("device", "auto")))
+                elif cmd == "stopAll":
+                    await send(session.stop_train_all())
+                elif cmd == "score":
+                    await send(session.start_score(asyncio.get_running_loop(),
+                                                   m.get("tag"),
+                                                   m.get("checkpoint", "trained")))
+                elif cmd == "useRun":
+                    tag = str(m.get("tag", "")).strip()
+                    target = (ROOT / "runs" / tag) if tag else None
+                    busy = session.busy_reason()
+                    if busy:
+                        # Switching runs rebinds the arenas and the policies under whatever is
+                        # training, and the take would then save into the run it was moved to.
+                        await send({"type": "error", "message": busy})
+                    elif not target or not target.exists():
+                        await send({"type": "error", "message": f"no run called {tag!r}"})
+                    else:
+                        session.mode = "idle"
+                        session.load_run_dir(target)
+                        await send({"type": "runSwitched", "tag": tag})
+                        await send(session.hello())
+                elif cmd == "train":
+                    # A live take can be budgeted in minutes, in environment steps, or both.
+                    # `minutes: null` with a step budget is the overnight form.
+                    mins = m.get("minutes", 5)
+                    await send(session.start_train(m.get("school", "ppo"),
+                                                   None if mins is None else float(mins),
+                                                   int(m.get("seed", 11)),
+                                                   steps=parse_steps(m.get("steps")),
+                                                   shaping=m.get("shaping"),
+                                                   hyper=m.get("hyper")))
+                elif cmd == "popRace":
+                    # Six of one generation in twelve identical rooms: the best three and the
+                    # three that were about to be replaced, same opponent, same dice.
+                    await send(session.start_pop_race(m.get("role", "cat"),
+                                                      int(m.get("lanes", 4))))
+                elif cmd == "shadow":
+                    # Back to the training arena of a run that is still going, without
+                    # touching the optimiser. A checkpoint pill moves the session to `play`,
+                    # and that used to end scrubbing for the rest of the run — this is the
+                    # way back, and the reel sends it itself before a pin.
+                    await send(session.shadow())
+                elif cmd == "pin":
+                    # Scrub the run: play the arena on the weights it had at one evaluation,
+                    # or `null` to go back to whatever the optimiser holds now.
+                    await send(session.pin(m.get("at"), m.get("school")))
+                elif cmd == "speed":
+                    session.speed = max(0.25, float(m.get("value", 4)))
+                    await send({"type": "state", **session.state()})
+                elif cmd in ("pause", "resume"):
+                    session.playing = cmd == "resume"
+                    await send({"type": "state", **session.state()})
+                elif cmd == "skip":
+                    # Run the episode out silently, then send only its final frame and its
+                    # result. The result message is emitted by the tick that ENDS the
+                    # episode, so that tick's output is what has to be forwarded — a fresh
+                    # tick afterwards finds the result already recorded and stays quiet.
+                    env = session.env
+                    if env is None:
+                        await send({"type": "error", "message": "nothing is playing to skip"})
+                    else:
+                        tail: list[dict] = []
+                        guard = 0
+                        while not env.done[0] and guard < 400:
+                            guard += 1
+                            tail = session.tick()
+                        for msg in (tail or session.tick()):
+                            await send(msg)
+                elif cmd == "next":
+                    end = session.advance()
+                    await send(end or {"type": "state", **session.state()})
+                elif cmd == "reset":
+                    # Everyone watching should land in the same empty state at the same
+                    # moment, so this goes out to every client rather than just the one
+                    # that pressed the button.
+                    await send(session.reset_to_zero(int(m.get("seed", 0))))
+                    await send({"type": "state", **session.state()})
+                elif cmd == "stop":
+                    # Ends the ON-CAMERA take. Three things this deliberately does NOT do:
+                    #
+                    #  * it does not touch the three-school run — `stop` is what the arena's
+                    #    own button and shift+S send, and one keystroke meant for a take must
+                    #    not end an hour-long background run. That is `stopAll`.
+                    #  * it does not idle the arena while a take is wrapping up. Stopping is
+                    #    a request honoured at the next iteration boundary, and the tail after
+                    #    it (final scoring, the peak-versus-finish run-off) is tens of seconds
+                    #    more. Freezing the arena at the key press made every stop look like a
+                    #    crash, seconds before anything had actually stopped.
+                    #  * it does not stay silent when there is nothing to stop.
+                    sch = session.train_school
+                    if sch is not None:
+                        sch.request_stop()
+                        await send({"type": "trainStopping", "school": sch.key})
+                    elif session.runner is not None and session.runner.poll() is None:
+                        await send({"type": "error", "message":
+                                    "that stops a live take — the three-school run is ended "
+                                    "with STOP on the RUNS screen"})
+                    else:
+                        await send({"type": "error", "message": "nothing is training"})
+                        session.mode = "idle"
+                    await send({"type": "state", **session.state()})
                 else:
-                    session.mode = "idle"
-                    session.load_run_dir(target)
-                    await send({"type": "runSwitched", "tag": tag})
-                    await send(session.hello())
-            elif cmd == "train":
-                # A live take can be budgeted in minutes, in environment steps, or both.
-                # `minutes: null` with a step budget is the overnight form.
-                mins = m.get("minutes", 5)
-                await send(session.start_train(m.get("school", "ppo"),
-                                               None if mins is None else float(mins),
-                                               int(m.get("seed", 11)),
-                                               steps=parse_steps(m.get("steps")),
-                                               shaping=m.get("shaping"),
-                                               hyper=m.get("hyper")))
-            elif cmd == "popRace":
-                # Six of one generation in twelve identical rooms: the best three and the
-                # three that were about to be replaced, same opponent, same dice.
-                await send(session.start_pop_race(m.get("role", "cat"),
-                                                  int(m.get("lanes", 4))))
-            elif cmd == "shadow":
-                # Back to the training arena of a run that is still going, without
-                # touching the optimiser. A checkpoint pill moves the session to `play`,
-                # and that used to end scrubbing for the rest of the run — this is the
-                # way back, and the reel sends it itself before a pin.
-                await send(session.shadow())
-            elif cmd == "pin":
-                # Scrub the run: play the arena on the weights it had at one evaluation,
-                # or `null` to go back to whatever the optimiser holds now.
-                await send(session.pin(m.get("at"), m.get("school")))
-            elif cmd == "speed":
-                session.speed = max(0.25, float(m.get("value", 4)))
-                await send({"type": "state", **session.state()})
-            elif cmd in ("pause", "resume"):
-                session.playing = cmd == "resume"
-                await send({"type": "state", **session.state()})
-            elif cmd == "skip":
-                # Run the episode out silently, then send only its final frame and its
-                # result. The result message is emitted by the tick that ENDS the
-                # episode, so that tick's output is what has to be forwarded — a fresh
-                # tick afterwards finds the result already recorded and stays quiet.
-                env = session.env
-                if env is None:
-                    await send({"type": "error", "message": "nothing is playing to skip"})
-                else:
-                    tail: list[dict] = []
-                    guard = 0
-                    while not env.done[0] and guard < 400:
-                        guard += 1
-                        tail = session.tick()
-                    for msg in (tail or session.tick()):
-                        await send(msg)
-            elif cmd == "next":
-                end = session.advance()
-                await send(end or {"type": "state", **session.state()})
-            elif cmd == "reset":
-                # Everyone watching should land in the same empty state at the same
-                # moment, so this goes out to every client rather than just the one
-                # that pressed the button.
-                await send(session.reset_to_zero(int(m.get("seed", 0))))
-                await send({"type": "state", **session.state()})
-            elif cmd == "stop":
-                # Ends the ON-CAMERA take. Three things this deliberately does NOT do:
-                #
-                #  * it does not touch the three-school run — `stop` is what the arena's
-                #    own button and shift+S send, and one keystroke meant for a take must
-                #    not end an hour-long background run. That is `stopAll`.
-                #  * it does not idle the arena while a take is wrapping up. Stopping is
-                #    a request honoured at the next iteration boundary, and the tail after
-                #    it (final scoring, the peak-versus-finish run-off) is tens of seconds
-                #    more. Freezing the arena at the key press made every stop look like a
-                #    crash, seconds before anything had actually stopped.
-                #  * it does not stay silent when there is nothing to stop.
-                sch = session.train_school
-                if sch is not None:
-                    sch.request_stop()
-                    await send({"type": "trainStopping", "school": sch.key})
-                elif session.runner is not None and session.runner.poll() is None:
-                    await send({"type": "error", "message":
-                                "that stops a live take — the three-school run is ended "
-                                "with STOP on the RUNS screen"})
-                else:
-                    await send({"type": "error", "message": "nothing is training"})
-                    session.mode = "idle"
-                await send({"type": "state", **session.state()})
-            else:
-                # No `else` at all meant a typo, a stale client and a dropped packet were
-                # the same event: nothing happened and nothing said so.
-                await ws.send(json.dumps({"type": "error",
-                                          "message": f"unknown command {cmd!r}"}))
+                    # No `else` at all meant a typo, a stale client and a dropped packet were
+                    # the same event: nothing happened and nothing said so.
+                    await ws.send(json.dumps({"type": "error",
+                                              "message": f"unknown command {cmd!r}"}))
+            except Exception as exc:
+                traceback.print_exc()
+                with contextlib.suppress(Exception):
+                    await ws.send(json.dumps({
+                        "type": "error",
+                        "message": f"{cmd} failed: {type(exc).__name__}: {exc}"}))
     finally:
         clients.discard(ws)
 

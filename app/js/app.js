@@ -1350,23 +1350,40 @@
      Two rows of three is what actually uses the frame: the cell roughly doubles. */
   function raceLayout(n) {
     n = Math.max(1, n);
-    var perRow = n <= 3 ? n : 3;
-    var rows = Math.ceil(n / perRow);
-    var wAvail = 1920 - 40 - 14 * (perRow - 1) - 24 * perRow;   // padding, gaps, card padding
-    // Header, row gaps, the twelve-room matrix and the button row all come off the
-    // height before the panes get any of it.
-    // The matrix is one row per lane, so its height is not a constant: at six lanes the
-    // 190px written for three put the last row at y=1082 on a canvas 1080 tall and ran
-    // the one above it through the button bar. Six lanes also get the compact row.
+    // Every arrangement is tried and the one with the biggest cell wins, rather than a
+    // rule of thumb per lane count. Three across was right for six lanes and wrong for
+    // four: four in one row gives a 16px cell against 15 in two rows of two, and it also
+    // leaves 3px of slack per card instead of 244 — the arena inside a card is a grid of
+    // square cells, so it cannot stretch to fill a card that is wider than it needs.
+    // Ties go to fewer rows.
     var compact = n > 3;
-    // The 56 is the button bar; the 30 after it is slack, because the header and each
-    // card's own title row measure a little larger than the estimate and the failure mode
-    // is the matrix sliding under the buttons rather than anything visibly breaking.
-    var hAvail = 1080 - 36 - 84 - 14 * (rows - 1) - (46 + n * (compact ? 26 : 44)) - 56 - 30;
-    var byW = Math.floor(wAvail / perRow / E.W);
-    var byH = Math.floor((hAvail / rows - 70) / E.H);
-    return { cs: Math.max(6, Math.min(RCS, byW, byH)), perRow: perRow, rows: rows,
-             compact: compact };
+    // One row per lane in the twelve-room matrix, so its height is not a constant: the
+    // 190px written for three lanes put the last row of six at y=1082 on a canvas 1080
+    // tall and ran the one above it through the button bar.
+    var matrix = 46 + n * (compact ? 26 : 44);
+    var best = null;
+    for (var perRow = 1; perRow <= n; perRow++) {
+      var rows = Math.ceil(n / perRow);
+      var wAvail = 1920 - 40 - 14 * (perRow - 1) - 24 * perRow;  // padding, gaps, card padding
+      // The 56 is the button bar; the 30 after it is slack, because the header and each
+      // card's own title row measure a little larger than this estimate, and the failure
+      // mode is the matrix sliding under the buttons rather than anything visibly broken.
+      var hAvail = 1080 - 36 - 84 - 14 * (rows - 1) - matrix - 56 - 30;
+      var cs = Math.max(6, Math.min(RCS, Math.floor(wAvail / perRow / E.W),
+                                    Math.floor((hAvail / rows - 70) / E.H)));
+      if (!best || cs > best.cs || (cs === best.cs && rows < best.rows)) {
+        best = { cs: cs, perRow: perRow, rows: rows, compact: compact };
+      }
+    }
+    // Once the cell is bound by WIDTH — four lanes in one row is — the height left over
+    // is not small, and it has to go somewhere. Giving the matrix `flex:1` and letting it
+    // take all of it produced 130px cells holding one letter, which looks more broken
+    // than the gap did. The rows get the slack up to a ceiling instead, and whatever is
+    // still spare becomes bottom margin, which reads as composition rather than a void.
+    var paneBlock = best.rows * (E.H * best.cs + 70) + 14 * (best.rows - 1);
+    var left = 1080 - 36 - 84 - paneBlock - 56 - 14 - 46 - 32;
+    best.rowH = Math.max(26, Math.min(72, Math.floor(left / n)));
+    return best;
   }
 
   /* A lane is a SCHOOL in the three-school race and a GENOME in the population race.
@@ -1437,7 +1454,10 @@
            + '<div class="title" style="font-size:44px;margin-top:4px">SIDE BY SIDE</div></div>')
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
       + '<div style="position:relative;display:flex;flex-wrap:wrap;gap:14px;margin-top:14px">' + lanes + '</div>'
-      + raceMatrix(schools, lay.compact)
+      + raceMatrix(schools, lay.compact, lay.rowH)
+      // Anchored to the bottom of the frame, like every other screen's button bar. Any
+      // slack then sits BETWEEN two blocks of content rather than as a black band under
+      // the last one, which is what it looks like in a recorded frame.
       + '<div style="position:relative;display:flex;gap:10px;margin-top:auto;align-items:center">'
       + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
       + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
@@ -1455,7 +1475,11 @@
   /* The same twelve rooms, three schools, one grid. Reading down a column tells you
      whether a room is hard or whether one school simply solved it — which is the
      comparison the side-by-side view exists to make. */
-  function raceMatrix(schools, compact) {
+  /* Sized by flex rather than arithmetic. Once the cell is bound by WIDTH — four lanes
+     in one row is — the height left over is not small: the matrix ended at y=660 with the
+     buttons at 1018, and 358px of nothing between them. Rather than compute that gap and
+     spend it, the matrix is given `flex:1` and its rows share whatever is there. */
+  function raceMatrix(schools, compact, rowH) {
     var pad = compact ? '3px 0' : '7px 0';
     var gap = compact ? 3 : 6;
     var n = App.cat ? App.cat.levels.length : 12;
@@ -1475,7 +1499,8 @@
       var cells = '';
       for (var i = 0; i < n; i++) {
         var x = r[i];
-        cells += '<div style="flex:1;text-align:center;padding:' + pad + ';border-radius:5px;border:1px solid '
+        cells += '<div style="flex:1;align-self:stretch;display:flex;align-items:center;'
+          + 'justify-content:center;text-align:center;padding:' + pad + ';border-radius:5px;border:1px solid '
           + (x === 'catch' ? 'rgba(255,138,92,.36)' : x === 'escape' ? 'rgba(126,224,255,.32)'
              : x ? 'var(--line)' : 'rgba(130,160,200,.09)')
           + ';background:' + (x === 'catch' ? 'rgba(255,122,84,.14)' : x === 'escape' ? 'rgba(110,226,255,.12)'
@@ -1484,10 +1509,12 @@
           + (x === 'catch' ? '#ff9a72' : x === 'escape' ? '#7ee0ff' : x ? '#8fa4c4' : '#31405a')
           + '">' + (x === 'catch' ? 'T' : x === 'escape' ? 'J' : x ? '–' : '·') + '</span></div>';
       }
-      return '<div style="display:flex;align-items:center;gap:4px;margin-top:' + gap + 'px">'
-        + '<div class="mono" style="width:100px;font-size:12px;color:' + (v.sealed ? '#8494ad' : v.color) + '">'
-        + esc(v.short) + '</div>' + cells
-        + '<div class="mono" style="width:78px;text-align:right;font-size:12px">'
+      return '<div style="display:flex;align-items:stretch;gap:4px;height:' + rowH
+        + 'px;margin-top:' + gap + 'px">'
+        + '<div class="mono" style="width:100px;font-size:12px;display:flex;align-items:center;color:'
+        + (v.sealed ? '#8494ad' : v.color) + '">' + esc(v.short) + '</div>' + cells
+        + '<div class="mono" style="width:78px;justify-content:flex-end;display:flex;'
+        + 'align-items:center;font-size:12px">'
         + '<span style="color:var(--cat)">' + c + '</span><span class="faint">/</span>'
         + '<span style="color:var(--mouse)">' + m + '</span></div></div>';
     }).join('');
@@ -2449,7 +2476,7 @@
         } else {
           App.raceFrames = {}; App.racePrev = {}; App.raceDone = {};
           App.raceWins = {}; App.raceGrid = {};
-          App.net.send({ cmd: 'popRace', role: 'cat' });
+          App.net.send({ cmd: 'popRace', role: 'cat', lanes: 4 });
         }
       }
       else if (k === 'b') go('board');

@@ -636,7 +636,7 @@ class Session:
         self._begin_episode()
         return {"type": "state", **self.state()}
 
-    def start_pop_race(self, role: str = "cat") -> dict:
+    def start_pop_race(self, role: str = "cat", lanes: int = 4) -> dict:
         """The best and the worst of one generation, in the same room, at the same time.
 
         The grid says a hundred and five of these are replaced; it cannot say WHY, because
@@ -661,7 +661,17 @@ class Session:
                     f"{getattr(sch, 'key', 'this school')} does not breed a population — "
                     "the race is for the evolutionary schools"}
         other = "mouse" if role == "cat" else "cat"
-        rows = show["rows"]
+        # The showcase keeps three at each end; how many of them are RACED is the screen's
+        # decision, not the optimiser's, so it is sliced here rather than captured again.
+        # Symmetric by construction: the same count is taken off each end, or the panes
+        # stop meaning "kept" and "replaced".
+        stored = int(show["rows"].shape[0])
+        half = max(1, min(int(lanes) // 2, stored // 2))
+        picks = list(range(half)) + list(range(stored - half, stored))
+        rows = show["rows"][picks]
+        show = {**show, "fit": [show["fit"][i] for i in picks],
+                "rank": [show["rank"][i] for i in picks],
+                "idx": [show["idx"][i] for i in picks]}
         n = int(rows.shape[0])
         keys = ["g%d" % i for i in range(n)]
         self.mode = "race"

@@ -197,7 +197,8 @@ async def handler(ws, session, journal, clients, send):
             elif cmd == "popRace":
                 # Six of one generation in twelve identical rooms: the best three and the
                 # three that were about to be replaced, same opponent, same dice.
-                await send(session.start_pop_race(m.get("role", "cat")))
+                await send(session.start_pop_race(m.get("role", "cat"),
+                                                  int(m.get("lanes", 4))))
             elif cmd == "shadow":
                 # Back to the training arena of a run that is still going, without
                 # touching the optimiser. A checkpoint pill moves the session to `play`,

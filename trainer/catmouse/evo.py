@@ -53,6 +53,9 @@ class EvoSchool(School):
         for r in ("cat", "mouse"):
             self.hof[r].add(self.best[r])
         self.gen = 0
+        # The best and worst few of the last generation that was actually SCORED, kept so
+        # the arena can race them against each other. See `_showcase`.
+        self.showcase: dict = {}
         self.promo = {r: Promotion(calibrated_bars(self.maps, r)) for r in ("cat", "mouse")}
         self._eval_env = None
         self.setup_optimiser()
@@ -142,6 +145,26 @@ class EvoSchool(School):
             float(e.step_n.mean()),
         )
 
+    def _showcase(self, pop: np.ndarray, fit: np.ndarray, k: int = 3) -> dict:
+        """The top k and bottom k of one scored generation, with their real ranks.
+
+        Ranks are 1-based over the whole population, not over the six kept, so a lane can
+        say "120 of 120" rather than "6 of 6" -- the size of the field it came last in is
+        most of what the number means.
+        """
+        order = np.argsort(-fit)
+        k = int(min(k, max(1, len(order) // 2)))
+        picks = [int(i) for i in list(order[:k]) + list(order[-k:])]
+        rank = {int(g): r + 1 for r, g in enumerate(order)}
+        return {
+            "gen": self.gen,
+            "rows": np.stack([pop[i] for i in picks]).astype(np.float32),
+            "fit": [float(fit[i]) for i in picks],
+            "rank": [rank[i] for i in picks],
+            "idx": picks,
+            "size": int(len(fit)),
+        }
+
     # ---------- one generation ----------
 
     def iteration(self) -> dict:
@@ -162,6 +185,11 @@ class EvoSchool(School):
                 role, pop, panel, seed=self.seed + self.gen * 131 + (role == "mouse"),
                 phase=self.promo[role].phase)
             t = self.tell(role, pop, fit)
+            # After `tell` the losers are gone -- it has already written the next
+            # generation over `self.pop`, and the ones that did not breed are not in it.
+            # They are exactly what a population race exists to show, so the few at each
+            # end are kept here. Six rows, not a generation: this runs every iteration.
+            self.showcase[role] = self._showcase(pop, fit)
             promoted = self.promo[role].update(counts["ladderWin"], self.run.steps)
             if promoted:
                 self.emit("promotion", role=role, year=self.promo[role].phase + 1)

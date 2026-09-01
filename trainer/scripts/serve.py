@@ -21,6 +21,7 @@ Commands the app sends:
                                                         one academy, its own knobs
     {"cmd":"pin","at":12}   {"cmd":"pin","at":null}     scrub the run / back to live
     {"cmd":"shadow"}                                    back to a live run's arena
+    {"cmd":"popRace","role":"cat"}                      best vs worst of one generation
     {"cmd":"train","school":"ga","minutes":null,"steps":"500M"}   ... to a step budget
     {"cmd":"speed","value":4}  {"cmd":"pause"}  {"cmd":"resume"}
     {"cmd":"skip"}                                      finish this episode instantly
@@ -193,6 +194,11 @@ async def handler(ws, session, journal, clients, send):
                                                steps=parse_steps(m.get("steps")),
                                                shaping=m.get("shaping"),
                                                hyper=m.get("hyper")))
+            elif cmd == "popRace":
+                # Six of one generation in twelve identical rooms: the best three and the
+                # three that were about to be replaced, same opponent, same dice.
+                await send(session.start_pop_race(m.get("role", "cat"),
+                                                  int(m.get("lanes", 4))))
             elif cmd == "shadow":
                 # Back to the training arena of a run that is still going, without
                 # touching the optimiser. A checkpoint pill moves the session to `play`,

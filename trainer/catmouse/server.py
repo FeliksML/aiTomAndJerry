@@ -665,13 +665,25 @@ class Session:
         # decision, not the optimiser's, so it is sliced here rather than captured again.
         # Symmetric by construction: the same count is taken off each end, or the panes
         # stop meaning "kept" and "replaced".
+        # A school that carries a distribution plays its CENTRE in the arena, not its
+        # best sample -- see `best = mean` in the CMA-ES `tell`. That brain was never
+        # drawn and never scored, so it cannot come out of the showcase; it is the one
+        # thing on this screen the other two schools have no equivalent for, and it gets
+        # a lane of its own rather than a sentence nobody reads.
+        mean = getattr(sch, "mean", None)
+        mean_row = None
+        if isinstance(mean, dict) and role in mean:
+            mean_row = np.asarray(mean[role], np.float32)
         stored = int(show["rows"].shape[0])
-        half = max(1, min(int(lanes) // 2, stored // 2))
+        take = max(1, (int(lanes) - (1 if mean_row is not None else 0)) // 2)
+        half = max(1, min(take, stored // 2))
         picks = list(range(half)) + list(range(stored - half, stored))
         rows = show["rows"][picks]
-        show = {**show, "fit": [show["fit"][i] for i in picks],
-                "rank": [show["rank"][i] for i in picks],
-                "idx": [show["idx"][i] for i in picks]}
+        meta = [{"rank": show["rank"][i], "fitness": show["fit"][i], "genome": show["idx"][i]}
+                for i in picks]
+        if mean_row is not None:
+            rows = np.concatenate([mean_row[None, :], rows], axis=0)
+            meta = [{"rank": None, "fitness": None, "genome": None, "mean": True}] + meta
         n = int(rows.shape[0])
         keys = ["g%d" % i for i in range(n)]
         self.mode = "race"
@@ -682,8 +694,7 @@ class Session:
             "schools": keys, "checkpoint": "live",
             "wins": {k: {"catch": 0, "escape": 0, "draw": 0} for k in keys},
             "raceKind": "population", "raceRole": role, "raceSchool": getattr(sch, "key", None),
-            "raceLanes": [{"key": keys[i], "rank": show["rank"][i], "fitness": show["fit"][i],
-                           "genome": show["idx"][i]} for i in range(n)],
+            "raceLanes": [{"key": keys[i], **meta[i]} for i in range(n)],
             "raceGen": show["gen"], "racePop": show["size"],
         }
         self.level_order = list(range(len(self.maps)))

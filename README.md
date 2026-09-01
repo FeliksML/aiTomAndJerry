@@ -44,7 +44,9 @@ child already writes.
 `l` full-screen lesson · `w` how the algorithm works · `v` verdict · `esc` menu · `space` pause ·
 `s` skip an episode · `[` `]` speed ·
 `h` highlight reel · **`n` this academy** (budget, shaping, its knobs, train it) ·
-`t` train the school on screen · `shift+S` end a run early · `?` key card · **`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
+`t` train the school on screen · **`p` the best and worst of one live generation** ·
+`c` sprite skins · `shift+T` the RUNS screen · `shift+S` end a run early · `?` key card ·
+**`r` reveal the next school**, `shift+R` re-seal one, `shift+0` re-seal all.
 
 ## Inside an academy · `n`
 
@@ -319,7 +321,8 @@ Nothing is a mock-up; every panel is fed from its own optimiser while it runs.
 - **PPO** — the five action probabilities on a fixed probe batch, and the importance
   ratio against the clip band. The histogram piles up inside the band: that *is* the
   clipped objective, and you can watch the update not being allowed to move.
-- **GA** — 48 genomes as DNA strips, ranked, elites lit, curves joining a child to its
+- **GA** — the generation as tiles laid out by genome so one can be followed, coloured by
+  ancestry, the condemned struck through, a dynasty band underneath, curves joining a child to its
   two parents. The strips are a fixed random projection of the weights, so a child
   visibly resembles its parents instead of looking like fresh noise.
 - **CMA-ES** — the sampled brains projected onto the two principal directions of the real

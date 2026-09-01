@@ -111,7 +111,12 @@
       { k: 'STEP 6 · CONVERGE', t: 'The cloud collapses onto an answer.',
         b: ['Round after round it tightens until every sample is basically the same Tom. That is convergence, and the final centre is your trained agent.',
             'Fewer wasted runs than a GA, no gradients at all — but it is happiest on a smooth landscape. On a spiky one, {POP} brawling Toms can still take it.'],
-        take: 'The elegant one — and the only school that trained both animals well.' }
+        // Was "and the only school that trained both animals well", which this app's own
+        // leaderboard refutes on the shipped run: PPO leads both roles (74% and 57%) and
+        // CMA-ES is last among the cats. A takeaway may describe the method's character —
+        // the other two do — but not hand down a tournament result the board disagrees
+        // with, least of all one written before any tournament was run.
+        take: 'The elegant one — it learns the shape of the search, not just where to look.' }
     ]
   };
 

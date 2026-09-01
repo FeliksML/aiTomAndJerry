@@ -406,10 +406,19 @@
     }
   }
 
+  /* Reveal state survives a reload on purpose — a crash mid-shoot must not unseal the rest
+     of the video. The cost is that a rehearsal spends the reveals and the next session
+     opens with all three schools already named, at which point sections 3 and 4 of the run
+     of show have nothing to reveal and the only defence is the author remembering to check.
+     So the wrong state announces itself: carried over from a previous session, as opposed
+     to raised in this one, is a difference this chip can see and now says. */
   function revealChip() {
     var lv = window.Reveal.level;
-    return '<span class="chip" style="border-color:rgba(255,209,102,.3);color:#ffd166">REVEAL ' + (lv + 1) + ' / '
-      + (window.Reveal.max + 1) + ' &nbsp;·&nbsp; R</span>';
+    var stale = lv > 0 && !App.revealTouched;
+    return '<span class="chip" style="border-color:' + (stale ? 'rgba(255,138,92,.55)' : 'rgba(255,209,102,.3)')
+      + ';color:' + (stale ? '#ff9a72' : '#ffd166') + '">REVEAL ' + (lv + 1) + ' / '
+      + (window.Reveal.max + 1) + ' &nbsp;·&nbsp; ' + (stale ? 'CARRIED OVER · SHIFT+0 TO RE-SEAL' : 'R')
+      + '</span>';
   }
 
   /* ---------------- screens ---------------- */
@@ -2784,6 +2793,8 @@
 
     window.Reveal.bindKeys();
     window.Reveal.on(function () {
+      // Raised in THIS session, so the chip stops warning about a state the author chose.
+      App.revealTouched = true;
       // Re-sealing a school mid-read (shift+R for a re-shoot) must not leave the modal
       // up with nothing in it — and nothing swallowing the keyboard.
       if (App.explain && view(App.school).sealed) closeExplain();

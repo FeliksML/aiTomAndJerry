@@ -1382,7 +1382,7 @@
     // still spare becomes bottom margin, which reads as composition rather than a void.
     var paneBlock = best.rows * (E.H * best.cs + 70) + 14 * (best.rows - 1);
     var left = 1080 - 36 - 84 - paneBlock - 56 - 14 - 46 - 32;
-    best.rowH = Math.max(26, Math.min(72, Math.floor(left / n)));
+    best.rowH = Math.max(26, Math.min(96, Math.floor(left / n)));
     return best;
   }
 
@@ -1395,11 +1395,20 @@
     var i = -1;
     for (var j = 0; j < lanes.length; j++) if (lanes[j].key === k) { i = j; break; }
     var L = i >= 0 ? lanes[i] : null;
-    var half = Math.ceil(lanes.length / 2) || 1;
-    var kept = i >= 0 && i < half;
-    // Kept and replaced are two families of colour, not six arbitrary ones: the split is
-    // the point of the screen, and six unrelated hues would hide it.
-    var hue = kept ? 96 + i * 24 : 6 + (i - half) * 14;
+    // The distribution's centre is not a rank and has no fitness -- it was never drawn
+    // and never scored. Gold, and named for what it is, because it is the only lane the
+    // arena is actually playing.
+    if (L && L.mean) {
+      return { color: 'var(--gold)', short: 'THE CENTRE', sub: 'never sampled · in the arena',
+               kept: true, mean: true, sealed: false, emblem: null };
+    }
+    var scored = lanes.filter(function (x) { return !x.mean; });
+    var si = scored.indexOf(L);
+    var half = Math.ceil(scored.length / 2) || 1;
+    var kept = si >= 0 && si < half;
+    // Two families of colour, not N arbitrary ones: better and worse is the split the
+    // screen exists to show, and unrelated hues would hide it.
+    var hue = kept ? 96 + si * 24 : 6 + (si - half) * 14;
     return {
       color: 'hsl(' + hue + ',64%,' + (kept ? 58 : 56) + '%)',
       short: L ? 'RANK ' + L.rank : k,
@@ -1448,8 +1457,14 @@
       + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
       + (pop
          ? '<div><div class="kicker">Same room · same spawns · same noise · same opponent · '
-           + 'six brains out of one generation</div>'
-           + '<div class="title" style="font-size:44px;margin-top:4px">KEPT AND REPLACED</div></div>'
+           + schools.length + ' brains out of one generation</div>'
+           + '<div class="title" style="font-size:44px;margin-top:4px">'
+           // CMA-ES keeps nobody. There is no elite to carry over and no pair to breed:
+           // the whole sample is thrown away every generation and the next one is drawn
+           // fresh from a distribution, so KEPT AND REPLACED would name a mechanism this
+           // school does not have.
+           + (App.raceSchool === 'cmaes' ? 'THE BEST AND WORST DRAWS' : 'KEPT AND REPLACED')
+           + '</div></div>'
          : '<div><div class="kicker">Same room · same spawns · same noise · three different brains</div>'
            + '<div class="title" style="font-size:44px;margin-top:4px">SIDE BY SIDE</div></div>')
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
@@ -1466,8 +1481,15 @@
       + 'Arena ' + (((App.runState || {}).level || 0) + 1) + ' of ' + (App.cat ? App.cat.levels.length : 12)
       + (pop
          ? ' &nbsp;·&nbsp; generation ' + (App.raceGen === undefined ? '—' : App.raceGen)
-           + ' of ' + (App.racePop || '—') + ' brains · the left three were kept, the right three '
-           + 'were replaced · nothing differs between the panes except the genome.'
+           + ' \u00b7 ' + (App.racePop || '—') + ' brains · '
+           + (App.raceSchool === 'cmaes'
+              // The one fact that separates this school from the other two, and it is not
+              // visible in any pane: what the arena plays is the centre of the cloud, a
+              // brain that was never drawn and never scored. See `best = mean` in tell().
+              ? 'none of these survives — the cloud keeps the direction they point in, not '
+                + 'the brains · the arena plays its centre, which was never one of them'
+              : 'the left ones were kept, the right ones were replaced')
+           + ' · nothing differs between the panes except the genome.'
          : ' &nbsp;·&nbsp; nothing differs between the three panes except the policy.')
       + '</div></div></div>';
   }
@@ -2691,11 +2713,20 @@
       })
       .on('race', function (m) {
         App.lastFrameAt = performance.now();
+        // WHAT the lanes are can change without the level changing, and the screen is
+        // first drawn from the `state` reply — before any lane has arrived, so it falls
+        // back to the three schools. Pressing p with a run already on level 0 therefore
+        // drew SIDE BY SIDE, with PPO / GA / CMA-ES over a population race that had
+        // genuinely started: the level test below never fired, so nothing corrected it.
+        var laneSig = (m.schools || []).join(',') + '|' + (m.raceKind || '');
+        var laneChanged = laneSig !== App.raceSig;
+        App.raceSig = laneSig;
         App.raceSchools = m.schools;
         // Only the population race sends these. Cleared rather than left standing, or a
         // three-school race after one would draw its lanes as somebody's genomes.
         App.raceKind = m.raceKind || null;
         App.raceLanes = m.raceLanes || null;
+        App.raceSchool = m.raceSchool || null;
         App.raceGen = m.raceGen;
         App.racePop = m.racePop;
         App.raceWins = m.wins;
@@ -2711,7 +2742,7 @@
         App.raceFrames = next;
         App.alpha = 0;
         if (m.map) { App.map = m.map; }
-        if ((App.runState || {}).level !== m.level) {
+        if (laneChanged || (App.runState || {}).level !== m.level) {
           App.runState = Object.assign({}, App.runState, { level: m.level });
           App.raceDone = {};
           App.raceDoneAt = {};

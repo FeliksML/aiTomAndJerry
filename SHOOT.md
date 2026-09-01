@@ -110,9 +110,22 @@ collapses to one or two bloodlines while you watch.
 `3` → `l`. The sample cloud and its ellipse. Say what the ellipse is: the real spread of
 this generation's samples — lambda of them, whatever the academy is set to — projected onto
 its own two principal directions.
-Watch it stretch along whatever keeps working. Worth being straight about: this is
-*separable* CMA-ES — a full covariance over 2,853 weights is 8.1M numbers, and giving
-CMA-ES a smaller network than the others would have broken the comparison.
+
+**Do not say "watch it stretch".** It will not. Thirty-two samples in 2,853 dimensions have
+near-equal leading eigenvalues, so any two-dimensional projection of this cloud is round —
+measured across a whole 45-minute run the ellipse ratio never leaves 1.01–1.02. The
+stretching is real but it happens across all 2,853 axes, which is what the CONDITION row
+reports; the two drawn axes cannot show it, and the row says so.
+
+What *does* move is the size. The big frame rescales to the cloud every generation to keep
+the dots legible, so read the **± ring value** for the scale, and watch the small
+**AT GENERATION 1'S SCALE** inset beside the stats — that one never rescales, so the cloud
+visibly widens while it is still exploring and then collapses to a knot. That is the beat:
+*it stops looking around*.
+
+Worth being straight about: this is *separable* CMA-ES — a full covariance over 2,853
+weights is 8.1M numbers, and giving CMA-ES a smaller network than the others would have
+broken the comparison.
 
 ## 5 · Training, live
 

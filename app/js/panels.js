@@ -600,9 +600,32 @@
       p.push('<text x="' + f(lx) + '" y="' + f(ry + 15) + '" fill="#e8eef9" font-size="15" font-family="JetBrains Mono,monospace">' + rows[rI][1] + '</text>');
       p.push('<text x="' + f(lx + 74) + '" y="' + f(ry + 14) + '" fill="#61708a" font-size="10">' + rows[rI][2] + '</text>');
     }
+    /* The main frame rescales to the cloud every generation, which is what keeps the dots
+       legible as sigma falls — and what makes generation 1 and generation 3,000 the same
+       picture. The contraction was reported only in digits. This is the same cloud drawn
+       at the scale it had in generation ONE and never rescaled, so the collapse is the
+       thing that moves. It is small on purpose: by the end there is not much left of it,
+       and that is the point. */
+    if (this.scale0) {
+      var ix = lx + 58, iy = 46 + rows.length * 34 + 62, ir = 50;
+      var ik = ir / this.scale0;
+      p.push('<text x="' + f(lx) + '" y="' + f(iy - ir - 12) + '" fill="#7d90ad" font-size="10" letter-spacing="1">AT GENERATION 1\u2019S SCALE</text>');
+      p.push('<circle cx="' + f(ix) + '" cy="' + f(iy) + '" r="' + ir + '" fill="none" stroke="rgba(130,160,200,.18)" stroke-width="1"/>');
+      p.push('<circle cx="' + f(ix) + '" cy="' + f(iy) + '" r="' + f(ir / 2) + '" fill="none" stroke="rgba(130,160,200,.09)" stroke-width="1"/>');
+      for (var q = 0; q < this.samples.length; q++) {
+        var sq = this.samples[q];
+        var qx = ix + sq[0] * ik, qy = iy - sq[1] * ik;
+        var dx = qx - ix, dy = qy - iy;
+        if (dx * dx + dy * dy > ir * ir) continue;          // generation 1 sits on the ring
+        p.push('<circle cx="' + f(qx) + '" cy="' + f(qy) + '" r="1.7" fill="' + accent + '" opacity=".85"/>');
+      }
+      p.push('<text x="' + f(ix) + '" y="' + f(iy + ir + 14) + '" text-anchor="middle" fill="#61708a" font-size="10"'
+        + ' font-family="JetBrains Mono,monospace">' + Math.round(100 * this.scale / this.scale0)
+        + '% of the spread it started with</text>');
+    }
     p.push('<text x="16" y="' + (h - 9) + '" fill="#7d90ad" font-size="10.5">generation ' + this.gen
-      + ' · filled dots are the half that gets kept · the ellipse is the real spread of this generation\'s samples,'
-      + ' but the frame rescales to it every generation — read the ring, not the size</text>');
+      + ' · filled dots are the half that gets kept · the big frame rescales to the cloud every'
+      + ' generation, so read the ring for its size — the small one never rescales</text>');
     p.push('</svg>');
     return p.join('');
   };

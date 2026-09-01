@@ -2024,8 +2024,15 @@
   }
 
   function openExplain() {
-    if (App.screen !== 'school' || App.explain) return;
-    if (view(App.school).sealed) return;
+    if (App.explain) return;
+    if (App.screen !== 'school') {
+      notice('The explainer belongs to a school — press 1, 2 or 3 first, then w.', true);
+      return;
+    }
+    if (view(App.school).sealed) {
+      notice('That school is still sealed. Press r to reveal it, then w.', true);
+      return;
+    }
     App.explainWasPlaying = App.playing;
     App.explain = 1;
     if (App.playing) { App.playing = false; App.net.send({ cmd: 'pause' }); }
@@ -2243,9 +2250,10 @@
     // school cards enforce — otherwise 1/2/3 answers with an error banner over a dead
     // arena for a school this run does not contain.
     if (App.cat && App.cat.schools && App.cat.schools.indexOf(key) < 0) {
-      App.banner = { t: 'NOT IN RUN ' + String((App.cat && App.cat.runTag) || '').toUpperCase(), c: '#ff9a72' };
-      App.bannerAt = performance.now();
-      render();
+      // Not a banner. The banner needs an arena and a frame to be drawn at all, and this
+      // refusal fires from the menu, where there is neither — so the key looked dead.
+      notice('That school is not in run ' + String((App.cat && App.cat.runTag) || '?')
+             + '. The menu greys the ones this run does not contain.', true);
       return;
     }
     App.acadOpen = false;
@@ -2272,7 +2280,15 @@
      it, so the label on screen is the label of the episode on screen. */
   function playHighlights() {
     var H = App.cat && App.cat.highlights;
-    if (!H || !H.highlights || !H.highlights.length) return;
+    // A documented key that does nothing, silently, is the one thing the command dispatch
+    // was fixed not to do — "a typo, a stale client and a dropped packet were the same
+    // event: nothing happened and nothing said so". The same rule has to hold on this side
+    // of the socket, because on camera an unexplained key looks like a broken build.
+    if (!H || !H.highlights || !H.highlights.length) {
+      notice('This run has no highlight scan yet — `./run.sh score` writes one, then h '
+             + 'plays it.', true);
+      return;
+    }
     App.school = H.catSchool || App.school;
     App.checkpoint = 'trained';
     App.results = [];

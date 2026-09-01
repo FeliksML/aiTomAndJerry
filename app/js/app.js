@@ -2396,13 +2396,17 @@
       + ' — playing the best ' + H.highlights.length + ', one per room'
       + (H.mouseSchool && H.mouseSchool !== H.catSchool
          ? ' · ' + view(H.catSchool).short + ' cat vs ' + view(H.mouseSchool).short + ' mouse' : '');
-    App.highlights = H.highlights;
+    /* Played worst-first, so the reel builds. The scan sorts by drama descending — a
+       nail-biter scores highest and lands in position one — so `h` opened on its best shot
+       and declined from there, which is the one ordering a reel must not have. The scan's
+       order is the right order for CHOOSING; it is the wrong order for PLAYING. */
+    App.highlights = H.highlights.slice().reverse();
     App.screen = 'school';
     render();
     App.net.send({ cmd: 'play', school: App.school, checkpoint: 'trained',
                    mouseSchool: H.mouseSchool || App.school,
-                   levels: H.highlights.map(function (h) { return h.arena; }),
-                   seeds: H.highlights.map(function (h) { return h.seed; }) });
+                   levels: App.highlights.map(function (h) { return h.arena; }),
+                   seeds: App.highlights.map(function (h) { return h.seed; }) });
   }
 
   function startRace() {

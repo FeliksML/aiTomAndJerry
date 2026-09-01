@@ -185,8 +185,10 @@ seed.** Drama needs someone still guessing. If you want a longer reel, re-run th
 with `--mouse ga` — the runner-up mouse is stochastic and gives 99 dramatic episodes
 across 9 rooms.
 
-The reel plays in **descending drama order**, so the nail-biters come **first**, not last —
-do not save them, open on them. Those are the ones where she dives into the hole on
+**Save the nail-biters for last** — and now you can, because the reel plays them there. The
+scan sorts by drama descending, which is the right order for *choosing* the episodes and the
+wrong one for *playing* them, so the app reverses it: the reel opens on the quietest of the
+picks and builds to the best. Those are the ones where she dives into the hole on
 the *same step* he lands on her — legal because reaching the hole is checked before the
 catch, which is a rule in the spec and turns out to be the best shot in the game.
 

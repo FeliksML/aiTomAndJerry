@@ -92,7 +92,7 @@
         b: ['CMA-ES never holds a single answer. It holds a cloud: a centre — its current best guess — and a spread saying how far out, and in which directions, it is still worth looking.',
             'Every point on that map is one complete Tom. Two things are all it remembers.'],
         take: 'The guess is a cloud, not a point.' },
-      { k: 'STEP 2 · SAMPLE', t: 'Sprinkle sixteen candidates out of the cloud and race them.',
+      { k: 'STEP 2 · SAMPLE', t: 'Sprinkle {LAM} candidates out of the cloud and race them.',
         b: ['Each dot is a full set of numbers. Each runs the levels and comes back with one score — the same brutal exam the genetic school uses.',
             'The difference is where the candidates come from. Not random guessing: drawn from the cloud, so every round searches somewhere it has reason to search.'],
         take: 'The cloud decides where to look.' },

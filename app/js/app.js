@@ -467,7 +467,10 @@
       + '<div style="position:relative;display:flex;gap:18px;margin-top:18px;flex:1">' + cards + '</div>'
       + '<div style="position:relative;display:flex;gap:12px;align-items:center;margin-top:16px">'
       + '<div class="btn" data-act="setup">TRAINING · N</div>'
-      + '<div class="btn ghost" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
+      // Not "NEW LEVEL SET": pressing it does not make one. The screen replays the run's
+      // OWN twelve rooms from their own seeds, one at a time — which is the point of the
+      // opening shot, and the opposite of what a button promising a new set would do.
+      + '<div class="btn ghost" data-act="gen">' + (ready ? 'THE LEVEL SET · G' : 'GENERATE THE LEVELS') + '</div>'
       + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
       + '<div class="btn ghost" data-act="race">SIDE BY SIDE · X</div>'
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
@@ -1952,7 +1955,7 @@
      running, so nothing has to be interrupted to check it. */
   var KEYS = [
     ['1 2 3', 'enter a school'], ['x', 'side by side — all three, same room'],
-    ['p', 'kept and replaced — six brains of one live generation, same room'],
+    ['p', 'kept and replaced — the best and the worst of one live generation, same room'],
     ['g', 'the level generator'], ['l', 'full-screen lesson'],
     ['w', 'how this algorithm works — six steps'],
     ['h', 'the highlight reel'], ['f', 'the grand final'],
@@ -2008,10 +2011,11 @@
     // The crowd's size is an academy knob, and the explainer says it out loud in three
     // places — two in the GA steps and one in the CMA-ES step that compares itself to a
     // GA. All three mean the same population, so it is passed whatever GA would use.
-    var ga = tunablesNow('ga');
-    host.innerHTML = key
-      ? window.Explain.overlay(v, App.explain, !!opening, ga ? { POP: ga.pop_size } : null)
-      : '';
+    var ga = tunablesNow('ga'), cma = tunablesNow('cmaes');
+    var facts = {};
+    if (ga) facts.POP = ga.pop_size;
+    if (cma) facts.LAM = cma.lam;
+    host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening, facts) : '';
   }
 
   function openExplain() {

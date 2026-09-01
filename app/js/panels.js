@@ -32,6 +32,12 @@
 
   function fmt(v, d) { return (v === undefined || v === null) ? '—' : (+v).toFixed(d === undefined ? 3 : d); }
 
+  /* Panels fade on the wall clock rather than per animation frame: a per-frame decay is a
+     different duration on a 60Hz and a 120Hz panel, and the recording is neither. */
+  function now() {
+    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  }
+
   /* Both roles train at once and both stream telemetry; each panel draws one of them.
      Which one is not a detail the viewer can infer from the picture, so it is written on
      it — on its own row, because right-aligning it against a column header is how it
@@ -54,10 +60,31 @@
 
   /* Every panel draws this until its optimiser has actually said something. An empty
      box on camera invites "is it broken?"; an invented number is worse. */
-  function waiting(w, h) {
+  /* Two different silences. A school that is not training has nothing to say and says so.
+     A school that IS training has not said anything YET — the first generation has to
+     finish before there is a number — and telling that author to "press t" three seconds
+     after they pressed t is the one moment this box produces the "is it broken?" it exists
+     to prevent. The true sentence already lived one card away, in the dim block nobody
+     frames the shot on. */
+  var STARTING = {
+    ppo: 'building the first batch — every environment has to fill before the first update lands',
+    ga: 'playing generation 1 — every brain in the crowd has to finish before there is anything to draw',
+    cmaes: 'playing generation 1 — the whole sample has to be scored before the cloud has a shape'
+  };
+
+  function waiting(w, h, opt) {
+    var live = opt && opt.starting;
+    var line = live
+      ? (STARTING[opt.school] || 'the optimiser is starting — the first numbers are seconds away')
+      : 'no telemetry yet — press t to train this school on camera';
+    var bar = live
+      ? '<rect x="' + (w / 2 - 90) + '" y="' + (h / 2 + 14) + '" width="180" height="3" rx="1.5"'
+        + ' fill="rgba(130,160,200,.14)"/>'
+        + '<rect x="' + (w / 2 - 90) + '" y="' + (h / 2 + 14) + '" width="54" height="3" rx="1.5" fill="#4e6a94"/>'
+      : '';
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'
       + '<text x="' + (w / 2) + '" y="' + (h / 2) + '" fill="#3d4a60" font-size="13" text-anchor="middle"'
-      + ' font-family="JetBrains Mono,monospace">no telemetry yet — press t to train this school on camera</text></svg>';
+      + ' font-family="JetBrains Mono,monospace">' + line + '</text>' + bar + '</svg>';
   }
 
   /* ---------------- PPO ---------------- */
@@ -88,12 +115,12 @@
     }
   };
 
-  PpoPanel.prototype.draw = function (w, h, accent) {
+  PpoPanel.prototype.draw = function (w, h, accent, opt) {
     // Nothing until the optimiser has spoken, the same as GaPanel and CmaPanel. A
     // fallback of [0.2 x 5] would draw a *measurement* — five bars reading "20", a
     // perfectly uniform policy — out of the absence of one, and the clip band would be
     // drawn at the JS constant rather than at the trainer's epsilon.
-    if (!this.target) return waiting(w, h);
+    if (!this.target) return waiting(w, h, opt);
     this.probs = easeArr(this.probs, this.target, 0.18);
     this.hist = easeArr(this.hist, this.histTarget || new Array(32).fill(0), 0.22);
     var p = [], f = function (v) { return (+v).toFixed(1); };
@@ -273,8 +300,12 @@
       best: t.fitBest, mean: t.fitMean, year: t.year, ladder: t.ladderWin
     };
     this.gen = (t.gen !== undefined) ? t.gen : this.gen + 1;
-    this.flash = 1;
-
+    // Wall clock, not frames. The decay was 0.045 per animation frame, so the crossover
+    // curves lived 22 frames — 0.37s at 60Hz, 0.19s on a 120Hz panel — against a
+    // generation that lands about every 1.1s. Breeding read as a strobe rather than an
+    // event, and there was no moment at which "those two, right there" was still true
+    // while the sentence finished.
+    this.flashAt = now();
     var n = (this.fitTarget || []).length;
     if (!n) return;
     if (!this.hue || this.hue.length !== n) {
@@ -300,11 +331,12 @@
     if (this.dynasty.length > 240) this.dynasty.shift();
   };
 
-  GaPanel.prototype.draw = function (w, h, accent) {
+  GaPanel.prototype.draw = function (w, h, accent, opt) {
     var fpT = this.fpTarget, fitT = this.fitTarget;
-    if (!fpT || !fitT) return waiting(w, h);
+    if (!fpT || !fitT) return waiting(w, h, opt);
     this.fit = easeArr(this.fit, fitT, 0.2);
-    this.flash = Math.max(0, this.flash - 0.045);
+    // Two seconds, so a pairing is still on screen when the sentence about it ends.
+    this.flash = Math.max(0, 1 - (now() - (this.flashAt || 0)) / 2000);
     var p = [], f = function (v) { return (+v).toFixed(1); };
     var n = fpT.length;
     // Twelve columns was written for a population of forty-eight. The academy's slider
@@ -490,8 +522,8 @@
     if (this.scale0 === undefined) this.scale0 = this.scaleT;
   };
 
-  CmaPanel.prototype.draw = function (w, h, accent) {
-    if (!this.samples) return waiting(w, h);
+  CmaPanel.prototype.draw = function (w, h, accent, opt) {
+    if (!this.samples) return waiting(w, h, opt);
     this.scale = ease(this.scale, this.scaleT || 1, 0.08);
     if (this.ellipseT) {
       this.ellipse.rx = ease(this.ellipse.rx, this.ellipseT.rx, 0.15);
@@ -553,7 +585,10 @@
     var sxp = X(this.step[0]), syp = Y(this.step[1]);
     p.push('<line x1="' + f(cx) + '" y1="' + f(cy) + '" x2="' + f(sxp) + '" y2="' + f(syp) + '" stroke="#ffd166" stroke-width="2" opacity=".9"/>');
     p.push('<circle cx="' + f(sxp) + '" cy="' + f(syp) + '" r="3.4" fill="#ffd166"/>');
-    p.push('<text x="' + f(sxp + 7) + '" y="' + f(syp - 5) + '" fill="#ffd166" font-size="10" font-family="JetBrains Mono,monospace">new centre</text>');
+    // Not just a fact about the optimiser. `tell` sets `best = mean`, so this marker IS
+    // the brain playing in the arena on the left — a brain that was never sampled and is
+    // not any of the dots. The population race already says it in these words.
+    p.push('<text x="' + f(sxp + 7) + '" y="' + f(syp - 5) + '" fill="#ffd166" font-size="10" font-family="JetBrains Mono,monospace">NEW CENTRE · IN THE ARENA</text>');
 
     var lx = cx + R + 28;
     var rows = [
@@ -568,9 +603,32 @@
       p.push('<text x="' + f(lx) + '" y="' + f(ry + 15) + '" fill="#e8eef9" font-size="15" font-family="JetBrains Mono,monospace">' + rows[rI][1] + '</text>');
       p.push('<text x="' + f(lx + 74) + '" y="' + f(ry + 14) + '" fill="#61708a" font-size="10">' + rows[rI][2] + '</text>');
     }
+    /* The main frame rescales to the cloud every generation, which is what keeps the dots
+       legible as sigma falls — and what makes generation 1 and generation 3,000 the same
+       picture. The contraction was reported only in digits. This is the same cloud drawn
+       at the scale it had in generation ONE and never rescaled, so the collapse is the
+       thing that moves. It is small on purpose: by the end there is not much left of it,
+       and that is the point. */
+    if (this.scale0) {
+      var ix = lx + 58, iy = 46 + rows.length * 34 + 62, ir = 50;
+      var ik = ir / this.scale0;
+      p.push('<text x="' + f(lx) + '" y="' + f(iy - ir - 12) + '" fill="#7d90ad" font-size="10" letter-spacing="1">AT GENERATION 1\u2019S SCALE</text>');
+      p.push('<circle cx="' + f(ix) + '" cy="' + f(iy) + '" r="' + ir + '" fill="none" stroke="rgba(130,160,200,.18)" stroke-width="1"/>');
+      p.push('<circle cx="' + f(ix) + '" cy="' + f(iy) + '" r="' + f(ir / 2) + '" fill="none" stroke="rgba(130,160,200,.09)" stroke-width="1"/>');
+      for (var q = 0; q < this.samples.length; q++) {
+        var sq = this.samples[q];
+        var qx = ix + sq[0] * ik, qy = iy - sq[1] * ik;
+        var dx = qx - ix, dy = qy - iy;
+        if (dx * dx + dy * dy > ir * ir) continue;          // generation 1 sits on the ring
+        p.push('<circle cx="' + f(qx) + '" cy="' + f(qy) + '" r="1.7" fill="' + accent + '" opacity=".85"/>');
+      }
+      p.push('<text x="' + f(ix) + '" y="' + f(iy + ir + 14) + '" text-anchor="middle" fill="#61708a" font-size="10"'
+        + ' font-family="JetBrains Mono,monospace">' + Math.round(100 * this.scale / this.scale0)
+        + '% of the spread it started with</text>');
+    }
     p.push('<text x="16" y="' + (h - 9) + '" fill="#7d90ad" font-size="10.5">generation ' + this.gen
-      + ' · filled dots are the half that gets kept · the ellipse is the real spread of this generation\'s samples,'
-      + ' but the frame rescales to it every generation — read the ring, not the size</text>');
+      + ' · filled dots are the half that gets kept · the big frame rescales to the cloud every'
+      + ' generation, so read the ring for its size — the small one never rescales</text>');
     p.push('</svg>');
     return p.join('');
   };
@@ -587,6 +645,15 @@
     this.cat = null; this.mouse = null; this.frame = null;
   }
 
+  /* There is exactly one of these, shared by all three schools. Switching school clears
+     the arena's frame but left the panel holding the previous school's probabilities, its
+     sense strings and its step counter — drawn under the new school's header and colour
+     until the first frame of the new one arrived. `row()` already draws "waiting for the
+     policy…" for a null array, so the honest state was there and simply never asked for. */
+  LivePanel.prototype.reset = function () {
+    this.cat = this.mouse = this.catT = this.mouseT = this.frame = null;
+  };
+
   LivePanel.prototype.update = function (frame) {
     if (!frame) return;
     this.frame = frame;
@@ -594,9 +661,10 @@
     if (frame.mouse && frame.mouse.probs) this.mouseT = frame.mouse.probs;
   };
 
-  LivePanel.prototype.row = function (label, probs, color, y, w, sense) {
+  LivePanel.prototype.row = function (label, probs, color, y, w, sense, bh) {
     var p = [], f = function (v) { return (+v).toFixed(1); };
-    var bx = 16, bw = w - 32, bh = 74;
+    var bx = 16, bw = w - 32;
+    bh = bh || 74;
     p.push('<text x="' + bx + '" y="' + (y - 8) + '" fill="' + color + '" font-size="12" letter-spacing="2" font-weight="700">' + label + '</text>');
     p.push('<text x="' + (bx + 70) + '" y="' + (y - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">' + sense + '</text>');
     if (!probs) {
@@ -632,11 +700,21 @@
     var fr = this.frame || { cat: {}, mouse: {} };
     var p = ['<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'];
     p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT EACH BRAIN IS ABOUT TO DO</text>');
-    p.push(this.row('TOM', this.catT ? this.cat : null, '#ff8a5c', 62, w,
-      (fr.cat.mode || '—') + (fr.cat.frozen ? '  · frozen ' + fr.cat.frozen : '')));
-    p.push(this.row('JERRY', this.mouseT ? this.mouse : null, '#7ee0ff', 210, w,
+    /* The two rows share whatever lies between the heading and the captions. The bars
+       were a fixed 74px, which is right for the 420-tall panel this was written against
+       and a quarter of the room in the 851-tall card it is actually drawn into on the
+       school screen. On camera the bar height IS the reading — it is the one number the
+       narration points at — so it gets the space rather than being centred in it. */
+    var LABEL = 24, TICK = 20, GAP = 26, HEAD = 38, CAPS = 44;
+    var avail = (h - CAPS) - HEAD;
+    var bh = Math.max(48, Math.floor((avail - 2 * (LABEL + TICK) - GAP) / 2));
+    var y1 = HEAD + LABEL;
+    var y2 = y1 + bh + TICK + GAP + LABEL;
+    p.push(this.row('TOM', this.catT ? this.cat : null, '#ff8a5c', y1, w,
+      (fr.cat.mode || '—') + (fr.cat.frozen ? '  · frozen ' + fr.cat.frozen : ''), bh));
+    p.push(this.row('JERRY', this.mouseT ? this.mouse : null, '#7ee0ff', y2, w,
       (fr.mouse.mode || '—') + (fr.mouse.heard ? '  · hears him, confidence ' + fr.mouse.heard.conf.toFixed(2) : '')
-      + (fr.mouse.frozen ? '  · frozen ' + fr.mouse.frozen : '')));
+      + (fr.mouse.frozen ? '  · frozen ' + fr.mouse.frozen : ''), bh));
     p.push('<text x="16" y="' + (h - 26) + '" fill="#7d90ad" font-size="11">'
       + 'Five bars, five moves. The tall one is what the network wants; the others are how much doubt is left in it.</text>');
     p.push('<text x="16" y="' + (h - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">'

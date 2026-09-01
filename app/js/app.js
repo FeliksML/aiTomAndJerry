@@ -247,7 +247,57 @@
   function esc(s) { return String(s === undefined ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
-  function view(key) { return window.Reveal.view(ALGOS[key]); }
+  /* The identity card's numbers belong to the trainer, not to a copy of them kept here.
+     POPULATION, LAMBDA and BATCH are all academy knobs — the population slider runs from
+     8 to 256 — so a hardcoded "48 individuals" stops being true the moment the author
+     moves one, while the panel a few centimetres away reads the real number off the same
+     run. Filmed side by side, that is a card contradicting a live readout. The static
+     strings stay as the fallback for before the trainer has spoken. */
+  var LIVE_SPEC = {
+    ppo: { BATCH: function (t) { return t.n_envs + ' arenas × ' + t.horizon + ' steps'; } },
+    ga: { POPULATION: function (t) { return t.pop_size + ' individuals'; } },
+    cmaes: { LAMBDA: function (t) { return t.lam + ' samples per generation'; } }
+  };
+  var LIVE_LINE = {
+    ga: function (t) { return 'population ' + t.pop_size + ' · elitism · tournament selection'; },
+    cmaes: function (t) { return 'σ-adaptation · λ=' + t.lam + ' · separable (diagonal)'; }
+  };
+  var LIVE_BLURB = {
+    ga: function (t) {
+      return 'No gradients at all. ' + t.pop_size + ' whole brains a generation; the ones '
+        + 'that survived the room breed, their children are a coin-flip mix with a few '
+        + 'weights nudged.';
+    }
+  };
+
+  /* What a run started right now would actually use: the author's override if there is
+     one, otherwise the trainer's own default, which is the same rule the academy slider
+     reads. Null until `hello` lands — the card then keeps its written text. */
+  function tunablesNow(key) {
+    var a = (App.cat && App.cat.academies && App.cat.academies[key]) || null;
+    if (!a || !a.tunables || !a.tunables.length) return null;
+    var out = {};
+    a.tunables.forEach(function (t) { out[t.key] = hyperValue(key, t); });
+    return out;
+  }
+
+  function view(key) {
+    var algo = ALGOS[key];
+    var t = algo && tunablesNow(key);
+    if (t) {
+      var spec = LIVE_SPEC[key] || {};
+      algo = Object.assign({}, algo, {
+        specs: algo.specs.map(function (row) {
+          // Only rows this table knows how to source live are replaced; the rest are
+          // prose about the method and have no number to go stale.
+          return spec[row[0]] ? [row[0], spec[row[0]](t)] : row;
+        })
+      });
+      if (LIVE_LINE[key]) algo.line = LIVE_LINE[key](t);
+      if (LIVE_BLURB[key]) algo.blurb = LIVE_BLURB[key](t);
+    }
+    return window.Reveal.view(algo);
+  }
 
   /* Centre by translating half the canvas back before scaling, rather than relying on
      flex/grid centring — a 1920-wide child inside a narrower box gets clipped at the
@@ -356,10 +406,19 @@
     }
   }
 
+  /* Reveal state survives a reload on purpose — a crash mid-shoot must not unseal the rest
+     of the video. The cost is that a rehearsal spends the reveals and the next session
+     opens with all three schools already named, at which point sections 3 and 4 of the run
+     of show have nothing to reveal and the only defence is the author remembering to check.
+     So the wrong state announces itself: carried over from a previous session, as opposed
+     to raised in this one, is a difference this chip can see and now says. */
   function revealChip() {
     var lv = window.Reveal.level;
-    return '<span class="chip" style="border-color:rgba(255,209,102,.3);color:#ffd166">REVEAL ' + (lv + 1) + ' / '
-      + (window.Reveal.max + 1) + ' &nbsp;·&nbsp; R</span>';
+    var stale = lv > 0 && !App.revealTouched;
+    return '<span class="chip" style="border-color:' + (stale ? 'rgba(255,138,92,.55)' : 'rgba(255,209,102,.3)')
+      + ';color:' + (stale ? '#ff9a72' : '#ffd166') + '">REVEAL ' + (lv + 1) + ' / '
+      + (window.Reveal.max + 1) + ' &nbsp;·&nbsp; ' + (stale ? 'CARRIED OVER · SHIFT+0 TO RE-SEAL' : 'R')
+      + '</span>';
   }
 
   /* ---------------- screens ---------------- */
@@ -417,7 +476,10 @@
       + '<div style="position:relative;display:flex;gap:18px;margin-top:18px;flex:1">' + cards + '</div>'
       + '<div style="position:relative;display:flex;gap:12px;align-items:center;margin-top:16px">'
       + '<div class="btn" data-act="setup">TRAINING · N</div>'
-      + '<div class="btn ghost" data-act="gen">' + (ready ? 'NEW LEVEL SET' : 'GENERATE THE LEVELS') + '</div>'
+      // Not "NEW LEVEL SET": pressing it does not make one. The screen replays the run's
+      // OWN twelve rooms from their own seeds, one at a time — which is the point of the
+      // opening shot, and the opposite of what a button promising a new set would do.
+      + '<div class="btn ghost" data-act="gen">' + (ready ? 'THE LEVEL SET · G' : 'GENERATE THE LEVELS') + '</div>'
       + '<div class="btn ghost" data-act="board">LEADERBOARD</div>'
       + '<div class="btn ghost" data-act="race">SIDE BY SIDE · X</div>'
       + '<div class="btn ghost" data-act="final">GRAND FINAL</div>'
@@ -537,9 +599,14 @@
        nothing to explain — better than a fourth chip that answers with an error.
        A zeroed run has none of them: nothing has trained, so three identical pills would
        invite a comparison of one thing with itself. */
-    var have = App.cat && App.cat.available;
+    /* `available` is one school list per checkpoint and the trainer sends it in every
+       hello. Only BEST consulted it; UNTRAINED, HALF-TRAINED and TRAINED were drawn
+       unconditionally, so a run missing one offered a pill whose click the trainer then
+       refused by name — a control for something this run does not contain. */
+    var have = (App.cat && App.cat.available) || null;
+    var has = function (c) { return !have || (have[c] || []).indexOf(App.school) >= 0; };
     var pills = (App.cat && App.cat.zeroed ? ['untrained']
-                 : CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : []))
+                 : CP.concat(['best']).filter(has))
       .map(function (c) {
         var on = App.checkpoint === c;
         return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
@@ -652,8 +719,15 @@
       + (App.link !== 'live' && trainedHere()
          ? 'The trainer went away — nothing above is updating any more.'
          : App.trainInfo ? esc(App.trainInfo)
+         // Absence of a frame is tested FIRST. With the trainer down on a cold start
+         // there is no last frame, and the arena is empty black — captioned "this is the
+         // last frame it sent", which is a claim about a frame that never arrived. The
+         // algorithm panel one card away already gets this right and draws "no telemetry
+         // yet" rather than an empty box; this is the same rule, one card over.
+         : !App.frame ? (App.link !== 'live'
+             ? 'Trainer offline — no frame has arrived, so the arena is empty.'
+             : 'Waiting for the first frame from the trainer.')
          : App.link !== 'live' ? 'Trainer offline — this is the last frame it sent.'
-         : !App.frame ? 'Waiting for the first frame from the trainer.'
          : 'Frames are streaming from the ' + CP_NAME[App.checkpoint].toLowerCase()
            + ' policy — nothing here is scripted.')
       + '</div></div></div>';
@@ -956,7 +1030,22 @@
     var f = frames();
     var W = 1000, H = GRAPH_H, pad = 6;
     var y = function (v) { return pad + (1 - Math.max(0, Math.min(1, v))) * (H - 2 * pad); };
-    var x = function (j) { return f.length < 2 ? W : j / (f.length - 1) * W; };
+    /* Against the run's own clock, on an axis that does not move. Normalising the sample
+       INDEX to the full width recomputed the x of every existing frame each time one
+       arrived, so the whole history slid left and no point was in the same place two
+       evaluations apart — the peak marks and the handle moved under the cursor while the
+       author was pointing at them. The comment above this one removed exactly this
+       artefact from the OTHER axis, for the same reason.
+       The budget is the axis where there is one; otherwise the axis grows in powers of
+       two, so a reflow is rare and large rather than constant and small. */
+    var last = f.length ? (f[f.length - 1].steps || 0) : 0;
+    var target = App.train && App.train.targetSteps;
+    var xm = target || Math.max(1, Math.pow(2, Math.ceil(Math.log(Math.max(1, last)) / Math.LN2)));
+    var x = function (j) {
+      if (f.length < 2) return W;
+      var st = f[j].steps;
+      return st === undefined ? j / (f.length - 1) * W : Math.min(1, st / xm) * W;
+    };
     var g = ['<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" width="100%" height="'
              + H + '" style="display:block">'];
     // A grid the eye can read a percentage off, and 50% called out.
@@ -1263,7 +1352,12 @@
     var ck = st.catSchool || (t && t.champion.cat) || 'ppo';
     var mk = st.mouseSchool || (t && t.champion.mouse) || 'ppo';
     var cv = view(ck), mv = view(mk);
-    var wins = st.wins || { cat: 0, mouse: 0, draw: 0 };
+    // `wins` is two different shapes. The final counts {cat, mouse, draw}; a race counts
+    // one {catch, escape, draw} per LANE, keyed by lane. Both ride in on `runState`, so
+    // coming to the final straight off a race printed "draws undefined" on screen.
+    var w0 = st.wins;
+    var wins = (w0 && typeof w0.cat === 'number' && typeof w0.draw === 'number')
+      ? w0 : { cat: 0, mouse: 0, draw: 0 };
     return '<div class="screen">' + backdrop('bg-final', .5)
       + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
       + '<div><div class="kicker">Champion versus champion · an arena neither has seen</div>'
@@ -1301,6 +1395,41 @@
   /* A full-screen version of the same explainer, for talking over on camera. The panel
      is identical — only bigger — so what is being explained is exactly what was on
      screen a moment ago beside the arena, rather than a separate illustration. */
+  /* The lesson prose carries the same numbers the identity cards do, off the same knobs.
+     Filmed exactly as SHOOT.md directs — press 2, then l — the heading read "Forty-eight
+     brains" with the panel beside it reading "120 BRAINS · 15 SURVIVE, 105 ARE REPLACED",
+     both on screen at once. `mu = lam // 2` in the CMA-ES setup, so "the better half"
+     stays true at any lambda and is left alone. */
+  var LIVE_LESSON = {
+    ga: function (L, t) {
+      return Object.assign({}, L, {
+        head: t.pop_size + ' brains, and only the good ones get children',
+        body: 'No gradients, no derivatives, nothing that knows which direction is better. '
+          + 'Each generation plays all ' + t.pop_size + ' networks, ranks them, keeps the best '
+          + t.elite + ' untouched, and fills the rest with children: pick two parents, flip a '
+          + 'coin per weight to decide which parent it comes from, then nudge '
+          + Math.round(t.mutation_rate * 100) + '% of the weights at random. Repeat a few '
+          + 'thousand times.'
+      });
+    },
+    cmaes: function (L, t) {
+      return Object.assign({}, L, {
+        body: 'CMA-ES keeps a Gaussian over strategies. Every generation it draws ' + t.lam
+          + ' brains from it, keeps the better half, and moves the centre toward them — then '
+          + 'reshapes the cloud itself, stretching along directions that keep paying off and '
+          + 'narrowing where they do not. The ellipse is that shape, measured from the real '
+          + 'samples on screen.'
+      });
+    }
+  };
+
+  function lessonOf(key) {
+    var L = LESSON[key];
+    if (!L || !LIVE_LESSON[key]) return L;
+    var t = tunablesNow(key);
+    return t ? LIVE_LESSON[key](L, t) : L;
+  }
+
   var LESSON = {
     ppo: {
       head: 'It takes a step, then refuses to take a big one',
@@ -1421,6 +1550,7 @@
     var pop = App.raceKind === 'population';
     var schools = App.raceSchools || ORDER;
     var lay = raceLayout(schools.length), cs = lay.cs;
+    var waitingLanes = !App.map || !App.raceFrames || !Object.keys(App.raceFrames).length;
     var wins = App.raceWins || {};
     var lanes = schools.map(function (k) {
       var v = laneView(k);
@@ -1446,6 +1576,17 @@
         + '<div style="position:relative;width:' + (E.W * cs) + 'px;height:' + (E.H * cs) + 'px;border-radius:9px;overflow:hidden;border:1px solid var(--line)">'
         + '<div id="rmap-' + k + '" style="position:absolute;inset:0"></div>'
         + '<div id="rfx-' + k + '" style="position:absolute;inset:0"></div>'
+        // Until the first lane arrives these panes are three empty rectangles, and with
+        // the trainer down they stay that way — indistinguishable from a screen that has
+        // broken. `paintRace` returns early without a frame and a map, so the pane says
+        // what it is waiting for and gets painted over the moment one lands.
+        + (waitingLanes
+           ? '<div style="position:absolute;inset:0;display:grid;place-items:center;padding:0 18px">'
+             + '<div class="mono" style="font-size:11px;line-height:1.6;color:#3d4a60;text-align:center">'
+             + (App.link !== 'live' ? 'the trainer is not connected — nothing is being raced'
+                : !App.playing ? 'paused — press space to start the race'
+                : 'waiting for the first lane…') + '</div></div>'
+           : '')
         + (done ? '<div style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,7,12,.55)">'
             + '<div class="title" style="font-size:22px;letter-spacing:2px;color:'
             + (done === 'catch' ? 'var(--cat)' : done === 'escape' ? 'var(--gold)' : '#8fa4c4') + '">'
@@ -1579,7 +1720,7 @@
 
   function renderLesson() {
     var v = view(App.school);
-    var L = LESSON[App.school];
+    var L = lessonOf(App.school);
     if (v.sealed) {
       return '<div class="screen">' + backdrop('bg-academy', .4)
         + '<div style="position:relative;flex:1;display:grid;place-items:center">'
@@ -1625,6 +1766,22 @@
     var d = done.length - c - m;
     var winner = c > m ? 'TOM' : (m > c ? 'JERRY' : 'SPLIT');
     var wcol = c > m ? 'var(--cat)' : (m > c ? 'var(--mouse)' : '#c9d8ee');
+    /* Whether this tally is a measurement at all — which decides whether anybody is
+       crowned. The reel disclaimer above was already here, already saying "not a
+       measurement of anything", and the sentence straight after it crowned a winner
+       anyway: two contradictory claims in one paragraph under a 46px title naming the
+       winner. Three things disqualify a tally, and the screen names which one applies. */
+    var played = done.length;
+    var live = App.mode === 'train' || trainedHere();
+    var measured = !reel && played >= n && !live;
+    var notWhy = reel
+      ? 'These are the <b>highlight reel</b>\u2019s ' + n + ' episodes — chosen for drama, one per '
+        + 'room. A tally of episodes picked for being close is not a measurement of anything.'
+      : played < n
+      ? 'Only <b>' + played + ' of ' + n + '</b> rooms have been played. The verdict needs a '
+        + 'finished playthrough.'
+      : 'These are training-lap episodes, played by a policy that was changing underneath '
+        + 'them. Twelve of those are not a score.';
 
     // The three checkpoints, scored against the same fixed opponent. This is the curve
     // that actually shows a student improving — the head-to-head above does not,
@@ -1660,24 +1817,28 @@
       + '<div style="width:44px;height:44px">' + P.emblem(v.emblem, v.color) + '</div>'
       + '<div><div class="kicker">School verdict</div>'
       + '<div class="title" style="font-size:46px;margin-top:4px;color:' + (v.sealed ? '#8494ad' : '#f2f7ff') + '">'
-      + esc(v.short) + ' · ' + winner + '</div></div></div>'
+      + esc(v.short) + ' · ' + (measured ? winner : 'NOT A MEASUREMENT') + '</div></div></div>'
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
       + '<div style="position:relative;display:flex;gap:18px;margin-top:20px;flex:1">'
       + '<div class="card" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:18px">'
       + '<div style="display:flex;gap:14px">'
-      + scoreBox('TOM · CAUGHT HER', c + ' / ' + n, 'var(--cat)')
-      + scoreBox('JERRY · GOT HOME', m + ' / ' + n, 'var(--mouse)')
-      + scoreBox('RAN OUT OF TIME', String(d), '#8fa4c4') + '</div>'
+      // One denominator for all three. `c` and `m` count the rooms PLAYED and were drawn
+      // over the full room count, so eight unplayed rooms read as eight losses for both
+      // animals at once — while the third box carried no denominator at all.
+      + scoreBox('TOM · CAUGHT HER', c + ' / ' + played, 'var(--cat)')
+      + scoreBox('JERRY · GOT HOME', m + ' / ' + played, 'var(--mouse)')
+      + scoreBox('RAN OUT OF TIME', d + ' / ' + played, '#8fa4c4') + '</div>'
+      + (played < n ? '<div class="mono faint" style="font-size:11px;margin-top:-8px">'
+          + played + ' of ' + n + ' rooms played</div>' : '')
       + '<div style="display:flex;gap:6px">' + strip + '</div>'
       + '<div class="dim" style="font-size:13.5px;line-height:1.6">'
-      + (reel
-         ? 'These are the <b>highlight reel</b>\u2019s ' + n + ' episodes \u2014 chosen for drama, one per room, '
-           + 'so this tally is not a measurement of anything. Press <span class="mono">b</span> for the numbers that are. '
-         : '')
-      + 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
-      + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
-      + 'both sides here were raised together, so it says as much about the sparring partner as the student. '
-      + 'The leaderboard settles that.</div>'
+      + (measured
+         ? 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
+           + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
+           + 'both sides here were raised together, so it says as much about the sparring partner as '
+           + 'the student. The leaderboard settles that.'
+         : notWhy + ' Press <span class="mono">b</span> for the numbers that are a measurement.')
+      + '</div>'
       + trapStory(prog)
       + '<div style="margin-top:auto;display:flex;gap:10px">'
       + '<div class="btn" data-act="board">SEE THE LEADERBOARD · B</div>'
@@ -1867,7 +2028,7 @@
      running, so nothing has to be interrupted to check it. */
   var KEYS = [
     ['1 2 3', 'enter a school'], ['x', 'side by side — all three, same room'],
-    ['p', 'kept and replaced — six brains of one live generation, same room'],
+    ['p', 'kept and replaced — the best and the worst of one live generation, same room'],
     ['g', 'the level generator'], ['l', 'full-screen lesson'],
     ['w', 'how this algorithm works — six steps'],
     ['h', 'the highlight reel'], ['f', 'the grand final'],
@@ -1920,12 +2081,26 @@
     _xKey = key;
     // Only the open fades in. Stepping recreates the same chrome, which carries no
     // animation of its own, so the swap is invisible and the new diagram plays alone.
-    host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening) : '';
+    // The crowd's size is an academy knob, and the explainer says it out loud in three
+    // places — two in the GA steps and one in the CMA-ES step that compares itself to a
+    // GA. All three mean the same population, so it is passed whatever GA would use.
+    var ga = tunablesNow('ga'), cma = tunablesNow('cmaes');
+    var facts = {};
+    if (ga) { facts.POP = ga.pop_size; facts.ELITE = ga.elite; }
+    if (cma) facts.LAM = cma.lam;
+    host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening, facts) : '';
   }
 
   function openExplain() {
-    if (App.screen !== 'school' || App.explain) return;
-    if (view(App.school).sealed) return;
+    if (App.explain) return;
+    if (App.screen !== 'school') {
+      notice('The explainer belongs to a school — press 1, 2 or 3 first, then w.', true);
+      return;
+    }
+    if (view(App.school).sealed) {
+      notice('That school is still sealed. Press r to reveal it, then w.', true);
+      return;
+    }
     App.explainWasPlaying = App.playing;
     App.explain = 1;
     if (App.playing) { App.playing = false; App.net.send({ cmd: 'pause' }); }
@@ -1989,6 +2164,15 @@
     render();
   }
 
+  /* `Net.send` queues rather than rejecting, so a control that announces its own work is
+     believed by the screen and then fires unannounced whenever the socket comes back.
+     Every control that claims something happened asks this first. */
+  function offlineRefused() {
+    if (App.link === 'live') return false;
+    notice('The trainer is not running — nothing was sent. Start it with ./run.sh serve.', true);
+    return true;
+  }
+
   function render() {
     if (App.screen === 'setup' && _setupSig !== null) {
       var sig = setupSignature();
@@ -2049,8 +2233,18 @@
     // of the method, not a readout of the current episode.
     var p = (lesson || trainingHere()) ? App.panels[App.school] : App.livePanel;
     if (!p || !p.draw) return;
-    host.innerHTML = lesson ? p.draw(1180, 700, view(App.school).color)
-                            : p.draw(700, 420, view(App.school).color);
+    // Drawn at the size the host actually has. `clientWidth`/`clientHeight` are layout
+    // pixels and the stage is scaled by a transform, so they ARE canvas pixels — no
+    // conversion. The fixed 700x420 letterboxed inside whatever box it was given: on the
+    // school screen in playback the host is 666x851, so 452px of that card — more than
+    // half of it — was empty, on the screen this video spends most of its time on. Every
+    // panel already derives its layout from the width and height it is handed.
+    var pw = Math.max(320, host.clientWidth || (lesson ? 1180 : 700));
+    var ph = Math.max(240, host.clientHeight || (lesson ? 700 : 420));
+    // The panel cannot tell "nothing is training" from "the first generation has not
+    // finished yet"; the caller can, and the difference is what the box says.
+    host.innerHTML = p.draw(pw, ph, view(App.school).color,
+                            { starting: trainingHere(), school: App.school });
   }
 
   var last = 0;
@@ -2136,15 +2330,30 @@
     // school cards enforce — otherwise 1/2/3 answers with an error banner over a dead
     // arena for a school this run does not contain.
     if (App.cat && App.cat.schools && App.cat.schools.indexOf(key) < 0) {
-      App.banner = { t: 'NOT IN RUN ' + String((App.cat && App.cat.runTag) || '').toUpperCase(), c: '#ff9a72' };
-      App.bannerAt = performance.now();
-      render();
+      // Not a banner. The banner needs an arena and a frame to be drawn at all, and this
+      // refusal fires from the menu, where there is neither — so the key looked dead.
+      notice('That school is not in run ' + String((App.cat && App.cat.runTag) || '?')
+             + '. The menu greys the ones this run does not contain.', true);
       return;
     }
     App.acadOpen = false;
+    // One LivePanel serves every school, so it has to be emptied with the frame it was
+    // drawing — otherwise PPO's probabilities, PPO's sense strings and PPO's step counter
+    // sit under GA's green header until GA's first frame lands.
+    if (App.livePanel && App.livePanel.reset) App.livePanel.reset();
     // A pin belongs to the school it was taken from; the server drops it on `play`.
     App.pinned = null;
     App.school = key;
+    /* A checkpoint belongs to a school, and this carried the current one across without
+       asking. Click BEST on a school that has one, press another school, and the trainer
+       refuses `no <school> @ best in this run` — after which the arena froze on the last
+       school's frame, its playthrough went on running underneath, and ITS runEnd drove the
+       verdict, which then crowned a winner over eleven episodes played by the other
+       school's weights under this school's name. `available` is on hand; use it. */
+    var av = App.cat && App.cat.available;
+    if (!cp && av && av[App.checkpoint] && av[App.checkpoint].indexOf(key) < 0) {
+      App.checkpoint = 'trained';
+    }
     App.checkpoint = cp || App.checkpoint;
     App.results = [];
     App.frame = App.prev = null;
@@ -2165,7 +2374,15 @@
      it, so the label on screen is the label of the episode on screen. */
   function playHighlights() {
     var H = App.cat && App.cat.highlights;
-    if (!H || !H.highlights || !H.highlights.length) return;
+    // A documented key that does nothing, silently, is the one thing the command dispatch
+    // was fixed not to do — "a typo, a stale client and a dropped packet were the same
+    // event: nothing happened and nothing said so". The same rule has to hold on this side
+    // of the socket, because on camera an unexplained key looks like a broken build.
+    if (!H || !H.highlights || !H.highlights.length) {
+      notice('This run has no highlight scan yet — `./run.sh score` writes one, then h '
+             + 'plays it.', true);
+      return;
+    }
     App.school = H.catSchool || App.school;
     App.checkpoint = 'trained';
     App.results = [];
@@ -2179,17 +2396,26 @@
       + ' — playing the best ' + H.highlights.length + ', one per room'
       + (H.mouseSchool && H.mouseSchool !== H.catSchool
          ? ' · ' + view(H.catSchool).short + ' cat vs ' + view(H.mouseSchool).short + ' mouse' : '');
-    App.highlights = H.highlights;
+    /* Played worst-first, so the reel builds. The scan sorts by drama descending — a
+       nail-biter scores highest and lands in position one — so `h` opened on its best shot
+       and declined from there, which is the one ordering a reel must not have. The scan's
+       order is the right order for CHOOSING; it is the wrong order for PLAYING. */
+    App.highlights = H.highlights.slice().reverse();
     App.screen = 'school';
     render();
     App.net.send({ cmd: 'play', school: App.school, checkpoint: 'trained',
                    mouseSchool: H.mouseSchool || App.school,
-                   levels: H.highlights.map(function (h) { return h.arena; }),
-                   seeds: H.highlights.map(function (h) { return h.seed; }) });
+                   levels: App.highlights.map(function (h) { return h.arena; }),
+                   seeds: App.highlights.map(function (h) { return h.seed; }) });
   }
 
   function startRace() {
     App.raceFrames = {}; App.racePrev = {}; App.raceDone = {}; App.raceWins = {}; App.raceGrid = {};
+    // What the lanes ARE has to go too. This renders before the first lane arrives, and
+    // `renderRace` falls back to whatever it was last told — so x pressed after p drew
+    // SIDE BY SIDE as a population race, ranks and all, until a frame landed.
+    App.raceKind = null; App.raceLanes = null; App.raceSchool = null;
+    App.raceSchools = null; App.raceSig = null;
     App.screen = 'race';
     render();
     App.net.send({ cmd: 'race', checkpoint: 'trained' });
@@ -2405,11 +2631,17 @@
       else if (a === 'acad-reset') acadReset();
       else if (a === 'notice-close') { App.notice = null; render(); }
       else if (a === 'keys-close') { App.showKeys = false; render(); }
-      else if (a === 'stop-all') { App.net.send({ cmd: 'stopAll' }); notice('Asking all three to finish their iteration and save…', false); }
+      else if (a === 'stop-all') {
+        if (!offlineRefused()) {
+          App.net.send({ cmd: 'stopAll' });
+          notice('Asking all three to finish their iteration and save…', false);
+        }
+      }
       else if (a === 'refresh') {
         // The leaderboard, the BEST chip and the run list were stale until the server
         // volunteered a greeting or the page was reloaded. The command has always been
         // dispatched; nothing ever sent it.
+        if (offlineRefused()) return;
         App.net.send({ cmd: 'hello' });
         notice('Asked the trainer for fresh results…', false);
       }
@@ -2428,6 +2660,7 @@
         render();
       }
       else if (a === 'score') {
+        if (offlineRefused()) return;
         App.scoring = { lines: [], done: false, ok: false };
         App.net.send({ cmd: 'score', tag: App.setup.tag,
                        checkpoint: App.setup.scoreWith });
@@ -2438,6 +2671,15 @@
       else if (a === 'highlights') playHighlights();
       else if (a === 'race') startRace();
       else if (a === 'reset') {
+        if (App.link !== 'live') {
+          // The wipe was announced, the local playback state was cleared, and the menu
+          // went on showing GRADUATED chips with real percentages off a catalogue nothing
+          // had touched.
+          App.resetArmed = 0;
+          notice('The trainer is not running — nothing was wiped. Start it and press again.', true);
+          render();
+          return;
+        }
         if (App.resetArmed && performance.now() - App.resetArmed < 5000) {
           App.resetArmed = 0;
           App.results = []; App.highlights = null; App.frame = App.prev = null;
@@ -2555,6 +2797,8 @@
 
     window.Reveal.bindKeys();
     window.Reveal.on(function () {
+      // Raised in THIS session, so the chip stops warning about a state the author chose.
+      App.revealTouched = true;
       // Re-sealing a school mid-read (shift+R for a re-shoot) must not leave the modal
       // up with nothing in it — and nothing swallowing the keyboard.
       if (App.explain && view(App.school).sealed) closeExplain();
@@ -2764,6 +3008,13 @@
         // label, not the counter: during a run the boxes read "THIS LAP", which is what
         // they are. The `render()` below is still skipped in train mode, because the
         // level strip it exists to redraw is not on screen then.
+        // The lap wraps, and the trainer clears its own tally when it does — `advance()`
+        // in train mode sets the level back to 0 and empties `results`. This one did not,
+        // so the entries for the arenas the new lap had not reached yet were still last
+        // lap's, and a box labelled THIS LAP counted episodes from the one before it. The
+        // wrap is a level that goes backwards; nothing else moves the level down.
+        if (App._lapLevel !== undefined && m.level < App._lapLevel) App.results = [];
+        App._lapLevel = m.level;
         App.results[m.level] = m.result;
         App.ending = m.result === 'catch' || m.result === 'escape' ? m.result : null;
         App.banner = m.result === 'catch' ? { t: 'TOM CAUGHT HER', c: '#ff8a5c' }
@@ -2926,6 +3177,11 @@
         // indexes the new run's timeline.
         App.scoring = null; App.results = [];
         App.timeline = {}; App.pinned = null;
+        // The grand final reads `catSchool`, `wins` and `levels` off this. Left standing,
+        // the previous run's finalists and their ROUNDS WON were drawn under a headline
+        // saying they earned them — which is the exact outcome the guard in `renderFinal`
+        // exists to prevent, and it looks less broken than the empty state.
+        App.runState = null;
         App.train = null; App.training = null; App.trainFinished = false;
         App.frame = App.prev = null; App.trainInfo = null; App.mode = 'play';
         App.screen = 'menu';

@@ -62,20 +62,20 @@
         take: 'Slow, steady, hard to break — that’s why PPO’s Tom hunts like a professional.' }
     ],
     ga: [
-      { k: 'STEP 1 · THE CROWD', t: 'Forget one student. Bring 48 slightly different Toms.',
+      { k: 'STEP 1 · THE CROWD', t: 'Forget one student. Bring {POP} slightly different Toms.',
         b: ['No gradients, no bookie, no clever maths. A genetic algorithm keeps a whole population, and each Tom is nothing but a long list of numbers — his genome. Identical wiring, different settings.',
-            'At generation 1 those numbers are pure noise. Forty-eight random idiots, each idiotic in his own personal way.'],
+            'At generation 1 those numbers are pure noise. {POP} random idiots, each idiotic in his own personal way.'],
         take: 'One student becomes a crowd.' },
       { k: 'STEP 2 · THE EXAM', t: 'Everyone runs the maze. Everyone comes back with one number.',
         b: ['That single score is the whole feedback. Not per action, not per step — per entire life.',
             'Nobody asks why #07 scored 82 and #16 scored 17. The algorithm genuinely does not care.'],
         take: 'One life, one number.' },
-      { k: 'STEP 3 · THE CULL', t: 'Top of the list lives. Bottom of the list is deleted.',
-        b: ['Sort by score, keep roughly the best quarter, bin the rest. Brutal, and shockingly effective.',
+      { k: 'STEP 3 · THE CULL', t: 'A few carry over untouched. Everyone else is replaced.',
+        b: ['Sort by score. The best {ELITE} survive into the next generation unchanged; every other slot is filled by a child. Parents are picked by small random tournaments over the whole crowd, so a mediocre genome can still get lucky — the cull is a bias, not a wall.',
             'The population just got better while not a single Tom learned a thing. Improvement came from who was allowed to have children.'],
         take: 'Selection, not learning.' },
-      { k: 'STEP 4 · CROSSOVER', t: 'Two survivors, one kid, numbers mixed.',
-        b: ['Take dad’s first half and mum’s second half and staple them into a new genome. If dad cut corners well and mum was patient at the hole, sometimes the kid inherits both.',
+      { k: 'STEP 4 · CROSSOVER', t: 'Two parents, one kid, numbers mixed.',
+        b: ['Flip a coin for every single weight: this one from dad, that one from mum. Not first half and second half — each number is decided on its own. If dad cut corners well and mum was patient at the hole, sometimes the kid inherits both.',
             'And sometimes he inherits neither and is a disaster. Fine — next exam sorts him out.'],
         take: 'Recombine what already works.' },
       { k: 'STEP 5 · MUTATION', t: 'Then randomly typo a couple of his numbers.',
@@ -92,7 +92,7 @@
         b: ['CMA-ES never holds a single answer. It holds a cloud: a centre — its current best guess — and a spread saying how far out, and in which directions, it is still worth looking.',
             'Every point on that map is one complete Tom. Two things are all it remembers.'],
         take: 'The guess is a cloud, not a point.' },
-      { k: 'STEP 2 · SAMPLE', t: 'Sprinkle sixteen candidates out of the cloud and race them.',
+      { k: 'STEP 2 · SAMPLE', t: 'Sprinkle {LAM} candidates out of the cloud and race them.',
         b: ['Each dot is a full set of numbers. Each runs the levels and comes back with one score — the same brutal exam the genetic school uses.',
             'The difference is where the candidates come from. Not random guessing: drawn from the cloud, so every round searches somewhere it has reason to search.'],
         take: 'The cloud decides where to look.' },
@@ -110,8 +110,13 @@
         take: 'Momentum sets the stride.' },
       { k: 'STEP 6 · CONVERGE', t: 'The cloud collapses onto an answer.',
         b: ['Round after round it tightens until every sample is basically the same Tom. That is convergence, and the final centre is your trained agent.',
-            'Fewer wasted runs than a GA, no gradients at all — but it is happiest on a smooth landscape. On a spiky one, 48 brawling Toms can still take it.'],
-        take: 'The elegant one — and the only school that trained both animals well.' }
+            'Fewer wasted runs than a GA, no gradients at all — but it is happiest on a smooth landscape. On a spiky one, {POP} brawling Toms can still take it.'],
+        // Was "and the only school that trained both animals well", which this app's own
+        // leaderboard refutes on the shipped run: PPO leads both roles (74% and 57%) and
+        // CMA-ES is last among the cats. A takeaway may describe the method's character —
+        // the other two do — but not hand down a tournament result the board disagrees
+        // with, least of all one written before any tournament was run.
+        take: 'The elegant one — it learns the shape of the search, not just where to look.' }
     ]
   };
 
@@ -187,14 +192,22 @@
     var ha = [38, 54, 22, 61, 30, 47, 18, 58, 44, 26, 50, 34];
     var hb = [52, 20, 44, 29, 57, 36, 62, 24, 40, 55, 31, 48];
     var px = function (n) { return Math.round(n * 1.05) + '%'; };
+    /* The trainer's crossover is uniform and per weight — `take = rng.random(FLAT_DIM) <
+       0.5` in ga.py, and ga.py's own header says "crossover uniform, per weight". This
+       drew a cut point: dad's first half, mum's second, with a gold line down the middle.
+       The lesson panel one keypress away already said "flip a coin per weight", so the
+       explainer was teaching a different algorithm from the one running behind it. A
+       fixed pattern, not a random one, so a take records identically. */
+    var pick = [1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0];
     d.geneA = ha.map(function (h, j) {
-      return { h: px(h), cut: j < 6 ? '#3ddc84' : 'rgba(61,220,132,.22)', delay: (j * 0.03).toFixed(2) + 's' };
+      return { h: px(h), cut: pick[j] ? '#3ddc84' : 'rgba(61,220,132,.22)', delay: (j * 0.03).toFixed(2) + 's' };
     });
     d.geneB = hb.map(function (h, j) {
-      return { h: px(h), cut: j >= 6 ? '#9af0be' : 'rgba(154,240,190,.2)', delay: (j * 0.03).toFixed(2) + 's' };
+      return { h: px(h), cut: pick[j] ? 'rgba(154,240,190,.2)' : '#9af0be', delay: (j * 0.03).toFixed(2) + 's' };
     });
-    d.kid = ha.slice(0, 6).concat(hb.slice(6)).map(function (h, j) {
-      return { h: px(h), bg: j < 6 ? '#3ddc84' : '#9af0be', delay: (0.45 + j * 0.04).toFixed(2) + 's' };
+    d.kid = ha.map(function (h, j) {
+      return { h: px(pick[j] ? ha[j] : hb[j]), bg: pick[j] ? '#3ddc84' : '#9af0be',
+               delay: (0.45 + j * 0.04).toFixed(2) + 's' };
     });
     d.mut = d.kid.map(function (g, j) {
       return (j === 2 || j === 9)
@@ -519,10 +532,9 @@
       + geneStrip(d.geneB) + '</div></div></div>'
       + '<div style="font-family:var(--display);font-size:26px;color:#5f7392;animation:xUp .3s .3s ease-out both">↓</div>'
       + '<div style="width:520px;display:flex;flex-direction:column;gap:12px;animation:xPop .45s .38s ease-out both">'
-      + '<div style="font-family:var(--display);font-size:10.5px;letter-spacing:2.2px;color:#cddcf2">THE KID · FIRST HALF FROM A, SECOND HALF FROM B</div>'
+      + '<div style="font-family:var(--display);font-size:10.5px;letter-spacing:2.2px;color:#cddcf2">THE KID · EACH NUMBER FROM ONE PARENT, BY COIN FLIP</div>'
       + '<div style="display:flex;align-items:flex-end;gap:6px;height:96px;padding:16px;border-radius:14px;border:1px solid rgba(61,220,132,.4);background:rgba(8,40,25,.5);position:relative">'
-      + kid
-      + '<div style="position:absolute;left:50%;top:6px;bottom:6px;width:2px;background:rgba(255,209,102,.6)"></div></div>'
+      + kid + '</div>'
       + '<div style="font-size:14.5px;line-height:1.45;color:#8fa4c4;text-align:center">Sometimes he inherits both talents. Sometimes neither. The next exam will sort him out.</div>'
       + '</div></div>';
   };
@@ -717,7 +729,19 @@
      open this for a sealed school, and the accent comes from the view either way.
      `animate` fades the whole panel in and belongs to the opening only: on a step the
      chrome is identical, so re-creating it silently leaves the new diagram to play alone. */
-  function overlay(v, step, animate) {
+  /* The diagrams are drawings and stay drawings — the crowd is a picture of a crowd, not
+     a count, and it is memoised so a take records identically. The COPY is different: it
+     names the size of that crowd out loud, and the population is an academy knob, so the
+     number is filled from the run rather than written down here. Everything else on these
+     screens is deliberately unmeasured; see the header. */
+  function fill(t, facts) {
+    return String(t).replace(/\{([A-Z]+)\}/g, function (whole, key) {
+      return facts && facts[key] !== undefined && facts[key] !== null
+        ? String(facts[key]) : whole.replace(/[{}]/g, '');
+    });
+  }
+
+  function overlay(v, step, animate, facts) {
     var list = STEPS[v.key] || STEPS.ppo;
     var i = Math.max(1, Math.min(list.length, step || 1));
     var cur = list[i - 1];
@@ -731,7 +755,8 @@
     }).join('');
 
     var body = cur.b.map(function (t) {
-      return '<div style="font-size:17.5px;line-height:1.55;color:#b3c5df;text-wrap:pretty">' + esc(t) + '</div>';
+      return '<div style="font-size:17.5px;line-height:1.55;color:#b3c5df;text-wrap:pretty">'
+        + esc(fill(t, facts)) + '</div>';
     }).join('');
 
     var fig = FIG[v.key + i];
@@ -757,7 +782,7 @@
       + '<div style="flex:0 0 auto;display:flex;align-items:center;gap:12px">'
       + '<div style="font-family:var(--display);font-size:11.5px;letter-spacing:2.6px;color:' + v.color + '">' + esc(cur.k) + '</div>'
       + '<div style="flex:1 1 auto;height:1px;background:rgba(140,170,210,.16)"></div></div>'
-      + '<div style="flex:0 0 auto;font-family:var(--display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:.5px;color:#f2f7ff;text-wrap:pretty">' + esc(cur.t) + '</div>'
+      + '<div style="flex:0 0 auto;font-family:var(--display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:.5px;color:#f2f7ff;text-wrap:pretty">' + esc(fill(cur.t, facts)) + '</div>'
       + '<div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:17px">' + body + '</div>'
       + '<div style="flex:0 0 auto;display:flex;gap:13px;align-items:flex-start;padding:16px 18px;border-radius:13px;background:' + P.rgba(v.color, .08) + ';border:1px solid ' + border + '">'
       + '<div style="width:6px;align-self:stretch;border-radius:3px;background:' + v.color + ';flex:0 0 auto"></div>'

@@ -590,9 +590,14 @@
        nothing to explain — better than a fourth chip that answers with an error.
        A zeroed run has none of them: nothing has trained, so three identical pills would
        invite a comparison of one thing with itself. */
-    var have = App.cat && App.cat.available;
+    /* `available` is one school list per checkpoint and the trainer sends it in every
+       hello. Only BEST consulted it; UNTRAINED, HALF-TRAINED and TRAINED were drawn
+       unconditionally, so a run missing one offered a pill whose click the trainer then
+       refused by name — a control for something this run does not contain. */
+    var have = (App.cat && App.cat.available) || null;
+    var has = function (c) { return !have || (have[c] || []).indexOf(App.school) >= 0; };
     var pills = (App.cat && App.cat.zeroed ? ['untrained']
-                 : CP.concat(have && have.best && have.best.indexOf(App.school) >= 0 ? ['best'] : []))
+                 : CP.concat(['best']).filter(has))
       .map(function (c) {
         var on = App.checkpoint === c;
         return '<div class="chip" data-cp="' + c + '" style="cursor:pointer;padding:8px 14px;'
@@ -705,8 +710,15 @@
       + (App.link !== 'live' && trainedHere()
          ? 'The trainer went away — nothing above is updating any more.'
          : App.trainInfo ? esc(App.trainInfo)
+         // Absence of a frame is tested FIRST. With the trainer down on a cold start
+         // there is no last frame, and the arena is empty black — captioned "this is the
+         // last frame it sent", which is a claim about a frame that never arrived. The
+         // algorithm panel one card away already gets this right and draws "no telemetry
+         // yet" rather than an empty box; this is the same rule, one card over.
+         : !App.frame ? (App.link !== 'live'
+             ? 'Trainer offline — no frame has arrived, so the arena is empty.'
+             : 'Waiting for the first frame from the trainer.')
          : App.link !== 'live' ? 'Trainer offline — this is the last frame it sent.'
-         : !App.frame ? 'Waiting for the first frame from the trainer.'
          : 'Frames are streaming from the ' + CP_NAME[App.checkpoint].toLowerCase()
            + ' policy — nothing here is scripted.')
       + '</div></div></div>';
@@ -1730,6 +1742,22 @@
     var d = done.length - c - m;
     var winner = c > m ? 'TOM' : (m > c ? 'JERRY' : 'SPLIT');
     var wcol = c > m ? 'var(--cat)' : (m > c ? 'var(--mouse)' : '#c9d8ee');
+    /* Whether this tally is a measurement at all — which decides whether anybody is
+       crowned. The reel disclaimer above was already here, already saying "not a
+       measurement of anything", and the sentence straight after it crowned a winner
+       anyway: two contradictory claims in one paragraph under a 46px title naming the
+       winner. Three things disqualify a tally, and the screen names which one applies. */
+    var played = done.length;
+    var live = App.mode === 'train' || trainedHere();
+    var measured = !reel && played >= n && !live;
+    var notWhy = reel
+      ? 'These are the <b>highlight reel</b>\u2019s ' + n + ' episodes — chosen for drama, one per '
+        + 'room. A tally of episodes picked for being close is not a measurement of anything.'
+      : played < n
+      ? 'Only <b>' + played + ' of ' + n + '</b> rooms have been played. The verdict needs a '
+        + 'finished playthrough.'
+      : 'These are training-lap episodes, played by a policy that was changing underneath '
+        + 'them. Twelve of those are not a score.';
 
     // The three checkpoints, scored against the same fixed opponent. This is the curve
     // that actually shows a student improving — the head-to-head above does not,
@@ -1765,24 +1793,28 @@
       + '<div style="width:44px;height:44px">' + P.emblem(v.emblem, v.color) + '</div>'
       + '<div><div class="kicker">School verdict</div>'
       + '<div class="title" style="font-size:46px;margin-top:4px;color:' + (v.sealed ? '#8494ad' : '#f2f7ff') + '">'
-      + esc(v.short) + ' · ' + winner + '</div></div></div>'
+      + esc(v.short) + ' · ' + (measured ? winner : 'NOT A MEASUREMENT') + '</div></div></div>'
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
       + '<div style="position:relative;display:flex;gap:18px;margin-top:20px;flex:1">'
       + '<div class="card" style="flex:1;padding:24px;display:flex;flex-direction:column;gap:18px">'
       + '<div style="display:flex;gap:14px">'
-      + scoreBox('TOM · CAUGHT HER', c + ' / ' + n, 'var(--cat)')
-      + scoreBox('JERRY · GOT HOME', m + ' / ' + n, 'var(--mouse)')
-      + scoreBox('RAN OUT OF TIME', String(d), '#8fa4c4') + '</div>'
+      // One denominator for all three. `c` and `m` count the rooms PLAYED and were drawn
+      // over the full room count, so eight unplayed rooms read as eight losses for both
+      // animals at once — while the third box carried no denominator at all.
+      + scoreBox('TOM · CAUGHT HER', c + ' / ' + played, 'var(--cat)')
+      + scoreBox('JERRY · GOT HOME', m + ' / ' + played, 'var(--mouse)')
+      + scoreBox('RAN OUT OF TIME', d + ' / ' + played, '#8fa4c4') + '</div>'
+      + (played < n ? '<div class="mono faint" style="font-size:11px;margin-top:-8px">'
+          + played + ' of ' + n + ' rooms played</div>' : '')
       + '<div style="display:flex;gap:6px">' + strip + '</div>'
       + '<div class="dim" style="font-size:13.5px;line-height:1.6">'
-      + (reel
-         ? 'These are the <b>highlight reel</b>\u2019s ' + n + ' episodes \u2014 chosen for drama, one per room, '
-           + 'so this tally is not a measurement of anything. Press <span class="mono">b</span> for the numbers that are. '
-         : '')
-      + 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
-      + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
-      + 'both sides here were raised together, so it says as much about the sparring partner as the student. '
-      + 'The leaderboard settles that.</div>'
+      + (measured
+         ? 'This is the head-to-head on the shared level set: <b style="color:' + wcol + '">' + winner
+           + '</b> came out ahead <i>inside this school</i>. It is not a ranking across schools — '
+           + 'both sides here were raised together, so it says as much about the sparring partner as '
+           + 'the student. The leaderboard settles that.'
+         : notWhy + ' Press <span class="mono">b</span> for the numbers that are a measurement.')
+      + '</div>'
       + trapStory(prog)
       + '<div style="margin-top:auto;display:flex;gap:10px">'
       + '<div class="btn" data-act="board">SEE THE LEADERBOARD · B</div>'

@@ -594,9 +594,10 @@
     if (frame.mouse && frame.mouse.probs) this.mouseT = frame.mouse.probs;
   };
 
-  LivePanel.prototype.row = function (label, probs, color, y, w, sense) {
+  LivePanel.prototype.row = function (label, probs, color, y, w, sense, bh) {
     var p = [], f = function (v) { return (+v).toFixed(1); };
-    var bx = 16, bw = w - 32, bh = 74;
+    var bx = 16, bw = w - 32;
+    bh = bh || 74;
     p.push('<text x="' + bx + '" y="' + (y - 8) + '" fill="' + color + '" font-size="12" letter-spacing="2" font-weight="700">' + label + '</text>');
     p.push('<text x="' + (bx + 70) + '" y="' + (y - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">' + sense + '</text>');
     if (!probs) {
@@ -632,11 +633,21 @@
     var fr = this.frame || { cat: {}, mouse: {} };
     var p = ['<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" style="display:block">'];
     p.push('<text x="16" y="20" fill="#8fa4c4" font-size="11" letter-spacing="1.4">WHAT EACH BRAIN IS ABOUT TO DO</text>');
-    p.push(this.row('TOM', this.catT ? this.cat : null, '#ff8a5c', 62, w,
-      (fr.cat.mode || '—') + (fr.cat.frozen ? '  · frozen ' + fr.cat.frozen : '')));
-    p.push(this.row('JERRY', this.mouseT ? this.mouse : null, '#7ee0ff', 210, w,
+    /* The two rows share whatever lies between the heading and the captions. The bars
+       were a fixed 74px, which is right for the 420-tall panel this was written against
+       and a quarter of the room in the 851-tall card it is actually drawn into on the
+       school screen. On camera the bar height IS the reading — it is the one number the
+       narration points at — so it gets the space rather than being centred in it. */
+    var LABEL = 24, TICK = 20, GAP = 26, HEAD = 38, CAPS = 44;
+    var avail = (h - CAPS) - HEAD;
+    var bh = Math.max(48, Math.floor((avail - 2 * (LABEL + TICK) - GAP) / 2));
+    var y1 = HEAD + LABEL;
+    var y2 = y1 + bh + TICK + GAP + LABEL;
+    p.push(this.row('TOM', this.catT ? this.cat : null, '#ff8a5c', y1, w,
+      (fr.cat.mode || '—') + (fr.cat.frozen ? '  · frozen ' + fr.cat.frozen : ''), bh));
+    p.push(this.row('JERRY', this.mouseT ? this.mouse : null, '#7ee0ff', y2, w,
       (fr.mouse.mode || '—') + (fr.mouse.heard ? '  · hears him, confidence ' + fr.mouse.heard.conf.toFixed(2) : '')
-      + (fr.mouse.frozen ? '  · frozen ' + fr.mouse.frozen : '')));
+      + (fr.mouse.frozen ? '  · frozen ' + fr.mouse.frozen : ''), bh));
     p.push('<text x="16" y="' + (h - 26) + '" fill="#7d90ad" font-size="11">'
       + 'Five bars, five moves. The tall one is what the network wants; the others are how much doubt is left in it.</text>');
     p.push('<text x="16" y="' + (h - 8) + '" fill="#61708a" font-size="11" font-family="JetBrains Mono,monospace">'

@@ -2049,8 +2049,15 @@
     // of the method, not a readout of the current episode.
     var p = (lesson || trainingHere()) ? App.panels[App.school] : App.livePanel;
     if (!p || !p.draw) return;
-    host.innerHTML = lesson ? p.draw(1180, 700, view(App.school).color)
-                            : p.draw(700, 420, view(App.school).color);
+    // Drawn at the size the host actually has. `clientWidth`/`clientHeight` are layout
+    // pixels and the stage is scaled by a transform, so they ARE canvas pixels — no
+    // conversion. The fixed 700x420 letterboxed inside whatever box it was given: on the
+    // school screen in playback the host is 666x851, so 452px of that card — more than
+    // half of it — was empty, on the screen this video spends most of its time on. Every
+    // panel already derives its layout from the width and height it is handed.
+    var pw = Math.max(320, host.clientWidth || (lesson ? 1180 : 700));
+    var ph = Math.max(240, host.clientHeight || (lesson ? 700 : 420));
+    host.innerHTML = p.draw(pw, ph, view(App.school).color);
   }
 
   var last = 0;

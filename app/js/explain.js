@@ -70,12 +70,12 @@
         b: ['That single score is the whole feedback. Not per action, not per step — per entire life.',
             'Nobody asks why #07 scored 82 and #16 scored 17. The algorithm genuinely does not care.'],
         take: 'One life, one number.' },
-      { k: 'STEP 3 · THE CULL', t: 'Top of the list lives. Bottom of the list is deleted.',
-        b: ['Sort by score, keep roughly the best quarter, bin the rest. Brutal, and shockingly effective.',
+      { k: 'STEP 3 · THE CULL', t: 'A few carry over untouched. Everyone else is replaced.',
+        b: ['Sort by score. The best {ELITE} survive into the next generation unchanged; every other slot is filled by a child. Parents are picked by small random tournaments over the whole crowd, so a mediocre genome can still get lucky — the cull is a bias, not a wall.',
             'The population just got better while not a single Tom learned a thing. Improvement came from who was allowed to have children.'],
         take: 'Selection, not learning.' },
-      { k: 'STEP 4 · CROSSOVER', t: 'Two survivors, one kid, numbers mixed.',
-        b: ['Take dad’s first half and mum’s second half and staple them into a new genome. If dad cut corners well and mum was patient at the hole, sometimes the kid inherits both.',
+      { k: 'STEP 4 · CROSSOVER', t: 'Two parents, one kid, numbers mixed.',
+        b: ['Flip a coin for every single weight: this one from dad, that one from mum. Not first half and second half — each number is decided on its own. If dad cut corners well and mum was patient at the hole, sometimes the kid inherits both.',
             'And sometimes he inherits neither and is a disaster. Fine — next exam sorts him out.'],
         take: 'Recombine what already works.' },
       { k: 'STEP 5 · MUTATION', t: 'Then randomly typo a couple of his numbers.',
@@ -192,14 +192,22 @@
     var ha = [38, 54, 22, 61, 30, 47, 18, 58, 44, 26, 50, 34];
     var hb = [52, 20, 44, 29, 57, 36, 62, 24, 40, 55, 31, 48];
     var px = function (n) { return Math.round(n * 1.05) + '%'; };
+    /* The trainer's crossover is uniform and per weight — `take = rng.random(FLAT_DIM) <
+       0.5` in ga.py, and ga.py's own header says "crossover uniform, per weight". This
+       drew a cut point: dad's first half, mum's second, with a gold line down the middle.
+       The lesson panel one keypress away already said "flip a coin per weight", so the
+       explainer was teaching a different algorithm from the one running behind it. A
+       fixed pattern, not a random one, so a take records identically. */
+    var pick = [1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0];
     d.geneA = ha.map(function (h, j) {
-      return { h: px(h), cut: j < 6 ? '#3ddc84' : 'rgba(61,220,132,.22)', delay: (j * 0.03).toFixed(2) + 's' };
+      return { h: px(h), cut: pick[j] ? '#3ddc84' : 'rgba(61,220,132,.22)', delay: (j * 0.03).toFixed(2) + 's' };
     });
     d.geneB = hb.map(function (h, j) {
-      return { h: px(h), cut: j >= 6 ? '#9af0be' : 'rgba(154,240,190,.2)', delay: (j * 0.03).toFixed(2) + 's' };
+      return { h: px(h), cut: pick[j] ? 'rgba(154,240,190,.2)' : '#9af0be', delay: (j * 0.03).toFixed(2) + 's' };
     });
-    d.kid = ha.slice(0, 6).concat(hb.slice(6)).map(function (h, j) {
-      return { h: px(h), bg: j < 6 ? '#3ddc84' : '#9af0be', delay: (0.45 + j * 0.04).toFixed(2) + 's' };
+    d.kid = ha.map(function (h, j) {
+      return { h: px(pick[j] ? ha[j] : hb[j]), bg: pick[j] ? '#3ddc84' : '#9af0be',
+               delay: (0.45 + j * 0.04).toFixed(2) + 's' };
     });
     d.mut = d.kid.map(function (g, j) {
       return (j === 2 || j === 9)
@@ -524,10 +532,9 @@
       + geneStrip(d.geneB) + '</div></div></div>'
       + '<div style="font-family:var(--display);font-size:26px;color:#5f7392;animation:xUp .3s .3s ease-out both">↓</div>'
       + '<div style="width:520px;display:flex;flex-direction:column;gap:12px;animation:xPop .45s .38s ease-out both">'
-      + '<div style="font-family:var(--display);font-size:10.5px;letter-spacing:2.2px;color:#cddcf2">THE KID · FIRST HALF FROM A, SECOND HALF FROM B</div>'
+      + '<div style="font-family:var(--display);font-size:10.5px;letter-spacing:2.2px;color:#cddcf2">THE KID · EACH NUMBER FROM ONE PARENT, BY COIN FLIP</div>'
       + '<div style="display:flex;align-items:flex-end;gap:6px;height:96px;padding:16px;border-radius:14px;border:1px solid rgba(61,220,132,.4);background:rgba(8,40,25,.5);position:relative">'
-      + kid
-      + '<div style="position:absolute;left:50%;top:6px;bottom:6px;width:2px;background:rgba(255,209,102,.6)"></div></div>'
+      + kid + '</div>'
       + '<div style="font-size:14.5px;line-height:1.45;color:#8fa4c4;text-align:center">Sometimes he inherits both talents. Sometimes neither. The next exam will sort him out.</div>'
       + '</div></div>';
   };

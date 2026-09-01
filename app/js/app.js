@@ -2077,7 +2077,7 @@
     // GA. All three mean the same population, so it is passed whatever GA would use.
     var ga = tunablesNow('ga'), cma = tunablesNow('cmaes');
     var facts = {};
-    if (ga) facts.POP = ga.pop_size;
+    if (ga) { facts.POP = ga.pop_size; facts.ELITE = ga.elite; }
     if (cma) facts.LAM = cma.lam;
     host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening, facts) : '';
   }
@@ -2153,6 +2153,15 @@
   function notice(text, bad) {
     App.notice = { text: text, at: performance.now(), bad: bad !== false };
     render();
+  }
+
+  /* `Net.send` queues rather than rejecting, so a control that announces its own work is
+     believed by the screen and then fires unannounced whenever the socket comes back.
+     Every control that claims something happened asks this first. */
+  function offlineRefused() {
+    if (App.link === 'live') return false;
+    notice('The trainer is not running — nothing was sent. Start it with ./run.sh serve.', true);
+    return true;
   }
 
   function render() {
@@ -2326,6 +2335,16 @@
     // A pin belongs to the school it was taken from; the server drops it on `play`.
     App.pinned = null;
     App.school = key;
+    /* A checkpoint belongs to a school, and this carried the current one across without
+       asking. Click BEST on a school that has one, press another school, and the trainer
+       refuses `no <school> @ best in this run` — after which the arena froze on the last
+       school's frame, its playthrough went on running underneath, and ITS runEnd drove the
+       verdict, which then crowned a winner over eleven episodes played by the other
+       school's weights under this school's name. `available` is on hand; use it. */
+    var av = App.cat && App.cat.available;
+    if (!cp && av && av[App.checkpoint] && av[App.checkpoint].indexOf(key) < 0) {
+      App.checkpoint = 'trained';
+    }
     App.checkpoint = cp || App.checkpoint;
     App.results = [];
     App.frame = App.prev = null;
@@ -2599,11 +2618,17 @@
       else if (a === 'acad-reset') acadReset();
       else if (a === 'notice-close') { App.notice = null; render(); }
       else if (a === 'keys-close') { App.showKeys = false; render(); }
-      else if (a === 'stop-all') { App.net.send({ cmd: 'stopAll' }); notice('Asking all three to finish their iteration and save…', false); }
+      else if (a === 'stop-all') {
+        if (!offlineRefused()) {
+          App.net.send({ cmd: 'stopAll' });
+          notice('Asking all three to finish their iteration and save…', false);
+        }
+      }
       else if (a === 'refresh') {
         // The leaderboard, the BEST chip and the run list were stale until the server
         // volunteered a greeting or the page was reloaded. The command has always been
         // dispatched; nothing ever sent it.
+        if (offlineRefused()) return;
         App.net.send({ cmd: 'hello' });
         notice('Asked the trainer for fresh results…', false);
       }
@@ -2622,6 +2647,7 @@
         render();
       }
       else if (a === 'score') {
+        if (offlineRefused()) return;
         App.scoring = { lines: [], done: false, ok: false };
         App.net.send({ cmd: 'score', tag: App.setup.tag,
                        checkpoint: App.setup.scoreWith });
@@ -2633,9 +2659,9 @@
       else if (a === 'race') startRace();
       else if (a === 'reset') {
         if (App.link !== 'live') {
-          // `Net.send` queues rather than rejecting, so the wipe was announced, the local
-          // playback state was cleared, and the menu went on showing GRADUATED chips with
-          // real percentages off a catalogue nothing had touched.
+          // The wipe was announced, the local playback state was cleared, and the menu
+          // went on showing GRADUATED chips with real percentages off a catalogue nothing
+          // had touched.
           App.resetArmed = 0;
           notice('The trainer is not running — nothing was wiped. Start it and press again.', true);
           render();

@@ -1514,6 +1514,7 @@
     var pop = App.raceKind === 'population';
     var schools = App.raceSchools || ORDER;
     var lay = raceLayout(schools.length), cs = lay.cs;
+    var waitingLanes = !App.map || !App.raceFrames || !Object.keys(App.raceFrames).length;
     var wins = App.raceWins || {};
     var lanes = schools.map(function (k) {
       var v = laneView(k);
@@ -1539,6 +1540,17 @@
         + '<div style="position:relative;width:' + (E.W * cs) + 'px;height:' + (E.H * cs) + 'px;border-radius:9px;overflow:hidden;border:1px solid var(--line)">'
         + '<div id="rmap-' + k + '" style="position:absolute;inset:0"></div>'
         + '<div id="rfx-' + k + '" style="position:absolute;inset:0"></div>'
+        // Until the first lane arrives these panes are three empty rectangles, and with
+        // the trainer down they stay that way — indistinguishable from a screen that has
+        // broken. `paintRace` returns early without a frame and a map, so the pane says
+        // what it is waiting for and gets painted over the moment one lands.
+        + (waitingLanes
+           ? '<div style="position:absolute;inset:0;display:grid;place-items:center;padding:0 18px">'
+             + '<div class="mono" style="font-size:11px;line-height:1.6;color:#3d4a60;text-align:center">'
+             + (App.link !== 'live' ? 'the trainer is not connected — nothing is being raced'
+                : !App.playing ? 'paused — press space to start the race'
+                : 'waiting for the first lane…') + '</div></div>'
+           : '')
         + (done ? '<div style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,7,12,.55)">'
             + '<div class="title" style="font-size:22px;letter-spacing:2px;color:'
             + (done === 'catch' ? 'var(--cat)' : done === 'escape' ? 'var(--gold)' : '#8fa4c4') + '">'

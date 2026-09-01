@@ -1342,23 +1342,82 @@
      Three panes at cell size 22 fit the 1920 canvas with room for the scoreboard. */
   var RCS = 22;
 
+  /* Twenty-two was sized for three panes: 3 x 27 x 22 is 1782 and fits. Six panes at the
+     same cell is 3564 across a canvas 1920 wide, so the last ones ran off the right edge
+     with nothing saying they had.
+     Six in one row does fit, at ten pixels a cell, and leaves the bottom third of the
+     canvas empty — width is the binding constraint there, so spare height cannot help.
+     Two rows of three is what actually uses the frame: the cell roughly doubles. */
+  function raceLayout(n) {
+    n = Math.max(1, n);
+    var perRow = n <= 3 ? n : 3;
+    var rows = Math.ceil(n / perRow);
+    var wAvail = 1920 - 40 - 14 * (perRow - 1) - 24 * perRow;   // padding, gaps, card padding
+    // Header, row gaps, the twelve-room matrix and the button row all come off the
+    // height before the panes get any of it.
+    // The matrix is one row per lane, so its height is not a constant: at six lanes the
+    // 190px written for three put the last row at y=1082 on a canvas 1080 tall and ran
+    // the one above it through the button bar. Six lanes also get the compact row.
+    var compact = n > 3;
+    // The 56 is the button bar; the 30 after it is slack, because the header and each
+    // card's own title row measure a little larger than the estimate and the failure mode
+    // is the matrix sliding under the buttons rather than anything visibly breaking.
+    var hAvail = 1080 - 36 - 84 - 14 * (rows - 1) - (46 + n * (compact ? 26 : 44)) - 56 - 30;
+    var byW = Math.floor(wAvail / perRow / E.W);
+    var byH = Math.floor((hAvail / rows - 70) / E.H);
+    return { cs: Math.max(6, Math.min(RCS, byW, byH)), perRow: perRow, rows: rows,
+             compact: compact };
+  }
+
+  /* A lane is a SCHOOL in the three-school race and a GENOME in the population race.
+     Everything that draws one asks here, because `view()` looks a key up in ALGOS and a
+     genome has no entry there — it is one member of one generation of one school. */
+  function laneView(k) {
+    if (App.raceKind !== 'population') return view(k);
+    var lanes = App.raceLanes || [];
+    var i = -1;
+    for (var j = 0; j < lanes.length; j++) if (lanes[j].key === k) { i = j; break; }
+    var L = i >= 0 ? lanes[i] : null;
+    var half = Math.ceil(lanes.length / 2) || 1;
+    var kept = i >= 0 && i < half;
+    // Kept and replaced are two families of colour, not six arbitrary ones: the split is
+    // the point of the screen, and six unrelated hues would hide it.
+    var hue = kept ? 96 + i * 24 : 6 + (i - half) * 14;
+    return {
+      color: 'hsl(' + hue + ',64%,' + (kept ? 58 : 56) + '%)',
+      short: L ? 'RANK ' + L.rank : k,
+      sub: L ? 'fitness ' + (+L.fitness).toFixed(3) : '',
+      kept: kept, sealed: false, emblem: null
+    };
+  }
+
   function renderRace() {
+    var pop = App.raceKind === 'population';
     var schools = App.raceSchools || ORDER;
+    var lay = raceLayout(schools.length), cs = lay.cs;
     var wins = App.raceWins || {};
     var lanes = schools.map(function (k) {
-      var v = view(k);
+      var v = laneView(k);
       var w = wins[k] || { catch: 0, escape: 0, draw: 0 };
       var done = App.raceDone && App.raceDone[k];
-      return '<div class="card" style="flex:1;padding:12px;border-color:' + P.rgba(v.color, .3) + '">'
+      return '<div class="card" style="padding:12px;border-color:' + P.rgba(v.color, .3)
+        + ';flex:' + (lay.rows === 1 ? '1'
+            : '0 0 calc((100% - ' + (14 * (lay.perRow - 1)) + 'px) / ' + lay.perRow + ')') + '">'
         + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
-        + '<div style="width:26px;height:26px;flex:0 0 auto">' + P.emblem(v.emblem, v.color) + '</div>'
-        + '<div class="title" style="font-size:22px;color:' + (v.sealed ? '#8494ad' : v.color) + '">' + esc(v.short) + '</div>'
+        + (pop
+           ? '<div style="width:26px;height:26px;flex:0 0 auto;border-radius:6px;background:'
+             + P.rgba(v.color, .22) + ';border:1px solid ' + P.rgba(v.color, .55) + '"></div>'
+           : '<div style="width:26px;height:26px;flex:0 0 auto">' + P.emblem(v.emblem, v.color) + '</div>')
+        + '<div><div class="title" style="font-size:' + (pop ? 18 : 22) + 'px;color:'
+        + (v.sealed ? '#8494ad' : v.color) + '">' + esc(v.short) + '</div>'
+        + (pop ? '<div class="mono faint" style="font-size:10px">' + esc(v.sub) + '</div>' : '')
+        + '</div>'
         + '<div style="margin-left:auto;display:flex;gap:8px">'
         + '<span class="mono" style="font-size:15px;color:var(--cat)">' + w.catch + '</span>'
         + '<span class="faint">/</span>'
         + '<span class="mono" style="font-size:15px;color:var(--mouse)">' + w.escape + '</span>'
         + '<span class="faint mono" style="font-size:12px">' + w.draw + '</span></div></div>'
-        + '<div style="position:relative;width:' + (E.W * RCS) + 'px;height:' + (E.H * RCS) + 'px;border-radius:9px;overflow:hidden;border:1px solid var(--line)">'
+        + '<div style="position:relative;width:' + (E.W * cs) + 'px;height:' + (E.H * cs) + 'px;border-radius:9px;overflow:hidden;border:1px solid var(--line)">'
         + '<div id="rmap-' + k + '" style="position:absolute;inset:0"></div>'
         + '<div id="rfx-' + k + '" style="position:absolute;inset:0"></div>'
         + (done ? '<div style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,7,12,.55)">'
@@ -1370,24 +1429,35 @@
 
     return '<div class="screen">' + backdrop('bg-final', .3)
       + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
-      + '<div><div class="kicker">Same room · same spawns · same noise · three different brains</div>'
-      + '<div class="title" style="font-size:44px;margin-top:4px">SIDE BY SIDE</div></div>'
+      + (pop
+         ? '<div><div class="kicker">Same room · same spawns · same noise · same opponent · '
+           + 'six brains out of one generation</div>'
+           + '<div class="title" style="font-size:44px;margin-top:4px">KEPT AND REPLACED</div></div>'
+         : '<div><div class="kicker">Same room · same spawns · same noise · three different brains</div>'
+           + '<div class="title" style="font-size:44px;margin-top:4px">SIDE BY SIDE</div></div>')
       + '<div style="display:flex;gap:10px">' + revealChip() + statusChip() + '</div></div>'
-      + '<div style="position:relative;display:flex;gap:14px;margin-top:14px">' + lanes + '</div>'
-      + raceMatrix(schools)
+      + '<div style="position:relative;display:flex;flex-wrap:wrap;gap:14px;margin-top:14px">' + lanes + '</div>'
+      + raceMatrix(schools, lay.compact)
       + '<div style="position:relative;display:flex;gap:10px;margin-top:auto;align-items:center">'
       + '<div class="btn ghost" data-act="menu">ESC · ACADEMY</div>'
       + '<div class="btn ghost" data-act="pause">' + (App.playing ? 'PAUSE · SPACE' : 'RESUME · SPACE') + '</div>'
-      + '<div class="btn ghost" data-act="race">RESTART · X</div>'
+      + (pop ? '' : '<div class="btn ghost" data-act="race">RESTART · X</div>')
       + '<div class="dim" style="margin-left:auto;font-size:12.5px">'
       + 'Arena ' + (((App.runState || {}).level || 0) + 1) + ' of ' + (App.cat ? App.cat.levels.length : 12)
-      + ' &nbsp;·&nbsp; nothing differs between the three panes except the policy.</div></div></div>';
+      + (pop
+         ? ' &nbsp;·&nbsp; generation ' + (App.raceGen === undefined ? '—' : App.raceGen)
+           + ' of ' + (App.racePop || '—') + ' brains · the left three were kept, the right three '
+           + 'were replaced · nothing differs between the panes except the genome.'
+         : ' &nbsp;·&nbsp; nothing differs between the three panes except the policy.')
+      + '</div></div></div>';
   }
 
   /* The same twelve rooms, three schools, one grid. Reading down a column tells you
      whether a room is hard or whether one school simply solved it — which is the
      comparison the side-by-side view exists to make. */
-  function raceMatrix(schools) {
+  function raceMatrix(schools, compact) {
+    var pad = compact ? '3px 0' : '7px 0';
+    var gap = compact ? 3 : 6;
     var n = App.cat ? App.cat.levels.length : 12;
     var grid = App.raceGrid || {};
     var head = '<div style="display:flex;gap:4px;margin-left:104px">';
@@ -1398,14 +1468,14 @@
     head += '</div>';
 
     var rows = schools.map(function (k) {
-      var v = view(k);
+      var v = laneView(k);
       var r = grid[k] || [];
       var c = r.filter(function (x) { return x === 'catch'; }).length;
       var m = r.filter(function (x) { return x === 'escape'; }).length;
       var cells = '';
       for (var i = 0; i < n; i++) {
         var x = r[i];
-        cells += '<div style="flex:1;text-align:center;padding:7px 0;border-radius:5px;border:1px solid '
+        cells += '<div style="flex:1;text-align:center;padding:' + pad + ';border-radius:5px;border:1px solid '
           + (x === 'catch' ? 'rgba(255,138,92,.36)' : x === 'escape' ? 'rgba(126,224,255,.32)'
              : x ? 'var(--line)' : 'rgba(130,160,200,.09)')
           + ';background:' + (x === 'catch' ? 'rgba(255,122,84,.14)' : x === 'escape' ? 'rgba(110,226,255,.12)'
@@ -1414,7 +1484,7 @@
           + (x === 'catch' ? '#ff9a72' : x === 'escape' ? '#7ee0ff' : x ? '#8fa4c4' : '#31405a')
           + '">' + (x === 'catch' ? 'T' : x === 'escape' ? 'J' : x ? '–' : '·') + '</span></div>';
       }
-      return '<div style="display:flex;align-items:center;gap:4px;margin-top:6px">'
+      return '<div style="display:flex;align-items:center;gap:4px;margin-top:' + gap + 'px">'
         + '<div class="mono" style="width:100px;font-size:12px;color:' + (v.sealed ? '#8494ad' : v.color) + '">'
         + esc(v.short) + '</div>' + cells
         + '<div class="mono" style="width:78px;text-align:right;font-size:12px">'
@@ -1431,20 +1501,23 @@
   function paintRace(now) {
     if (!App.raceFrames || !App.map) return;
     var schools = App.raceSchools || ORDER;
+    var cs = raceLayout(schools.length).cs;
     var local = localMap(App.map);
     for (var i = 0; i < schools.length; i++) {
       var k = schools[i];
       var mh = el('rmap-' + k), fh = el('rfx-' + k);
       if (!mh || !fh) continue;
-      if (mh.getAttribute('data-k') !== String(App.map.seed)) {
-        mh.setAttribute('data-k', String(App.map.seed));
-        mh.innerHTML = P.mapSvg(local, RCS, { sprites: App.sprites });
+      // Keyed by cell size as well as seed: six lanes and three lanes draw the same room
+      // at different scales, and a cache that only watched the seed kept the old one.
+      if (mh.getAttribute('data-k') !== App.map.seed + ':' + cs) {
+        mh.setAttribute('data-k', App.map.seed + ':' + cs);
+        mh.innerHTML = P.mapSvg(local, cs, { sprites: App.sprites });
       }
-      var v = view(k);
+      var v = laneView(k);
       var fr = App.raceFrames[k], pv = (App.racePrev && App.racePrev[k]) || fr;
       if (!fr) continue;
       fh.innerHTML = P.fxSvg({
-        frame: fr, prev: pv, alpha: App.alpha, cs: RCS, map: local,
+        frame: fr, prev: pv, alpha: App.alpha, cs: cs, map: local,
         key: 'r' + k, now: now, catAccent: v.color, mouseAccent: v.color,
         sprites: App.sprites, spriteFps: App.spriteFps, holdSteps: E.CFG.freezeSteps,
         catMoving: App.alpha < 1 && (fr.cat.x !== pv.cat.x || fr.cat.y !== pv.cat.y),
@@ -1745,6 +1818,7 @@
      running, so nothing has to be interrupted to check it. */
   var KEYS = [
     ['1 2 3', 'enter a school'], ['x', 'side by side — all three, same room'],
+    ['p', 'kept and replaced — six brains of one live generation, same room'],
     ['g', 'the level generator'], ['l', 'full-screen lesson'],
     ['w', 'how this algorithm works — six steps'],
     ['h', 'the highlight reel'], ['f', 'the grand final'],
@@ -2366,6 +2440,18 @@
       if (k === 'escape') go('menu');
       else if (k === '1' || k === '2' || k === '3') playSchool(ORDER[+k - 1]);
       else if (k === 'g') go('gen');
+      else if (k === 'p') {
+        // Only while a run is live: the brains that lost exist for one generation and
+        // are written over, so a finished run has nothing to put in the losing lanes.
+        if (!trainingHere()) {
+          notice('The population race needs a live run in this school — the brains that '
+                 + 'lost are not kept once it ends.', true);
+        } else {
+          App.raceFrames = {}; App.racePrev = {}; App.raceDone = {};
+          App.raceWins = {}; App.raceGrid = {};
+          App.net.send({ cmd: 'popRace', role: 'cat' });
+        }
+      }
       else if (k === 'b') go('board');
       else if (k === 'h') playHighlights();
       else if (k === 'x') startRace();
@@ -2579,6 +2665,12 @@
       .on('race', function (m) {
         App.lastFrameAt = performance.now();
         App.raceSchools = m.schools;
+        // Only the population race sends these. Cleared rather than left standing, or a
+        // three-school race after one would draw its lanes as somebody's genomes.
+        App.raceKind = m.raceKind || null;
+        App.raceLanes = m.raceLanes || null;
+        App.raceGen = m.raceGen;
+        App.racePop = m.racePop;
         App.raceWins = m.wins;
         // Lanes finish at different times, so continuity is decided per lane: a pane
         // that has already ended holds still while the others keep moving.

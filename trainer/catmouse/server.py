@@ -636,6 +636,65 @@ class Session:
         self._begin_episode()
         return {"type": "state", **self.state()}
 
+    def start_pop_race(self, role: str = "cat") -> dict:
+        """The best and the worst of one generation, in the same room, at the same time.
+
+        The grid says a hundred and five of these are replaced; it cannot say WHY, because
+        the arena only ever plays the winner. This puts six of them in twelve identical
+        rooms -- same map, same spawns, same hearing noise, one shared draw of the action
+        uniforms -- against the same opponent. Every difference on screen is the genome,
+        because nothing else was allowed to differ. That is the same claim SIDE BY SIDE
+        makes about the three schools, made about six members of one family.
+
+        Racing the population is only possible while a run is live: the losers exist for
+        one generation and are then written over, so they are kept as they are scored
+        rather than reconstructed afterwards. A finished run cannot show this.
+        """
+        sch = self.train_school
+        if sch is None:
+            return {"type": "error", "message":
+                    "the population race needs a live run — the brains that lost are not "
+                    "kept once it ends"}
+        show = getattr(sch, "showcase", {}).get(role)
+        if not show:
+            return {"type": "error", "message":
+                    f"{getattr(sch, 'key', 'this school')} does not breed a population — "
+                    "the race is for the evolutionary schools"}
+        other = "mouse" if role == "cat" else "cat"
+        rows = show["rows"]
+        n = int(rows.shape[0])
+        keys = ["g%d" % i for i in range(n)]
+        self.mode = "race"
+        self.unpin()
+        self.level_seeds = None
+        self.race = keys
+        self.ctx = {
+            "schools": keys, "checkpoint": "live",
+            "wins": {k: {"catch": 0, "escape": 0, "draw": 0} for k in keys},
+            "raceKind": "population", "raceRole": role, "raceSchool": getattr(sch, "key", None),
+            "raceLanes": [{"key": keys[i], "rank": show["rank"][i], "fitness": show["fit"][i],
+                           "genome": show["idx"][i]} for i in range(n)],
+            "raceGen": show["gen"], "racePop": show["size"],
+        }
+        self.level_order = list(range(len(self.maps)))
+        self.level = 0
+        self.results = []
+        self.env = VecEnv(self.maps, n, seed=0x2ACE)
+        self.env.noise_tile = 1
+        self.bot = None
+        # One opponent, copied into every lane. Racing six cats against six different
+        # mice would make the mouse the variable as well, and then a lane that lost would
+        # not tell you whose fault it was.
+        opp = np.stack([sch.best[other]] * n)
+        self.actors = {
+            role: FlatActor(np.stack([rows[i] for i in range(n)]), self.device,
+                            assign=np.arange(n)),
+            other: FlatActor(opp, self.device, assign=np.arange(n)),
+        }
+        self._race_done = [None] * n
+        self._begin_episode()
+        return {"type": "state", **self.state()}
+
     def race_tick(self) -> list[dict]:
         e = self.env
         n = len(self.race)
@@ -651,6 +710,11 @@ class Session:
         payload = {"type": "race", "mode": "race", "lanes": lanes,
                    "level": self.level, "wins": self.ctx["wins"],
                    "schools": self.race, "checkpoint": self.ctx["checkpoint"]}
+        # A population race has no schools to look up, so what each lane IS has to travel
+        # with the frames. Absent for the three-school race, which reads them from ORDER.
+        for extra in ("raceKind", "raceRole", "raceSchool", "raceLanes", "raceGen", "racePop"):
+            if extra in self.ctx:
+                payload[extra] = self.ctx[extra]
         idx = int(e.map_idx[0])
         if self._map_sent != idx:
             self._map_sent = idx

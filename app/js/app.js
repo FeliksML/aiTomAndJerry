@@ -1316,7 +1316,12 @@
     var ck = st.catSchool || (t && t.champion.cat) || 'ppo';
     var mk = st.mouseSchool || (t && t.champion.mouse) || 'ppo';
     var cv = view(ck), mv = view(mk);
-    var wins = st.wins || { cat: 0, mouse: 0, draw: 0 };
+    // `wins` is two different shapes. The final counts {cat, mouse, draw}; a race counts
+    // one {catch, escape, draw} per LANE, keyed by lane. Both ride in on `runState`, so
+    // coming to the final straight off a race printed "draws undefined" on screen.
+    var w0 = st.wins;
+    var wins = (w0 && typeof w0.cat === 'number' && typeof w0.draw === 'number')
+      ? w0 : { cat: 0, mouse: 0, draw: 0 };
     return '<div class="screen">' + backdrop('bg-final', .5)
       + '<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start">'
       + '<div><div class="kicker">Champion versus champion · an arena neither has seen</div>'
@@ -2292,6 +2297,11 @@
 
   function startRace() {
     App.raceFrames = {}; App.racePrev = {}; App.raceDone = {}; App.raceWins = {}; App.raceGrid = {};
+    // What the lanes ARE has to go too. This renders before the first lane arrives, and
+    // `renderRace` falls back to whatever it was last told — so x pressed after p drew
+    // SIDE BY SIDE as a population race, ranks and all, until a frame landed.
+    App.raceKind = null; App.raceLanes = null; App.raceSchool = null;
+    App.raceSchools = null; App.raceSig = null;
     App.screen = 'race';
     render();
     App.net.send({ cmd: 'race', checkpoint: 'trained' });

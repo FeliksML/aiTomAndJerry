@@ -1351,6 +1351,41 @@
   /* A full-screen version of the same explainer, for talking over on camera. The panel
      is identical — only bigger — so what is being explained is exactly what was on
      screen a moment ago beside the arena, rather than a separate illustration. */
+  /* The lesson prose carries the same numbers the identity cards do, off the same knobs.
+     Filmed exactly as SHOOT.md directs — press 2, then l — the heading read "Forty-eight
+     brains" with the panel beside it reading "120 BRAINS · 15 SURVIVE, 105 ARE REPLACED",
+     both on screen at once. `mu = lam // 2` in the CMA-ES setup, so "the better half"
+     stays true at any lambda and is left alone. */
+  var LIVE_LESSON = {
+    ga: function (L, t) {
+      return Object.assign({}, L, {
+        head: t.pop_size + ' brains, and only the good ones get children',
+        body: 'No gradients, no derivatives, nothing that knows which direction is better. '
+          + 'Each generation plays all ' + t.pop_size + ' networks, ranks them, keeps the best '
+          + t.elite + ' untouched, and fills the rest with children: pick two parents, flip a '
+          + 'coin per weight to decide which parent it comes from, then nudge '
+          + Math.round(t.mutation_rate * 100) + '% of the weights at random. Repeat a few '
+          + 'thousand times.'
+      });
+    },
+    cmaes: function (L, t) {
+      return Object.assign({}, L, {
+        body: 'CMA-ES keeps a Gaussian over strategies. Every generation it draws ' + t.lam
+          + ' brains from it, keeps the better half, and moves the centre toward them — then '
+          + 'reshapes the cloud itself, stretching along directions that keep paying off and '
+          + 'narrowing where they do not. The ellipse is that shape, measured from the real '
+          + 'samples on screen.'
+      });
+    }
+  };
+
+  function lessonOf(key) {
+    var L = LESSON[key];
+    if (!L || !LIVE_LESSON[key]) return L;
+    var t = tunablesNow(key);
+    return t ? LIVE_LESSON[key](L, t) : L;
+  }
+
   var LESSON = {
     ppo: {
       head: 'It takes a step, then refuses to take a big one',
@@ -1629,7 +1664,7 @@
 
   function renderLesson() {
     var v = view(App.school);
-    var L = LESSON[App.school];
+    var L = lessonOf(App.school);
     if (v.sealed) {
       return '<div class="screen">' + backdrop('bg-academy', .4)
         + '<div style="position:relative;flex:1;display:grid;place-items:center">'
@@ -1970,7 +2005,13 @@
     _xKey = key;
     // Only the open fades in. Stepping recreates the same chrome, which carries no
     // animation of its own, so the swap is invisible and the new diagram plays alone.
-    host.innerHTML = key ? window.Explain.overlay(v, App.explain, !!opening) : '';
+    // The crowd's size is an academy knob, and the explainer says it out loud in three
+    // places — two in the GA steps and one in the CMA-ES step that compares itself to a
+    // GA. All three mean the same population, so it is passed whatever GA would use.
+    var ga = tunablesNow('ga');
+    host.innerHTML = key
+      ? window.Explain.overlay(v, App.explain, !!opening, ga ? { POP: ga.pop_size } : null)
+      : '';
   }
 
   function openExplain() {

@@ -62,9 +62,9 @@
         take: 'Slow, steady, hard to break — that’s why PPO’s Tom hunts like a professional.' }
     ],
     ga: [
-      { k: 'STEP 1 · THE CROWD', t: 'Forget one student. Bring 48 slightly different Toms.',
+      { k: 'STEP 1 · THE CROWD', t: 'Forget one student. Bring {POP} slightly different Toms.',
         b: ['No gradients, no bookie, no clever maths. A genetic algorithm keeps a whole population, and each Tom is nothing but a long list of numbers — his genome. Identical wiring, different settings.',
-            'At generation 1 those numbers are pure noise. Forty-eight random idiots, each idiotic in his own personal way.'],
+            'At generation 1 those numbers are pure noise. {POP} random idiots, each idiotic in his own personal way.'],
         take: 'One student becomes a crowd.' },
       { k: 'STEP 2 · THE EXAM', t: 'Everyone runs the maze. Everyone comes back with one number.',
         b: ['That single score is the whole feedback. Not per action, not per step — per entire life.',
@@ -110,7 +110,7 @@
         take: 'Momentum sets the stride.' },
       { k: 'STEP 6 · CONVERGE', t: 'The cloud collapses onto an answer.',
         b: ['Round after round it tightens until every sample is basically the same Tom. That is convergence, and the final centre is your trained agent.',
-            'Fewer wasted runs than a GA, no gradients at all — but it is happiest on a smooth landscape. On a spiky one, 48 brawling Toms can still take it.'],
+            'Fewer wasted runs than a GA, no gradients at all — but it is happiest on a smooth landscape. On a spiky one, {POP} brawling Toms can still take it.'],
         take: 'The elegant one — and the only school that trained both animals well.' }
     ]
   };
@@ -717,7 +717,19 @@
      open this for a sealed school, and the accent comes from the view either way.
      `animate` fades the whole panel in and belongs to the opening only: on a step the
      chrome is identical, so re-creating it silently leaves the new diagram to play alone. */
-  function overlay(v, step, animate) {
+  /* The diagrams are drawings and stay drawings — the crowd is a picture of a crowd, not
+     a count, and it is memoised so a take records identically. The COPY is different: it
+     names the size of that crowd out loud, and the population is an academy knob, so the
+     number is filled from the run rather than written down here. Everything else on these
+     screens is deliberately unmeasured; see the header. */
+  function fill(t, facts) {
+    return String(t).replace(/\{([A-Z]+)\}/g, function (whole, key) {
+      return facts && facts[key] !== undefined && facts[key] !== null
+        ? String(facts[key]) : whole.replace(/[{}]/g, '');
+    });
+  }
+
+  function overlay(v, step, animate, facts) {
     var list = STEPS[v.key] || STEPS.ppo;
     var i = Math.max(1, Math.min(list.length, step || 1));
     var cur = list[i - 1];
@@ -731,7 +743,8 @@
     }).join('');
 
     var body = cur.b.map(function (t) {
-      return '<div style="font-size:17.5px;line-height:1.55;color:#b3c5df;text-wrap:pretty">' + esc(t) + '</div>';
+      return '<div style="font-size:17.5px;line-height:1.55;color:#b3c5df;text-wrap:pretty">'
+        + esc(fill(t, facts)) + '</div>';
     }).join('');
 
     var fig = FIG[v.key + i];
@@ -757,7 +770,7 @@
       + '<div style="flex:0 0 auto;display:flex;align-items:center;gap:12px">'
       + '<div style="font-family:var(--display);font-size:11.5px;letter-spacing:2.6px;color:' + v.color + '">' + esc(cur.k) + '</div>'
       + '<div style="flex:1 1 auto;height:1px;background:rgba(140,170,210,.16)"></div></div>'
-      + '<div style="flex:0 0 auto;font-family:var(--display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:.5px;color:#f2f7ff;text-wrap:pretty">' + esc(cur.t) + '</div>'
+      + '<div style="flex:0 0 auto;font-family:var(--display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:.5px;color:#f2f7ff;text-wrap:pretty">' + esc(fill(cur.t, facts)) + '</div>'
       + '<div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:17px">' + body + '</div>'
       + '<div style="flex:0 0 auto;display:flex;gap:13px;align-items:flex-start;padding:16px 18px;border-radius:13px;background:' + P.rgba(v.color, .08) + ';border:1px solid ' + border + '">'
       + '<div style="width:6px;align-self:stretch;border-radius:3px;background:' + v.color + ';flex:0 0 auto"></div>'
